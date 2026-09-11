@@ -22,6 +22,13 @@ export class PrismaArticuloRepository implements ArticuloRepository {
     return articulo ? this.toDomain(articulo) : null;
   }
 
+  async hasOperationalReferences(_id: string): Promise<boolean> {
+    // The current Prisma schema has no operational relations to Articulo yet.
+    // Add relation-backed existence checks here when Inventory, Compras, or
+    // Production introduce models that reference Articulo.
+    return false;
+  }
+
   async findByCodeInsensitive(codigo: string): Promise<Articulo | null> {
     const articulo = await this.client.articulo.findFirst({
       where: { codigo: { equals: codigo, mode: "insensitive" } },

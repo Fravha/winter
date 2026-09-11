@@ -133,6 +133,23 @@ export class ArticuloService implements ArticulosApi {
     };
     return this.unitOfWork.execute(async ({ articulos, audit }) => {
       const existing = await this.requireArticulo(articulos, articuloId);
+      const changesOperationalIdentity = (
+        allowedData.clasificacion !== undefined
+        && allowedData.clasificacion !== existing.clasificacion
+      ) || (
+        allowedData.unidadMedida !== undefined
+        && allowedData.unidadMedida !== existing.unidadMedida
+      );
+      if (
+        changesOperationalIdentity
+        && await articulos.hasOperationalReferences(articuloId)
+      ) {
+        throw new AppError(
+          "ARTICULO_OPERATIONAL_FIELDS_IMMUTABLE",
+          "Articulo classification and unit cannot change after operational references exist",
+          409,
+        );
+      }
       const articulo = await articulos.update(articuloId, allowedData);
       await audit.record(context, {
         action: "ARTICULO_UPDATED",

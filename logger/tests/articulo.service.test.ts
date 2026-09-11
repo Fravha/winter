@@ -17,6 +17,7 @@ import type {
 import type { ArticuloRepository } from "../src/modules/articulos/articulo.repository.js";
 import { ArticuloService } from "../src/modules/articulos/articulo.service.js";
 import type { ArticuloUnitOfWork } from "../src/modules/articulos/articulo.unit-of-work.js";
+import { AppError } from "../src/shared/errors/app-error.js";
 
 const context: AuthenticatedAuditContext = {
   actorUserId: "actor-id",
@@ -25,6 +26,7 @@ const context: AuthenticatedAuditContext = {
 
 class MemoryArticuloRepository implements ArticuloRepository {
   private records = new Map<string, Articulo>();
+  private operationalReferences = new Set<string>();
   private nextId = 1;
 
   findById(id: string) {
@@ -38,6 +40,10 @@ class MemoryArticuloRepository implements ArticuloRepository {
         (articulo) => articulo.codigo.toLocaleLowerCase() === normalized,
       ) ?? null,
     );
+  }
+
+  hasOperationalReferences(id: string) {
+    return Promise.resolve(this.operationalReferences.has(id));
   }
 
   async findAll(filters: ListArticulosFilters) {
@@ -102,6 +108,10 @@ class MemoryArticuloRepository implements ArticuloRepository {
 
   restore(snapshot: Map<string, Articulo>) {
     this.records = snapshot;
+  }
+
+  addOperationalReference(id: string) {
+    this.operationalReferences.add(id);
   }
 }
 
@@ -291,6 +301,56 @@ describe("ArticuloService", () => {
     } as UpdateArticuloDto, context);
     assert.equal(updated.codigo, "SAFE-001");
     assert.equal(updated.activo, true);
+  });
+
+  it("blocks classification and unit changes after operational references exist", async () => {
+    const { repository, service } = createSubject();
+    const articulo = await service.createArticulo({
+      codigo: "LOCKED-001",
+      nombre: "Articulo con movimientos",
+      clasificacion: "MATERIA_PRIMA",
+      unidadMedida: "KG",
+    }, context);
+    repository.addOperationalReference(articulo.id);
+
+    await assert.rejects(
+      service.updateArticulo(
+        articulo.id,
+        { clasificacion: "INSUMO_ENOLOGICO" },
+        context,
+      ),
+      (error: unknown) =>
+        error instanceof AppError
+        && error.code === "ARTICULO_OPERATIONAL_FIELDS_IMMUTABLE"
+        && error.statusCode === 409,
+    );
+    await assert.rejects(
+      service.updateArticulo(articulo.id, { unidadMedida: "G" }, context),
+      (error: unknown) =>
+        error instanceof AppError
+        && error.code === "ARTICULO_OPERATIONAL_FIELDS_IMMUTABLE",
+    );
+  });
+
+  it("keeps name editable and accepts unchanged operational fields after references exist", async () => {
+    const { repository, service } = createSubject();
+    const articulo = await service.createArticulo({
+      codigo: "LOCKED-002",
+      nombre: "Nombre original",
+      clasificacion: "MATERIA_PRIMA",
+      unidadMedida: "KG",
+    }, context);
+    repository.addOperationalReference(articulo.id);
+
+    const updated = await service.updateArticulo(articulo.id, {
+      nombre: "Nombre actualizado",
+      clasificacion: "MATERIA_PRIMA",
+      unidadMedida: "KG",
+    }, context);
+
+    assert.equal(updated.nombre, "Nombre actualizado");
+    assert.equal(updated.clasificacion, "MATERIA_PRIMA");
+    assert.equal(updated.unidadMedida, "KG");
   });
 
   it("enforces pagination defaults and limits for intermodule callers", async () => {

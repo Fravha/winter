@@ -7,6 +7,7 @@ import type {
 
 export interface ArticuloRepository {
   findById(id: string): Promise<Articulo | null>;
+  hasOperationalReferences(id: string): Promise<boolean>;
   findByCodeInsensitive(codigo: string): Promise<Articulo | null>;
   findAll(filters: ListArticulosFilters): Promise<PaginatedArticulos>;
   create(data: CreateArticuloDto): Promise<Articulo>;
