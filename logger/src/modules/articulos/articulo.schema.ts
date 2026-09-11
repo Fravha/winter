@@ -10,12 +10,17 @@ export const articuloIdParamsSchema = z.object({
 
 export const createArticuloSchema = z.object({
   codigo: z.string().trim().min(1, "Codigo is required"),
+  codigoExterno: z.string().trim().min(1, "Codigo externo cannot be empty").optional(),
   nombre: z.string().trim().min(1, "Nombre is required"),
   clasificacion: z.enum(articuloClassifications),
   unidadMedida: z.enum(articuloUnits),
 });
 
 export const updateArticuloSchema = z.object({
+  codigoExterno: z.union([
+    z.string().trim().min(1, "Codigo externo cannot be empty"),
+    z.null(),
+  ]).optional(),
   nombre: z.string().trim().min(1, "Nombre is required").optional(),
   clasificacion: z.enum(articuloClassifications).optional(),
   unidadMedida: z.enum(articuloUnits).optional(),

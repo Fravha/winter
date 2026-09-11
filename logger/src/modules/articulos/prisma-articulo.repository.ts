@@ -72,6 +72,9 @@ export class PrismaArticuloRepository implements ArticuloRepository {
       const articulo = await this.client.articulo.create({
         data: {
           codigo: data.codigo,
+          ...(data.codigoExterno !== undefined
+            ? { codigoExterno: data.codigoExterno }
+            : {}),
           nombre: data.nombre,
           clasificacion: data.clasificacion,
           unidadMedida: data.unidadMedida,
@@ -88,6 +91,9 @@ export class PrismaArticuloRepository implements ArticuloRepository {
       const articulo = await this.client.articulo.update({
         where: { id },
         data: {
+          ...(data.codigoExterno !== undefined
+            ? { codigoExterno: data.codigoExterno }
+            : {}),
           ...(data.nombre !== undefined ? { nombre: data.nombre } : {}),
           ...(data.clasificacion !== undefined
             ? { clasificacion: data.clasificacion }
@@ -119,6 +125,7 @@ export class PrismaArticuloRepository implements ArticuloRepository {
     return {
       id: articulo.id,
       codigo: articulo.codigo,
+      codigoExterno: articulo.codigoExterno,
       nombre: articulo.nombre,
       clasificacion: articulo.clasificacion as ArticuloClassification,
       unidadMedida: articulo.unidadMedida as ArticuloUnit,

@@ -67,7 +67,11 @@ class MemoryArticuloRepository implements ArticuloRepository {
     const now = new Date("2026-09-11T00:00:00.000Z");
     const articulo: Articulo = {
       id: `articulo-${this.nextId++}`,
-      ...data,
+      codigo: data.codigo,
+      codigoExterno: data.codigoExterno ?? null,
+      nombre: data.nombre,
+      clasificacion: data.clasificacion,
+      unidadMedida: data.unidadMedida,
       activo: true,
       createdAt: now,
       updatedAt: now,
@@ -170,6 +174,75 @@ describe("ArticuloService", () => {
       service.createArticulo({ ...data, codigo: "ins-001" }, context),
       (error: unknown) =>
         error instanceof Error && error.message.includes("already exists"),
+    );
+  });
+
+  it("allows repeated external aliases because only codigo identifies an articulo", async () => {
+    const { service } = createSubject();
+    const first = await service.createArticulo({
+      codigo: "PT-NACIONAL-001",
+      codigoExterno: "LVD",
+      nombre: "Producto nacional",
+      clasificacion: "PRODUCTO_TERMINADO",
+      unidadMedida: "UNIDAD",
+    }, context);
+    const second = await service.createArticulo({
+      codigo: "PT-EXPORT-001",
+      codigoExterno: "LVD",
+      nombre: "Producto exportación",
+      clasificacion: "PRODUCTO_TERMINADO",
+      unidadMedida: "UNIDAD",
+    }, context);
+
+    assert.equal(first.codigoExterno, "LVD");
+    assert.equal(second.codigoExterno, "LVD");
+  });
+
+  it("accepts M as a base unit", async () => {
+    const { service } = createSubject();
+    const articulo = await service.createArticulo({
+      codigo: "MAT-001",
+      nombre: "Material por metro",
+      clasificacion: "MATERIAL_EMPAQUE",
+      unidadMedida: "M",
+    }, context);
+
+    assert.equal(articulo.unidadMedida, "M");
+  });
+
+  it("rejects removed or unsupported units at the service boundary", () => {
+    const { service } = createSubject();
+    assert.throws(
+      () => service.createArticulo({
+        codigo: "MAT-ML-001",
+        nombre: "Material en mililitros",
+        clasificacion: "INSUMO_ENOLOGICO",
+        unidadMedida: "ML",
+      } as CreateArticuloDto, context),
+      /Invalid option/,
+    );
+  });
+
+  it("rejects empty trimmed identity and descriptive fields at the service boundary", () => {
+    const { service } = createSubject();
+    assert.throws(
+      () => service.createArticulo({
+        codigo: "   ",
+        nombre: "Artículo",
+        clasificacion: "MATERIA_PRIMA",
+        unidadMedida: "KG",
+      }, context),
+      /Codigo is required/,
+    );
+    assert.throws(
+      () => service.createArticulo({
+        codigo: "MAT-002",
+        codigoExterno: "   ",
+        nombre: "Artículo",
+        clasificacion: "MATERIA_PRIMA",
+        unidadMedida: "KG",
+      }, context),
+      /Codigo externo cannot be empty/,
     );
   });
 

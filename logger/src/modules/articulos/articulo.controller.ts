@@ -50,7 +50,16 @@ export class ArticuloController {
 
   create = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = createArticuloSchema.parse(req.body);
+      const parsed = createArticuloSchema.parse(req.body);
+      const data = {
+        codigo: parsed.codigo,
+        ...(parsed.codigoExterno !== undefined
+          ? { codigoExterno: parsed.codigoExterno }
+          : {}),
+        nombre: parsed.nombre,
+        clasificacion: parsed.clasificacion,
+        unidadMedida: parsed.unidadMedida,
+      };
       const articulo = await this.service.createArticulo(
         data,
         buildAuthenticatedAuditContext(req, res),
@@ -69,6 +78,9 @@ export class ArticuloController {
     try {
       const parsed = updateArticuloSchema.parse(req.body);
       const data = {
+        ...(parsed.codigoExterno !== undefined
+          ? { codigoExterno: parsed.codigoExterno }
+          : {}),
         ...(parsed.nombre !== undefined ? { nombre: parsed.nombre } : {}),
         ...(parsed.clasificacion !== undefined
           ? { clasificacion: parsed.clasificacion }

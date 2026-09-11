@@ -8,7 +8,7 @@ export const articuloClassifications = [
   "PRODUCTO_TERMINADO",
 ] as const;
 
-export const articuloUnits = ["KG", "G", "L", "ML", "UNIDAD"] as const;
+export const articuloUnits = ["KG", "G", "L", "M", "UNIDAD"] as const;
 
 export type ArticuloClassification = typeof articuloClassifications[number];
 export type ArticuloUnit = typeof articuloUnits[number];
@@ -16,6 +16,7 @@ export type ArticuloUnit = typeof articuloUnits[number];
 export interface Articulo {
   id: string;
   codigo: string;
+  codigoExterno: string | null;
   nombre: string;
   clasificacion: ArticuloClassification;
   unidadMedida: ArticuloUnit;

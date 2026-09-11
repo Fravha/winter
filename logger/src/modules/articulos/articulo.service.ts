@@ -4,6 +4,10 @@ import type { CreateArticuloDto, UpdateArticuloDto } from "./articulo.dto.js";
 import type { ArticuloRepository } from "./articulo.repository.js";
 import type { ArticuloUnitOfWork } from "./articulo.unit-of-work.js";
 import type { ArticulosApi } from "./articulos.api.js";
+import {
+  createArticuloSchema,
+  updateArticuloSchema,
+} from "./articulo.schema.js";
 import type {
   ArticuloClassification,
   ListArticulosFilters,
@@ -76,11 +80,15 @@ export class ArticuloService implements ArticulosApi {
     data: CreateArticuloDto,
     context: AuthenticatedAuditContext,
   ) {
+    const parsed = createArticuloSchema.parse(data);
     const normalized: CreateArticuloDto = {
-      codigo: data.codigo.trim(),
-      nombre: data.nombre.trim(),
-      clasificacion: data.clasificacion,
-      unidadMedida: data.unidadMedida,
+      codigo: parsed.codigo,
+      ...(parsed.codigoExterno !== undefined
+        ? { codigoExterno: parsed.codigoExterno }
+        : {}),
+      nombre: parsed.nombre,
+      clasificacion: parsed.clasificacion,
+      unidadMedida: parsed.unidadMedida,
     };
     return this.unitOfWork.execute(async ({ articulos, audit }) => {
       if (await articulos.findByCodeInsensitive(normalized.codigo)) {
@@ -106,13 +114,21 @@ export class ArticuloService implements ArticulosApi {
     data: UpdateArticuloDto,
     context: AuthenticatedAuditContext,
   ) {
+    const parsed = updateArticuloSchema.parse(data);
     const allowedData: UpdateArticuloDto = {
-      ...(data.nombre !== undefined ? { nombre: data.nombre.trim() } : {}),
-      ...(data.clasificacion !== undefined
-        ? { clasificacion: data.clasificacion }
+      ...(parsed.codigoExterno !== undefined
+        ? {
+            codigoExterno: parsed.codigoExterno === null
+              ? null
+              : parsed.codigoExterno,
+          }
         : {}),
-      ...(data.unidadMedida !== undefined
-        ? { unidadMedida: data.unidadMedida }
+      ...(parsed.nombre !== undefined ? { nombre: parsed.nombre } : {}),
+      ...(parsed.clasificacion !== undefined
+        ? { clasificacion: parsed.clasificacion }
+        : {}),
+      ...(parsed.unidadMedida !== undefined
+        ? { unidadMedida: parsed.unidadMedida }
         : {}),
     };
     return this.unitOfWork.execute(async ({ articulos, audit }) => {

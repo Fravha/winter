@@ -14,8 +14,10 @@ Winter debe aplicar estas decisiones sin asumir comportamientos adicionales:
 - No crear una entidad `Status` ni un catálogo dinámico; todo estado futuro requiere una decisión explícita con reglas, permisos, efectos y auditoría.
 - `Articulo` usa `activo`, no `estado`; conserva historial al desactivarse y no tiene eliminación física.
 - Clasificaciones cerradas: materia prima, insumo enológico, materiales de envase/empaque y productos en proceso, envasados o terminados. Exportación pertenece a `InventoryLot`.
-- Unidades base cerradas: `KG`, `G`, `L`, `ML`, `UNIDAD`; no hay conversiones automáticas.
+- Unidades base cerradas: `KG`, `G`, `L`, `M`, `UNIDAD`; no hay conversiones automáticas.
 - El código de artículo es obligatorio, único sin distinguir mayúsculas, se recorta y no puede modificarse.
+- `codigoExterno` conserva alias como Codigo IZI - PT, es opcional, editable y no único; no participa en la identidad del artículo.
+- Articulos cubre inventario con impacto productivo u operativo, no inventario administrativo general; activos, equipos y recipientes permanentes pertenecen a su módulo propio.
 - Articulos expone CRUD administrativo sin DELETE, activación/desactivación explícitas y API pública de consulta/validación; la clasificación/unidad se bloquean tras referencias operativas.
 - Una transformación consume batches existentes y crea uno o varios batches nuevos; conserva inputs, outputs, cantidades e historial completo.
 - `InventoryMovement` es la fuente de verdad del stock. Cualquier vista, caché o proyección futura debe ser reconstruible desde movimientos.

@@ -88,16 +88,18 @@ model AuditLog {
 }
 
 model Articulo {
-  id            String                @id @default(uuid()) @db.Uuid
-  codigo        String
-  nombre        String
-  clasificacion ArticuloClassification
-  unidadMedida  ArticuloUnit          @map("unidad_medida")
-  activo        Boolean               @default(true)
-  createdAt     DateTime              @default(now()) @map("created_at")
-  updatedAt     DateTime              @updatedAt @map("updated_at")
+  id             String                 @id @default(uuid()) @db.Uuid
+  codigo         String
+  codigoExterno  String?                @map("codigo_externo")
+  nombre         String
+  clasificacion  ArticuloClassification
+  unidadMedida   ArticuloUnit           @map("unidad_medida")
+  activo         Boolean                @default(true)
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
 
   @@index([codigo])
+  @@index([codigoExterno])
   @@index([clasificacion, activo])
   @@map("articulos")
 }
@@ -147,6 +149,6 @@ enum ArticuloUnit {
   KG
   G
   L
-  ML
+  M
   UNIDAD
 }
