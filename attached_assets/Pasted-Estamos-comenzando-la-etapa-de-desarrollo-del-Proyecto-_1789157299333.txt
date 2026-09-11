@@ -1,0 +1,80 @@
+Estamos comenzando la etapa de desarrollo del Proyecto Winter.
+Proyecto Winter = Sistema de Producción CDZ
+
+Como ya hemos mencionado Winter utilizará como base el backend existente del proyecto Logger, ya que este contiene la arquitectura inicial, autenticación con Firebase, RBAC, administración de usuarios, Prisma y PostgreSQL.
+
+IMPORTANTE:
+En esta tarea NO debes desarrollar nuevos módulos ni modificar reglas de negocio. El objetivo es únicamente preparar tu entorno de trabajo y verificar que el proyecto base funciona correctamente.
+
+REPOSITORIO BASE:
+https://github.com/Fravha/logger
+
+RAMA BASE:
+feature/backend-mod-purchasesandproducts
+
+TAREA:
+
+1. Accede al repositorio de GitHub al que ya tienes acceso.
+
+2. Utiliza exactamente como punto de partida la rama:
+
+   feature/backend-mod-purchasesandproducts
+
+3. Actualiza el repositorio y verifica que estás trabajando sobre la última versión disponible de esa rama.
+
+4. A partir de esa rama crea una nueva rama llamada exactamente:
+
+   dev/winter-replit
+
+5. Cambia tu entorno de trabajo a:
+
+   dev/winter-replit
+
+6. Instala las dependencias necesarias del proyecto.
+
+7. Genera Prisma Client utilizando la configuración existente del repositorio.
+
+8. Utiliza exclusivamente las variables de entorno/Secrets que ya fueron configuradas en Replit.
+
+   IMPORTANTE:
+   - No crear una nueva base de datos.
+   - No utilizar la base de datos propia de Replit.
+   - No modificar credenciales.
+   - No escribir secretos dentro del código.
+   - No crear ni subir archivos .env con credenciales.
+   - La base de datos de desarrollo de Winter ya está alojada en Supabase.
+   - La autenticación de desarrollo ya está configurada mediante Firebase.
+   - La variable de conexión de Winter fue configurada específicamente para evitar conflictos con variables reservadas por Replit.
+
+9. Verifica que Prisma puede conectarse correctamente a la base de datos configurada.
+
+10. Ejecuta las validaciones disponibles del proyecto, incluyendo TypeScript/typecheck si están configuradas.
+
+11. Levanta el backend y verifica que inicia correctamente.
+
+12. NO ejecutes migraciones destructivas, resets, db push, eliminación de tablas ni modificaciones del esquema en esta tarea.
+
+13. NO refactorices el proyecto todavía.
+
+14. NO implementes módulos nuevos todavía.
+
+Al finalizar, entrégame únicamente un reporte del estado encontrado indicando:
+
+- Rama base utilizada.
+- Rama creada.
+- Último commit desde el cual fue creada.
+- Si las dependencias instalaron correctamente.
+- Si Prisma Client se generó correctamente.
+- Si la conexión con PostgreSQL/Supabase funciona.
+- Si Firebase está correctamente configurado.
+- Si el backend inicia.
+- Resultado del typecheck.
+- Errores o advertencias encontrados.
+- Estructura general del backend que identificaste.
+- Confirmación de que no realizaste cambios funcionales.
+
+No hagas commit ni push de modificaciones adicionales salvo que sean estrictamente necesarias para que el entorno pueda ejecutarse. Si encuentras un problema que requiere modificar código, repórtalo primero antes de realizar el cambio.
+
+Cuando termines esta preparación, detente y espera mis siguientes instrucciones.
+
+Los módulos de Winter se desarrollarán posteriormente y te proporcionaré las reglas de negocio, entidades y decisiones arquitectónicas correspondientes.
