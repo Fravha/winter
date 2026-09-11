@@ -87,6 +87,21 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model Articulo {
+  id            String                @id @default(uuid()) @db.Uuid
+  codigo        String
+  nombre        String
+  clasificacion ArticuloClassification
+  unidadMedida  ArticuloUnit          @map("unidad_medida")
+  activo        Boolean               @default(true)
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  @@index([codigo])
+  @@index([clasificacion, activo])
+  @@map("articulos")
+}
+
 model Product {
   id          String   @id @default(uuid())
   code        String   @unique
@@ -116,4 +131,22 @@ enum UserStatus {
   PENDING
   ACTIVE
   SUSPENDED
+}
+
+enum ArticuloClassification {
+  MATERIA_PRIMA
+  INSUMO_ENOLOGICO
+  MATERIAL_ENVASE
+  MATERIAL_EMPAQUE
+  PRODUCTO_PROCESO
+  PRODUCTO_ENVASADO
+  PRODUCTO_TERMINADO
+}
+
+enum ArticuloUnit {
+  KG
+  G
+  L
+  ML
+  UNIDAD
 }
