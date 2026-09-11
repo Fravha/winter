@@ -1,0 +1,1 @@
+- [Decisiones de dominio de Winter](winter-domain-decisions.md) — Reglas obligatorias para trabajos, transformaciones, stock, atomicidad y módulos finales.
