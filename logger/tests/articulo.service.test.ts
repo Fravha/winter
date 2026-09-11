@@ -26,7 +26,7 @@ const context: AuthenticatedAuditContext = {
 
 class MemoryArticuloRepository implements ArticuloRepository {
   private records = new Map<string, Articulo>();
-  private operationalReferences = new Set<string>();
+  private operationalReferences = new Map<string, Set<ConsumerModule>>();
   private nextId = 1;
 
   findById(id: string) {
@@ -43,7 +43,7 @@ class MemoryArticuloRepository implements ArticuloRepository {
   }
 
   hasOperationalReferences(id: string) {
-    return Promise.resolve(this.operationalReferences.has(id));
+    return Promise.resolve((this.operationalReferences.get(id)?.size ?? 0) > 0);
   }
 
   async findAll(filters: ListArticulosFilters) {
@@ -110,10 +110,14 @@ class MemoryArticuloRepository implements ArticuloRepository {
     this.records = snapshot;
   }
 
-  addOperationalReference(id: string) {
-    this.operationalReferences.add(id);
+  addOperationalReference(id: string, module: ConsumerModule = "inventory") {
+    const references = this.operationalReferences.get(id) ?? new Set();
+    references.add(module);
+    this.operationalReferences.set(id, references);
   }
 }
+
+type ConsumerModule = "inventory" | "compras" | "production";
 
 class MemoryAuditRepository implements AuditRepository {
   readonly records: AuditRecord[] = [];
@@ -303,34 +307,43 @@ describe("ArticuloService", () => {
     assert.equal(updated.activo, true);
   });
 
-  it("blocks classification and unit changes after operational references exist", async () => {
-    const { repository, service } = createSubject();
-    const articulo = await service.createArticulo({
-      codigo: "LOCKED-001",
-      nombre: "Articulo con movimientos",
-      clasificacion: "MATERIA_PRIMA",
-      unidadMedida: "KG",
-    }, context);
-    repository.addOperationalReference(articulo.id);
+  for (const module of ["inventory", "compras", "production"] as const) {
+    it(`blocks classification and unit but keeps name editable after a ${module} reference exists`, async () => {
+      const { repository, service } = createSubject();
+      const articulo = await service.createArticulo({
+        codigo: `LOCKED-${module}`,
+        nombre: "Nombre original",
+        clasificacion: "MATERIA_PRIMA",
+        unidadMedida: "KG",
+      }, context);
+      repository.addOperationalReference(articulo.id, module);
 
-    await assert.rejects(
-      service.updateArticulo(
+      await assert.rejects(
+        service.updateArticulo(
+          articulo.id,
+          { clasificacion: "INSUMO_ENOLOGICO" },
+          context,
+        ),
+        (error: unknown) =>
+          error instanceof AppError
+          && error.code === "ARTICULO_OPERATIONAL_FIELDS_IMMUTABLE"
+          && error.statusCode === 409,
+      );
+      await assert.rejects(
+        service.updateArticulo(articulo.id, { unidadMedida: "G" }, context),
+        (error: unknown) =>
+          error instanceof AppError
+          && error.code === "ARTICULO_OPERATIONAL_FIELDS_IMMUTABLE",
+      );
+
+      const updated = await service.updateArticulo(
         articulo.id,
-        { clasificacion: "INSUMO_ENOLOGICO" },
+        { nombre: `Nombre actualizado por ${module}` },
         context,
-      ),
-      (error: unknown) =>
-        error instanceof AppError
-        && error.code === "ARTICULO_OPERATIONAL_FIELDS_IMMUTABLE"
-        && error.statusCode === 409,
-    );
-    await assert.rejects(
-      service.updateArticulo(articulo.id, { unidadMedida: "G" }, context),
-      (error: unknown) =>
-        error instanceof AppError
-        && error.code === "ARTICULO_OPERATIONAL_FIELDS_IMMUTABLE",
-    );
-  });
+      );
+      assert.equal(updated.nombre, `Nombre actualizado por ${module}`);
+    });
+  }
 
   it("keeps name editable and accepts unchanged operational fields after references exist", async () => {
     const { repository, service } = createSubject();

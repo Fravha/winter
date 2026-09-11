@@ -88,15 +88,20 @@ model AuditLog {
 }
 
 model Articulo {
-  id             String                 @id @default(uuid()) @db.Uuid
-  codigo         String
-  codigoExterno  String?                @map("codigo_externo")
-  nombre         String
-  clasificacion  ArticuloClassification
-  unidadMedida   ArticuloUnit           @map("unidad_medida")
-  activo         Boolean                @default(true)
-  createdAt      DateTime               @default(now()) @map("created_at")
-  updatedAt      DateTime               @updatedAt @map("updated_at")
+  id                   String                 @id @default(uuid()) @db.Uuid
+  codigo               String
+  codigoExterno        String?                @map("codigo_externo")
+  nombre               String
+  clasificacion        ArticuloClassification
+  unidadMedida         ArticuloUnit           @map("unidad_medida")
+  activo               Boolean                @default(true)
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
+  inventoryLots        InventoryLot[]
+  inventoryStocks      InventoryStock[]
+  inventoryMovements   InventoryMovement[]
+  purchaseLines        PurchaseLine[]
+  productionWorkInputs ProductionWorkInput[]
 
   @@index([codigo])
   @@index([codigoExterno])
@@ -118,95 +123,154 @@ model Product {
 }
 
 model Purchase {
-  id           String   @id @default(uuid())
-  reference    String   @unique
-  supplierName String   @map("supplier_name")
-  total        Decimal  @db.Decimal(12, 2)
-  purchasedAt  DateTime @map("purchased_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id           String         @id @default(uuid())
+  reference    String         @unique
+  supplierName String         @map("supplier_name")
+  total        Decimal        @db.Decimal(12, 2)
+  purchasedAt  DateTime       @map("purchased_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  lines        PurchaseLine[]
 
   @@map("purchases")
 }
 
+model PurchaseLine {
+  id         String       @id @default(uuid()) @db.Uuid
+  purchaseId String       @map("purchase_id")
+  articuloId String       @map("articulo_id") @db.Uuid
+  quantity   Decimal      @db.Decimal(18, 3)
+  unit       ArticuloUnit
+  createdAt  DateTime     @default(now()) @map("created_at")
+  purchase   Purchase     @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  articulo   Articulo     @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+
+  @@index([articuloId])
+  @@map("purchase_lines")
+}
+
+model ProductionOrder {
+  id        String                @id @default(uuid()) @db.Uuid
+  reference String                @unique
+  status    ProductionOrderStatus @default(OPEN)
+  createdAt DateTime              @default(now()) @map("created_at")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+  works     ProductionWork[]
+
+  @@map("production_orders")
+}
+
+model ProductionWork {
+  id                String                @id @default(uuid()) @db.Uuid
+  productionOrderId String                @map("production_order_id") @db.Uuid
+  createdAt         DateTime              @default(now()) @map("created_at")
+  productionOrder   ProductionOrder       @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  inputs            ProductionWorkInput[]
+
+  @@index([productionOrderId])
+  @@map("production_works")
+}
+
+model ProductionWorkInput {
+  id               String         @id @default(uuid()) @db.Uuid
+  productionWorkId String         @map("production_work_id") @db.Uuid
+  articuloId       String         @map("articulo_id") @db.Uuid
+  quantity         Decimal        @db.Decimal(18, 3)
+  unit             ArticuloUnit
+  createdAt        DateTime       @default(now()) @map("created_at")
+  productionWork   ProductionWork @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
+  articulo         Articulo       @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+
+  @@index([articuloId])
+  @@map("production_work_inputs")
+}
+
 model Warehouse {
-  id              String   @id @default(uuid()) @db.Uuid
+  id              String              @id @default(uuid()) @db.Uuid
   codigo          String
   nombre          String
   ubicacion       String?
-  encargadoUserId String?  @map("encargado_user_id") @db.Uuid
-  activo          Boolean  @default(true)
+  encargadoUserId String?             @map("encargado_user_id") @db.Uuid
+  activo          Boolean             @default(true)
   observaciones   String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
   stocks          InventoryStock[]
   movements       InventoryMovement[]
+
   @@index([codigo])
   @@map("warehouses")
 }
 
 model InventoryLot {
-  id                    String @id @default(uuid()) @db.Uuid
-  lotCode               String @map("lot_code")
-  articuloId            String @map("articulo_id") @db.Uuid
-  originProductionBatchId String? @map("origin_production_batch_id")
-  classification        InventoryLotClassification
-  fechaIngreso          DateTime @map("fecha_ingreso")
-  observations          String?
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
-  stocks                InventoryStock[]
-  movements             InventoryMovement[]
+  id                      String                     @id @default(uuid()) @db.Uuid
+  lotCode                 String                     @map("lot_code")
+  articuloId              String                     @map("articulo_id") @db.Uuid
+  originProductionBatchId String?                    @map("origin_production_batch_id")
+  classification          InventoryLotClassification
+  fechaIngreso            DateTime                   @map("fecha_ingreso")
+  observations            String?
+  createdAt               DateTime                   @default(now()) @map("created_at")
+  updatedAt               DateTime                   @updatedAt @map("updated_at")
+  stocks                  InventoryStock[]
+  movements               InventoryMovement[]
+  articulo                Articulo                   @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+
   @@unique([articuloId, lotCode])
   @@map("inventory_lots")
 }
 
 model InventoryStock {
-  id              String @id @default(uuid()) @db.Uuid
-  warehouseId     String @map("warehouse_id") @db.Uuid
-  articuloId      String @map("articulo_id") @db.Uuid
-  inventoryLotId  String? @map("inventory_lot_id") @db.Uuid
-  quantity        Decimal @db.Decimal(18,3)
-  unit            ArticuloUnit
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  warehouse       Warehouse @relation(fields: [warehouseId], references: [id])
-  lot             InventoryLot? @relation(fields: [inventoryLotId], references: [id])
+  id             String        @id @default(uuid()) @db.Uuid
+  warehouseId    String        @map("warehouse_id") @db.Uuid
+  articuloId     String        @map("articulo_id") @db.Uuid
+  inventoryLotId String?       @map("inventory_lot_id") @db.Uuid
+  quantity       Decimal       @db.Decimal(18, 3)
+  unit           ArticuloUnit
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  warehouse      Warehouse     @relation(fields: [warehouseId], references: [id])
+  lot            InventoryLot? @relation(fields: [inventoryLotId], references: [id])
+  articulo       Articulo      @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+
   @@unique([warehouseId, articuloId, inventoryLotId])
   @@map("inventory_stocks")
 }
 
 model InventoryMovement {
-  id                    String @id @default(uuid()) @db.Uuid
-  type                  InventoryMovementType
-  source                String
-  reason                String?
-  articuloId            String @map("articulo_id") @db.Uuid
-  warehouseId           String @map("warehouse_id") @db.Uuid
-  destinationWarehouseId String? @map("destination_warehouse_id") @db.Uuid
-  inventoryLotId        String? @map("inventory_lot_id") @db.Uuid
-  quantity              Decimal @db.Decimal(18,3)
-  unit                  ArticuloUnit
-  stockBefore           Decimal @map("stock_before") @db.Decimal(18,3)
-  resultingStock        Decimal @map("resulting_stock") @db.Decimal(18,3)
-  actorUserId           String? @map("actor_user_id") @db.Uuid
-  negativeStockAuthorized Boolean @default(false) @map("negative_stock_authorized")
-  negativeStockAuthorizerUserId String? @map("negative_stock_authorizer_user_id") @db.Uuid
-  negativeStockReason   String? @map("negative_stock_reason")
-  createdAt             DateTime @default(now()) @map("created_at")
-  warehouse             Warehouse @relation(fields: [warehouseId], references: [id])
-  lot                   InventoryLot? @relation(fields: [inventoryLotId], references: [id])
+  id                            String                @id @default(uuid()) @db.Uuid
+  type                          InventoryMovementType
+  source                        String
+  reason                        String?
+  articuloId                    String                @map("articulo_id") @db.Uuid
+  warehouseId                   String                @map("warehouse_id") @db.Uuid
+  destinationWarehouseId        String?               @map("destination_warehouse_id") @db.Uuid
+  inventoryLotId                String?               @map("inventory_lot_id") @db.Uuid
+  quantity                      Decimal               @db.Decimal(18, 3)
+  unit                          ArticuloUnit
+  stockBefore                   Decimal               @map("stock_before") @db.Decimal(18, 3)
+  resultingStock                Decimal               @map("resulting_stock") @db.Decimal(18, 3)
+  actorUserId                   String?               @map("actor_user_id") @db.Uuid
+  negativeStockAuthorized       Boolean               @default(false) @map("negative_stock_authorized")
+  negativeStockAuthorizerUserId String?               @map("negative_stock_authorizer_user_id") @db.Uuid
+  negativeStockReason           String?               @map("negative_stock_reason")
+  createdAt                     DateTime              @default(now()) @map("created_at")
+  warehouse                     Warehouse             @relation(fields: [warehouseId], references: [id])
+  lot                           InventoryLot?         @relation(fields: [inventoryLotId], references: [id])
+  articulo                      Articulo              @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+
   @@index([articuloId, warehouseId, inventoryLotId, createdAt])
   @@map("inventory_movements")
 }
 
 model InventoryIdempotency {
-  id             String @id @default(uuid()) @db.Uuid
-  key            String
-  operation      String
-  requestFingerprint String @map("request_fingerprint")
-  response       Json
-  createdAt      DateTime @default(now()) @map("created_at")
+  id                 String   @id @default(uuid()) @db.Uuid
+  key                String
+  operation          String
+  requestFingerprint String   @map("request_fingerprint")
+  response           Json
+  createdAt          DateTime @default(now()) @map("created_at")
+
   @@unique([key, operation])
   @@unique([key])
   @@map("inventory_idempotency")
@@ -247,4 +311,9 @@ enum InventoryLotClassification {
   PRODUCTO_ENVASADO
   PRODUCTO_TERMINADO
   PRODUCTO_TERMINADO_EXPORTACION
+}
+
+enum ProductionOrderStatus {
+  OPEN
+  CLOSED
 }

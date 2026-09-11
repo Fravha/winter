@@ -15,18 +15,38 @@ import type {
 import type { ArticuloRepository } from "./articulo.repository.js";
 
 export class PrismaArticuloRepository implements ArticuloRepository {
-  constructor(private readonly client: Pick<PrismaClient, "articulo">) {}
+  constructor(
+    private readonly client: Pick<
+      PrismaClient,
+      "articulo" | "inventoryMovement" | "purchaseLine" | "productionWorkInput"
+    >,
+  ) {}
 
   async findById(id: string): Promise<Articulo | null> {
     const articulo = await this.client.articulo.findUnique({ where: { id } });
     return articulo ? this.toDomain(articulo) : null;
   }
 
-  async hasOperationalReferences(_id: string): Promise<boolean> {
-    // The current Prisma schema has no operational relations to Articulo yet.
-    // Add relation-backed existence checks here when Inventory, Compras, or
-    // Production introduce models that reference Articulo.
-    return false;
+  async hasOperationalReferences(id: string): Promise<boolean> {
+    const [inventoryMovement, purchaseLine, productionWorkInput] =
+      await Promise.all([
+        this.client.inventoryMovement.findFirst({
+          where: { articuloId: id },
+          select: { id: true },
+        }),
+        this.client.purchaseLine.findFirst({
+          where: { articuloId: id },
+          select: { id: true },
+        }),
+        this.client.productionWorkInput.findFirst({
+          where: { articuloId: id },
+          select: { id: true },
+        }),
+      ]);
+
+    return inventoryMovement !== null
+      || purchaseLine !== null
+      || productionWorkInput !== null;
   }
 
   async findByCodeInsensitive(codigo: string): Promise<Articulo | null> {
