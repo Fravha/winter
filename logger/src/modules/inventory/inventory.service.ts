@@ -1,0 +1,189 @@
+import { AppError } from "../../shared/errors/app-error.js";
+import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
+import type { InventoryApi } from "./inventory.api.js";
+import type { AdjustmentInput, LotInput, MovementInput, TransferInput, WarehouseInput } from "./inventory.dto.js";
+import type { ExecutionContext, InventoryLotClassification, InventoryUnit } from "./inventory.model.js";
+import { InventoryUnitOfWork } from "./inventory.unit-of-work.js";
+import type { ArticulosApi } from "../articulos/articulos.api.js";
+import { createHash } from "node:crypto";
+
+export const parseInventoryQuantity = (value: string | number): bigint => {
+  const text = String(value).trim();
+  if (!/^-?\d+(?:\.\d{1,3})?$/.test(text)) throw new AppError("INVALID_QUANTITY", "Quantity must be a non-zero decimal with at most 3 places", 400);
+  const [whole = "0", fraction = ""] = text.split(".");
+  const valueInThousandths = BigInt(whole) * 1000n
+    + BigInt((whole.startsWith("-") ? "-" : "") + fraction.padEnd(3, "0"));
+  return valueInThousandths;
+};
+export const parsePositiveInventoryQuantity = (
+  value: string | number,
+  unit?: InventoryUnit,
+): bigint => {
+  const result = parseInventoryQuantity(value);
+  if (result <= 0n) throw new AppError("INVALID_QUANTITY", "Quantity must be positive", 400);
+  if (unit === "UNIDAD" && result % 1000n !== 0n) {
+    throw new AppError("INVALID_QUANTITY", "UNIDAD quantities must be integers", 400);
+  }
+  return result;
+};
+export const formatInventoryQuantity = (n: bigint) => `${n < 0n ? "-" : ""}${(n < 0n ? -n : n) / 1000n}.${String((n < 0n ? -n : n) % 1000n).padStart(3, "0")}`;
+const required = (ctx: ExecutionContext, permission: string) => {
+  if (!ctx?.actorUserId || !ctx.permissions.includes(permission)) throw new AppError("AUTH_FORBIDDEN", `Missing permission ${permission}`, 403);
+};
+const canonical = (value: unknown): string => {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`).join(",")}}`;
+};
+export const inventoryRequestFingerprint = (value: unknown): string =>
+  createHash("sha256").update(canonical(value)).digest("hex");
+
+export class InventoryService implements InventoryApi {
+  private readonly uow: InventoryUnitOfWork;
+  constructor(private readonly prisma: PrismaClient, private readonly articulos?: ArticulosApi) { this.uow = new InventoryUnitOfWork(prisma); }
+  private async validateArticle(input: MovementInput): Promise<void> {
+    if (!this.articulos) throw new AppError("DEPENDENCY_UNAVAILABLE", "Articulos dependency is required", 500);
+    const result = await this.articulos.validateArticulo({ articuloId: input.articuloId });
+    if (!result.valid || !result.articulo) throw new AppError("ARTICULO_INVALID", "Articulo does not exist or is inactive", 400);
+    if (result.articulo.unidadMedida !== input.unit) throw new AppError("UNIT_MISMATCH", "Quantity must use the Articulo base unit", 400, { expected: result.articulo.unidadMedida, received: input.unit });
+  }
+  private async idempotent<T>(tx: Prisma.TransactionClient, key: string, operation: string, requestFingerprint: string, work: () => Promise<T>): Promise<T> {
+    const prior = await tx.inventoryIdempotency.findUnique({ where: { key } });
+    if (prior) {
+      if (prior.operation !== operation || prior.requestFingerprint !== requestFingerprint) throw new AppError("IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used for another operation or payload", 409);
+      return prior.response as T;
+    }
+    const result = await work();
+    await tx.inventoryIdempotency.create({ data: { key, operation, requestFingerprint, response: JSON.parse(JSON.stringify(result)) as Prisma.InputJsonValue } });
+    return result;
+  }
+  private async movement(input: MovementInput, ctx: ExecutionContext, type: "INBOUND"|"OUTBOUND"|"ADJUSTMENT", permission: string, lotInput?: LotInput, operationName: string = type) {
+    required(ctx, permission);
+    await this.validateArticle(input);
+    const amount = parsePositiveInventoryQuantity(input.quantity, input.unit as InventoryUnit);
+    if (!["KG","G","L","M","UNIDAD"].includes(input.unit)) throw new AppError("INVALID_UNIT", "Unit is not supported", 400);
+    return this.uow.execute(async (tx) => this.idempotent(tx, input.idempotencyKey, operationName, inventoryRequestFingerprint({ input, lotInput }), async () => {
+      const warehouse = await tx.warehouse.findUnique({ where: { id: input.warehouseId } });
+      if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found", 404);
+      if (!warehouse.activo) throw new AppError("WAREHOUSE_INACTIVE", "Warehouse is inactive", 409);
+      let inventoryLotId = input.inventoryLotId ?? null;
+      if (lotInput) {
+        if (lotInput.articuloId !== input.articuloId) throw new AppError("LOT_ARTICULO_MISMATCH", "Lot articulo does not match movement articulo", 400);
+        const lot = await tx.inventoryLot.upsert({
+          where: { articuloId_lotCode: { articuloId: lotInput.articuloId, lotCode: lotInput.lotCode } },
+          update: {},
+          create: { articuloId: lotInput.articuloId, lotCode: lotInput.lotCode, classification: lotInput.classification, fechaIngreso: lotInput.fechaIngreso, observations: lotInput.observations ?? null },
+        });
+        inventoryLotId = lot.id;
+      }
+      if (inventoryLotId) {
+        const lot = await tx.inventoryLot.findUnique({ where: { id: inventoryLotId } });
+        if (!lot) throw new AppError("NOT_FOUND", "Inventory lot not found", 404);
+        if (lot.articuloId !== input.articuloId) throw new AppError("LOT_ARTICULO_MISMATCH", "Lot articulo does not match movement articulo", 400);
+      }
+      const existing = await tx.inventoryStock.findFirst({ where: { warehouseId: input.warehouseId, articuloId: input.articuloId, inventoryLotId } });
+      const before = parseInventoryQuantity(existing?.quantity?.toString() ?? "0");
+      const resulting = type === "INBOUND" || (type === "ADJUSTMENT" && (input as AdjustmentInput).direction === "INCREASE") ? before + amount : before - amount;
+      const authorize = input.authorizeNegativeStock === true;
+      if (resulting < 0n && (!authorize || !input.negativeStockReason?.trim())) throw new AppError("NEGATIVE_STOCK_AUTHORIZATION_REQUIRED", "Insufficient stock requires explicit authorization", 409, { available: formatInventoryQuantity(before), requested: formatInventoryQuantity(amount), resulting: formatInventoryQuantity(resulting), articuloId: input.articuloId, warehouseId: input.warehouseId, inventoryLotId: input.inventoryLotId ?? null, requiresNegativeStockAuthorization: true });
+      if (resulting < 0n && !ctx.permissions.includes("inventory:negative_stock_authorize")) throw new AppError("AUTH_FORBIDDEN", "Negative stock authorization permission is required", 403);
+      const row = existing
+        ? await tx.inventoryStock.update({ where: { id: existing.id }, data: { quantity: formatInventoryQuantity(resulting) } })
+        : await tx.inventoryStock.create({ data: { warehouseId: input.warehouseId, articuloId: input.articuloId, inventoryLotId, quantity: formatInventoryQuantity(resulting), unit: input.unit as InventoryUnit } });
+      const movement = await tx.inventoryMovement.create({ data: { type, source: input.source, reason: input.reason ?? null, articuloId: input.articuloId, warehouseId: input.warehouseId, inventoryLotId, quantity: formatInventoryQuantity(amount), unit: input.unit as InventoryUnit, stockBefore: formatInventoryQuantity(before), resultingStock: formatInventoryQuantity(resulting), actorUserId: ctx.actorUserId, negativeStockAuthorized: resulting < 0n, negativeStockAuthorizerUserId: resulting < 0n ? ctx.actorUserId : null, negativeStockReason: resulting < 0n ? (input.negativeStockReason ?? null) : null } });
+      await tx.auditLog.create({ data: { actorUserId: ctx.actorUserId, action: "INVENTORY_MOVEMENT_REGISTERED", resourceType: "InventoryMovement", resourceId: movement.id, requestId: ctx.requestId ?? null, metadata: { type, articuloId: input.articuloId, warehouseId: input.warehouseId, inventoryLotId, stockBefore: formatInventoryQuantity(before), requested: formatInventoryQuantity(amount), resultingStock: formatInventoryQuantity(resulting), negativeStockAuthorized: resulting < 0n, negativeStockReason: input.negativeStockReason ?? null } } });
+      return { movementId: movement.id, articuloId: input.articuloId, inventoryLotId, quantity: formatInventoryQuantity(amount), unit: input.unit, resultingStock: row.quantity.toString(), createdAt: movement.createdAt.toISOString() };
+    }));
+  }
+  registerInbound(input: MovementInput, c: ExecutionContext) { return this.movement(input, c, "INBOUND", "inventory:inbound"); }
+  registerOutbound(input: MovementInput, c: ExecutionContext) { return this.movement(input, c, "OUTBOUND", "inventory:outbound"); }
+  registerAdjustment(input: AdjustmentInput, c: ExecutionContext) { return this.movement(input, c, "ADJUSTMENT", "inventory:adjust"); }
+  registerProductionConsumption(input: MovementInput, c: ExecutionContext) { return this.movement(input, c, "OUTBOUND", "inventory:outbound", undefined, "PRODUCTION_CONSUMPTION"); }
+  async registerTransfer(input: TransferInput, c: ExecutionContext) {
+    required(c, "inventory:transfer"); const amount = parsePositiveInventoryQuantity(input.quantity, input.unit as InventoryUnit);
+    if (input.sourceWarehouseId === input.destinationWarehouseId) throw new AppError("INVALID_TRANSFER", "Source and destination warehouses must differ", 400);
+    await this.validateArticle({ ...input, warehouseId: input.sourceWarehouseId });
+    return this.uow.execute(async (tx) => this.idempotent(tx, input.idempotencyKey, "TRANSFER", inventoryRequestFingerprint(input), async () => {
+      const sourceWarehouse = await tx.warehouse.findUnique({ where: { id: input.sourceWarehouseId } });
+      const destinationWarehouse = await tx.warehouse.findUnique({ where: { id: input.destinationWarehouseId } });
+      if (!sourceWarehouse || !destinationWarehouse) throw new AppError("NOT_FOUND", "Transfer warehouse not found", 404);
+      if (!sourceWarehouse.activo || !destinationWarehouse.activo) throw new AppError("WAREHOUSE_INACTIVE", "Transfer warehouses must be active", 409);
+      if (input.inventoryLotId) {
+        const lot = await tx.inventoryLot.findUnique({ where: { id: input.inventoryLotId } });
+        if (!lot) throw new AppError("NOT_FOUND", "Inventory lot not found", 404);
+        if (lot.articuloId !== input.articuloId) throw new AppError("LOT_ARTICULO_MISMATCH", "Lot articulo does not match movement articulo", 400);
+      }
+      const source = await tx.inventoryStock.findFirst({ where: { warehouseId: input.sourceWarehouseId, articuloId: input.articuloId, inventoryLotId: input.inventoryLotId ?? null } });
+      const before = parseInventoryQuantity(source?.quantity?.toString() ?? "0"), resulting = before - amount;
+      if (resulting < 0n && (!input.authorizeNegativeStock || !input.negativeStockReason?.trim())) throw new AppError("NEGATIVE_STOCK_AUTHORIZATION_REQUIRED", "Insufficient stock requires explicit authorization", 409, { available: formatInventoryQuantity(before), requested: formatInventoryQuantity(amount), resulting: formatInventoryQuantity(resulting), articuloId: input.articuloId, warehouseId: input.sourceWarehouseId, inventoryLotId: input.inventoryLotId ?? null, requiresNegativeStockAuthorization: true });
+      if (resulting < 0n && !c.permissions.includes("inventory:negative_stock_authorize")) throw new AppError("AUTH_FORBIDDEN", "Negative stock authorization permission is required", 403);
+      if (source) {
+        await tx.inventoryStock.update({
+          where: { id: source.id },
+          data: { quantity: formatInventoryQuantity(resulting) },
+        });
+      } else {
+        await tx.inventoryStock.create({
+          data: {
+            warehouseId: input.sourceWarehouseId,
+            articuloId: input.articuloId,
+            inventoryLotId: input.inventoryLotId ?? null,
+            quantity: formatInventoryQuantity(resulting),
+            unit: input.unit as InventoryUnit,
+          },
+        });
+      }
+      const dest = await tx.inventoryStock.findFirst({ where: { warehouseId: input.destinationWarehouseId, articuloId: input.articuloId, inventoryLotId: input.inventoryLotId ?? null } });
+      const destResult = (parseInventoryQuantity(dest?.quantity?.toString() ?? "0") + amount);
+      if (dest) await tx.inventoryStock.update({ where: { id: dest.id }, data: { quantity: formatInventoryQuantity(destResult) } }); else await tx.inventoryStock.create({ data: { warehouseId: input.destinationWarehouseId, articuloId: input.articuloId, inventoryLotId: input.inventoryLotId ?? null, quantity: formatInventoryQuantity(destResult), unit: input.unit as InventoryUnit } });
+      const m = await tx.inventoryMovement.create({ data: { type: "TRANSFER", source: input.source, reason: input.reason ?? null, articuloId: input.articuloId, warehouseId: input.sourceWarehouseId, destinationWarehouseId: input.destinationWarehouseId, inventoryLotId: input.inventoryLotId ?? null, quantity: formatInventoryQuantity(amount), unit: input.unit as InventoryUnit, stockBefore: formatInventoryQuantity(before), resultingStock: formatInventoryQuantity(resulting), actorUserId: c.actorUserId, negativeStockAuthorized: resulting < 0n, negativeStockAuthorizerUserId: resulting < 0n ? c.actorUserId : null, negativeStockReason: resulting < 0n ? (input.negativeStockReason ?? null) : null } });
+      await tx.auditLog.create({ data: { actorUserId: c.actorUserId, action: "INVENTORY_MOVEMENT_REGISTERED", resourceType: "InventoryMovement", resourceId: m.id, requestId: c.requestId ?? null, metadata: { type: "TRANSFER", articuloId: input.articuloId, warehouseId: input.sourceWarehouseId, destinationWarehouseId: input.destinationWarehouseId, inventoryLotId: input.inventoryLotId ?? null, stockBefore: formatInventoryQuantity(before), requested: formatInventoryQuantity(amount), resultingStock: formatInventoryQuantity(resulting), destinationResultingStock: formatInventoryQuantity(destResult), negativeStockAuthorized: resulting < 0n } } });
+      return { movementId: m.id, articuloId: input.articuloId, inventoryLotId: input.inventoryLotId ?? null, quantity: formatInventoryQuantity(amount), unit: input.unit, resultingStock: formatInventoryQuantity(resulting), destinationResultingStock: formatInventoryQuantity(destResult), createdAt: m.createdAt.toISOString() };
+    }));
+  }
+  async registerProductionOutput(input: MovementInput & { lot?: LotInput }, c: ExecutionContext) {
+    if (!input.lot) throw new AppError("LOT_REQUIRED", "Production output requires a lot", 400);
+    if (input.lot.classification !== "PRODUCTO_ENVASADO") throw new AppError("INVALID_LOT_CLASSIFICATION", "Production output lots must start as PRODUCTO_ENVASADO", 400);
+    await this.validateArticle(input);
+    return this.movement({ ...input, source: input.source || "PRODUCTION_OUTPUT" }, c, "INBOUND", "inventory:inbound", input.lot, "PRODUCTION_OUTPUT");
+  }
+  async transitionInventoryLotClassification(input: { inventoryLotId: string; classification: InventoryLotClassification; idempotencyKey: string }, c: ExecutionContext) {
+    required(c, "inventory:lot_classify");
+    return this.uow.execute(async (tx) => this.idempotent(tx, input.idempotencyKey, "LOT_CLASSIFY", inventoryRequestFingerprint(input), async () => {
+      const lot = await tx.inventoryLot.findUnique({ where: { id: input.inventoryLotId } }); if (!lot) throw new AppError("NOT_FOUND", "Lot not found", 404);
+      const allowed = (lot.classification === "PRODUCTO_ENVASADO" && input.classification === "PRODUCTO_TERMINADO") || (lot.classification === "PRODUCTO_TERMINADO" && input.classification === "PRODUCTO_TERMINADO_EXPORTACION");
+      if (!allowed) throw new AppError("INVALID_CLASSIFICATION_TRANSITION", "Classification transition is not allowed", 400);
+      const updated = await tx.inventoryLot.update({ where: { id: lot.id }, data: { classification: input.classification } });
+      await tx.auditLog.create({ data: { actorUserId: c.actorUserId, action: "INVENTORY_LOT_CLASSIFIED", resourceType: "InventoryLot", resourceId: lot.id, metadata: { previousClassification: lot.classification, classification: input.classification } } });
+      return { inventoryLotId: lot.id, previousClassification: lot.classification, classification: updated.classification, updatedAt: updated.updatedAt.toISOString() };
+    }));
+  }
+  getWarehouse(i: { warehouseId: string }) { return this.prisma.warehouse.findUniqueOrThrow({ where: { id: i.warehouseId } }); }
+  listWarehouses(i: { page?: number; pageSize?: number } = {}) { const page = i.page ?? 1, pageSize = i.pageSize ?? 20; return this.prisma.warehouse.findMany({ skip: (page - 1) * pageSize, take: pageSize, orderBy: { codigo: "asc" } }); }
+  getInventoryLot(i: { inventoryLotId: string }) { return this.prisma.inventoryLot.findUniqueOrThrow({ where: { id: i.inventoryLotId } }); }
+  async getStock(i: { warehouseId: string; articuloId: string; inventoryLotId?: string }) {
+    const row = await this.prisma.inventoryStock.findFirst({
+      where: {
+        warehouseId: i.warehouseId,
+        articuloId: i.articuloId,
+        inventoryLotId: i.inventoryLotId ?? null,
+      },
+    });
+    const quantity = formatInventoryQuantity(
+      parseInventoryQuantity(row?.quantity.toString() ?? "0"),
+    );
+    return {
+      warehouseId: i.warehouseId,
+      articuloId: i.articuloId,
+      inventoryLotId: i.inventoryLotId ?? null,
+      quantity,
+      unit: (row?.unit ?? "UNIDAD") as InventoryUnit,
+      hasNegativeStock: quantity.startsWith("-"),
+    };
+  }
+  async getAvailableQuantity(i: { warehouseId: string; articuloId: string; inventoryLotId?: string }) { const stock = await this.getStock(i); return { quantity: stock.quantity, unit: stock.unit, hasNegativeStock: stock.hasNegativeStock, warehouseId: stock.warehouseId, articuloId: stock.articuloId, inventoryLotId: stock.inventoryLotId }; }
+  async createWarehouse(input: WarehouseInput, c: ExecutionContext): Promise<unknown> { required(c, "inventory:warehouse_create"); return this.uow.execute(async (tx) => { const warehouse = await tx.warehouse.create({ data: { ...input, codigo: input.codigo.trim(), nombre: input.nombre.trim() } }); await tx.auditLog.create({ data: { actorUserId: c.actorUserId, action: "INVENTORY_WAREHOUSE_CREATED", resourceType: "Warehouse", resourceId: warehouse.id } }); return warehouse; }); }
+  async updateWarehouse(id: string, input: WarehouseInput, c: ExecutionContext): Promise<unknown> { required(c, "inventory:warehouse_update"); const { codigo: _code, ...data } = input; return this.uow.execute(async (tx) => { const warehouse = await tx.warehouse.update({ where: { id }, data: { ...data, nombre: data.nombre.trim() } }); await tx.auditLog.create({ data: { actorUserId: c.actorUserId, action: "INVENTORY_WAREHOUSE_UPDATED", resourceType: "Warehouse", resourceId: id } }); return warehouse; }); }
+  async setWarehouseActive(id: string, active: boolean, c: ExecutionContext): Promise<unknown> { required(c, active ? "inventory:warehouse_activate" : "inventory:warehouse_deactivate"); return this.uow.execute(async (tx) => { if (!active) { const stocks = await tx.inventoryStock.findMany({ where: { warehouseId: id } }); if (stocks.some((s) => s.quantity.toString() !== "0.000")) throw new AppError("WAREHOUSE_HAS_STOCK", "Warehouse with stock cannot be deactivated", 409); } const warehouse = await tx.warehouse.update({ where: { id }, data: { activo: active } }); await tx.auditLog.create({ data: { actorUserId: c.actorUserId, action: active ? "INVENTORY_WAREHOUSE_ACTIVATED" : "INVENTORY_WAREHOUSE_DEACTIVATED", resourceType: "Warehouse", resourceId: id } }); return warehouse; }); }
+}

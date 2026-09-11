@@ -129,6 +129,89 @@ model Purchase {
   @@map("purchases")
 }
 
+model Warehouse {
+  id              String   @id @default(uuid()) @db.Uuid
+  codigo          String
+  nombre          String
+  ubicacion       String?
+  encargadoUserId String?  @map("encargado_user_id") @db.Uuid
+  activo          Boolean  @default(true)
+  observaciones   String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  stocks          InventoryStock[]
+  movements       InventoryMovement[]
+  @@index([codigo])
+  @@map("warehouses")
+}
+
+model InventoryLot {
+  id                    String @id @default(uuid()) @db.Uuid
+  lotCode               String @map("lot_code")
+  articuloId            String @map("articulo_id") @db.Uuid
+  originProductionBatchId String? @map("origin_production_batch_id")
+  classification        InventoryLotClassification
+  fechaIngreso          DateTime @map("fecha_ingreso")
+  observations          String?
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  stocks                InventoryStock[]
+  movements             InventoryMovement[]
+  @@unique([articuloId, lotCode])
+  @@map("inventory_lots")
+}
+
+model InventoryStock {
+  id              String @id @default(uuid()) @db.Uuid
+  warehouseId     String @map("warehouse_id") @db.Uuid
+  articuloId      String @map("articulo_id") @db.Uuid
+  inventoryLotId  String? @map("inventory_lot_id") @db.Uuid
+  quantity        Decimal @db.Decimal(18,3)
+  unit            ArticuloUnit
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  warehouse       Warehouse @relation(fields: [warehouseId], references: [id])
+  lot             InventoryLot? @relation(fields: [inventoryLotId], references: [id])
+  @@unique([warehouseId, articuloId, inventoryLotId])
+  @@map("inventory_stocks")
+}
+
+model InventoryMovement {
+  id                    String @id @default(uuid()) @db.Uuid
+  type                  InventoryMovementType
+  source                String
+  reason                String?
+  articuloId            String @map("articulo_id") @db.Uuid
+  warehouseId           String @map("warehouse_id") @db.Uuid
+  destinationWarehouseId String? @map("destination_warehouse_id") @db.Uuid
+  inventoryLotId        String? @map("inventory_lot_id") @db.Uuid
+  quantity              Decimal @db.Decimal(18,3)
+  unit                  ArticuloUnit
+  stockBefore           Decimal @map("stock_before") @db.Decimal(18,3)
+  resultingStock        Decimal @map("resulting_stock") @db.Decimal(18,3)
+  actorUserId           String? @map("actor_user_id") @db.Uuid
+  negativeStockAuthorized Boolean @default(false) @map("negative_stock_authorized")
+  negativeStockAuthorizerUserId String? @map("negative_stock_authorizer_user_id") @db.Uuid
+  negativeStockReason   String? @map("negative_stock_reason")
+  createdAt             DateTime @default(now()) @map("created_at")
+  warehouse             Warehouse @relation(fields: [warehouseId], references: [id])
+  lot                   InventoryLot? @relation(fields: [inventoryLotId], references: [id])
+  @@index([articuloId, warehouseId, inventoryLotId, createdAt])
+  @@map("inventory_movements")
+}
+
+model InventoryIdempotency {
+  id             String @id @default(uuid()) @db.Uuid
+  key            String
+  operation      String
+  requestFingerprint String @map("request_fingerprint")
+  response       Json
+  createdAt      DateTime @default(now()) @map("created_at")
+  @@unique([key, operation])
+  @@unique([key])
+  @@map("inventory_idempotency")
+}
+
 enum UserStatus {
   PENDING
   ACTIVE
@@ -151,4 +234,17 @@ enum ArticuloUnit {
   L
   M
   UNIDAD
+}
+
+enum InventoryMovementType {
+  INBOUND
+  OUTBOUND
+  TRANSFER
+  ADJUSTMENT
+}
+
+enum InventoryLotClassification {
+  PRODUCTO_ENVASADO
+  PRODUCTO_TERMINADO
+  PRODUCTO_TERMINADO_EXPORTACION
 }
