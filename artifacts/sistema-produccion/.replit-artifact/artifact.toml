@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Sistema de Producción Industrial"
+description = "Aplicación web para gestionar órdenes de producción, etapas de fabricación, materiales, inventario y rendimiento operativo en una planta manufacturera."
+version = "1.0.0"
+id = "artifacts/sistema-produccion"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19098
+
+[services.development]
+run = "pnpm --filter @workspace/sistema-produccion run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sistema-produccion", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/sistema-produccion/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19098"
+BASE_PATH = "/"
