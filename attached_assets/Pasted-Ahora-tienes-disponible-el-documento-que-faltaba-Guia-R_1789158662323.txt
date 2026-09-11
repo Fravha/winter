@@ -1,0 +1,85 @@
+Ahora tienes disponible el documento que faltaba:
+
+Guia_Reunion_Gerencia_Proyecto_Winter.md
+
+Antes de escribir código:
+
+Léelo completamente.
+Compáralo con los documentos ya revisados:
+ARCHITECTURE.md
+MODULE_CONTRACT.md
+API_CONTRACTS.md
+WORKFLOWS.md
+MODULE_MAP.md
+AGGREGATES_AND_ENTITIES.md
+DOMAIN_MODEL.md
+AI_IMPLEMENTATION_RULES.md
+decisión aprobada de estados y transiciones.
+Determina si la guía de gerencia resuelve, modifica o contradice alguno de los vacíos detectados en tu informe técnico previo.
+Si existe contradicción entre documentos, no la resuelvas arbitrariamente. Indícala antes de implementar.
+
+Una vez completada esta validación, comienza la implementación de Winter.
+
+Primera etapa autorizada
+
+Implementar primero el módulo:
+
+Articulos
+
+Siguiendo estrictamente la arquitectura y contratos documentados.
+
+Debes respetar especialmente:
+
+Winter extiende el monolito modular existente de Logger.
+No modificar Core/Auth/RBAC salvo que sea estrictamente necesario y esté respaldado por la arquitectura.
+No crear infraestructura paralela de Prisma, Firebase, auditoría o autenticación.
+Las reglas de negocio pertenecen a services.
+Los controllers/routes solo traducen HTTP.
+El módulo debe exponer su contrato mediante su API pública.
+No acceder directamente a repositories o tablas de otros módulos.
+Integrar el módulo mediante el mecanismo DocType Registry definido por Logger.
+No montar manualmente rutas si la arquitectura indica que deben registrarse automáticamente.
+Mantener el formato estándar de respuestas y errores.
+Mantener permisos con la convención <module>:<action>.
+No inventar campos, estados, workflows ni reglas de negocio no documentadas.
+Forma de trabajo
+
+No implementes varios módulos simultáneamente.
+
+Trabaja en este orden:
+
+Articulos.
+Validación técnica del módulo.
+Inventory.
+Compras.
+Production por etapas.
+
+Para Articulos:
+
+Revisa primero el código existente relacionado con products, porque puede servir como referencia técnica, pero no asumas que representa el modelo definitivo de Winter.
+Define qué archivos existentes deben reutilizarse, modificarse o reemplazarse.
+Implementa el esquema de datos únicamente con los campos respaldados por la documentación.
+Implementa repository, service, API pública, controller/routes y registro del módulo según la arquitectura existente.
+Implementa permisos y auditoría siguiendo Logger.
+Agrega o actualiza los seeds necesarios.
+Ejecuta:
+generación de Prisma,
+migraciones necesarias,
+typecheck,
+pruebas disponibles.
+Corrige cualquier error provocado por la implementación.
+
+Al finalizar esta etapa, entrega un informe indicando:
+
+archivos creados;
+archivos modificados;
+modelo Prisma implementado;
+endpoints/comandos implementados;
+permisos creados;
+reglas de negocio aplicadas;
+pruebas ejecutadas;
+resultados;
+decisiones técnicas tomadas;
+cualquier ambigüedad documental encontrada.
+
+No avances a Inventory hasta que Articulos quede técnicamente funcional.
