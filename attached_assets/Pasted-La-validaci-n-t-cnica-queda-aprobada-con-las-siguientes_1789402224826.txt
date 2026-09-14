@@ -1,0 +1,231 @@
+La validación técnica queda aprobada con las siguientes decisiones definitivas.
+
+## 1. Recepción atómica de múltiples artículos
+
+Se aprueba extender la API pública intermodular de Inventory para soportar múltiples entradas dentro de una única operación atómica.
+
+No se utilizarán llamadas independientes a `registerInbound()` para recibir una compra de múltiples ítems.
+
+La operación batch debe garantizar que:
+
+* todos los ingresos sean confirmados; o
+* ninguno sea persistido.
+
+Conceptualmente podrá existir una operación como:
+
+`InventoryApi.registerInbounds(...)`
+
+El nombre y DTO técnico definitivo pueden ajustarse a las convenciones actuales del proyecto.
+
+Esta API sigue perteneciendo a Inventory. Compras no accederá a repositories, modelos Prisma ni tablas internas de Inventory.
+
+---
+
+## 2. Unit of Work compartido
+
+Se aprueba incorporar un mecanismo de Unit of Work compartido en la infraestructura/Core del proyecto.
+
+Debe permitir que el workflow completo de recepción participe en una única transacción Prisma `Serializable`.
+
+El workflow debe coordinar atómicamente:
+
+* Purchase;
+* PurchaseItem;
+* InventoryMovement;
+* InventoryStock;
+* idempotencia;
+* auditoría de Inventory;
+* auditoría de Compras;
+* transición `REGISTERED → RECEIVED`.
+
+El contexto transaccional será exclusivamente interno.
+
+No debe exponerse por HTTP ni permitirse que el cliente proporcione o controle una transacción.
+
+---
+
+## 3. Flujo definitivo de recepción
+
+El workflow será:
+
+1. Solicitar recepción de una Purchase.
+2. Verificar permiso `compras:receive`.
+3. Abrir el Unit of Work `Serializable`.
+4. Obtener nuevamente la Purchase.
+5. Confirmar que continúa en estado `REGISTERED`.
+6. Validar almacén.
+7. Validar artículos, unidades, cantidades y lotes aplicables.
+8. Construir todos los ingresos.
+9. Ejecutar el ingreso batch mediante la API pública de Inventory dentro del mismo Unit of Work.
+10. Registrar idempotencia y movimientos.
+11. Cambiar Purchase a `RECEIVED`.
+12. Auditar la recepción de Compras.
+13. Confirmar la transacción.
+
+Ante cualquier error se revierte la operación completa.
+
+No deben utilizarse movimientos compensatorios para resolver fallos intermedios.
+
+---
+
+## 4. Reintentos
+
+Los conflictos serializables, incluyendo `P2034`, deben provocar el reintento del workflow completo.
+
+No debe reintentarse únicamente un `PurchaseItem` de forma independiente.
+
+El reintento debe volver a comprobar el estado actual de Purchase.
+
+---
+
+## 5. Idempotencia
+
+Se mantiene la regla aprobada:
+
+`purchase-receive:{purchaseId}:{purchaseItemId}`
+
+Las claves:
+
+* son generadas exclusivamente por backend;
+* son deterministas;
+* permanecen iguales durante reintentos;
+* no son proporcionadas libremente por frontend.
+
+Inventory continúa siendo responsable de aplicar su mecanismo de idempotencia.
+
+---
+
+## 6. Lotes para el MVP
+
+Compras no administrará ni creará directamente lotes.
+
+Para esta primera versión:
+
+* puede proporcionarse un `inventoryLotId` existente cuando sea necesario;
+* puede omitirse el lote cuando las reglas de Inventory permitan una entrada sin lote.
+
+No se implementará todavía creación automática de lotes de proveedor mediante Compras.
+
+Si en una siguiente etapa se requiere registrar `lotCode` u otros datos proporcionados por proveedor, se extenderá primero la API pública de Inventory.
+
+Compras nunca accederá directamente a `InventoryLot`.
+
+---
+
+## 7. Permisos
+
+Se aprueba la siguiente regla:
+
+`compras:receive` autoriza al usuario a ejecutar el workflow completo de recepción de una compra.
+
+La llamada Compras → Inventory es una llamada intermodular confiable.
+
+Por tanto, el usuario no necesita poseer adicionalmente `inventory:inbound` para recibir una compra.
+
+`inventory:inbound` continuará aplicándose cuando un usuario realice directamente una operación manual de ingreso mediante el módulo Inventory.
+
+No otorgar permisos implícitos al usuario; la diferencia debe resolverse mediante el contexto interno del workflow intermodular.
+
+---
+
+## 8. Resultado de Inventory
+
+La API pública de Inventory no debe devolver `Promise<unknown>` para este workflow.
+
+Debe existir un resultado tipado.
+
+Como mínimo debe permitir identificar:
+
+* `movementId`;
+* `articuloId`;
+* `inventoryLotId`, cuando exista;
+* `quantity`;
+* `unit`;
+* `resultingStock`;
+* `createdAt`.
+
+El nombre concreto del tipo puede seguir las convenciones actuales del módulo Inventory.
+
+---
+
+## 9. Referencias entre Compras e Inventory
+
+Compras podrá conservar las referencias necesarias a los movimientos creados durante la recepción para trazabilidad.
+
+Esto no convierte a Compras en propietaria del movimiento.
+
+`InventoryMovement` continúa perteneciendo exclusivamente a Inventory.
+
+No duplicar información operativa de Inventory dentro de Purchase salvo identificadores de referencia necesarios para trazabilidad.
+
+---
+
+## 10. Validación de Artículos
+
+Compras continuará utilizando exclusivamente `ArticulosApi`.
+
+No crear accesos directos a tablas o repositories de Artículos.
+
+Antes de efectuar cambios de stock deben quedar validados:
+
+* existencia;
+* estado activo;
+* unidad base;
+* reglas de cantidad aplicables.
+
+No modificar el módulo Artículos para introducir mecanismos adicionales de concurrencia salvo que durante la implementación se identifique una necesidad concreta no cubierta por el Unit of Work aprobado.
+
+---
+
+## 11. Alcance de los cambios en Inventory
+
+Está autorizado modificar Inventory únicamente en lo necesario para soportar correctamente este contrato:
+
+* operación batch atómica;
+* participación en Unit of Work compartido;
+* resultado tipado;
+* contexto de llamada intermodular confiable.
+
+No modificar las reglas funcionales existentes de Inventory.
+
+Mantener:
+
+* `InventoryMovement` como historial;
+* `InventoryStock` como saldo materializado;
+* validaciones existentes;
+* `DECIMAL(18,3)`;
+* reglas de `UNIDAD`;
+* idempotencia;
+* auditoría;
+* ownership de lotes.
+
+---
+
+## 12. Siguiente paso
+
+Con estas decisiones se considera cerrada la revisión contractual previa.
+
+Todavía no implementar Compras.
+
+Primero genera o actualiza el documento:
+
+`DECISION_COMPRAS.md`
+
+incorporando:
+
+* las decisiones funcionales aprobadas anteriormente;
+* estas decisiones técnicas;
+* estados;
+* invariantes;
+* recepción total;
+* almacén único por recepción;
+* política de cancelación;
+* datos referenciales;
+* permisos;
+* idempotencia;
+* atomicidad;
+* integración con Artículos;
+* integración con Inventory;
+* alcance de lotes para el MVP.
+
+Devuelve el contenido de `DECISION_COMPRAS.md` para revisión antes de comenzar la implementación.
