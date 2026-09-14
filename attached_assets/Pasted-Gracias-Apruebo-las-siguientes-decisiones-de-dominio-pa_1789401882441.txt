@@ -1,0 +1,203 @@
+Gracias. Apruebo las siguientes decisiones de dominio para el módulo `compras`:
+
+1. **Recepción**
+
+   * En el MVP solo se permitirá recepción total.
+   * No se implementarán recepciones parciales.
+   * Una compra pasa de `REGISTERED` a `RECEIVED` únicamente cuando todos sus ítems hayan sido ingresados correctamente a Inventory.
+   * Si falla el ingreso de cualquier ítem, la compra debe permanecer en `REGISTERED` y no debe quedar ningún ingreso parcial persistido.
+
+2. **Estados**
+
+   * Estados permitidos:
+
+     * `REGISTERED`
+     * `RECEIVED`
+     * `CANCELLED`
+   * Transiciones permitidas:
+
+     * `REGISTERED → RECEIVED`
+     * `REGISTERED → CANCELLED`
+   * `RECEIVED` y `CANCELLED` son estados finales.
+   * Una compra `RECEIVED` no puede cancelarse.
+   * No se implementarán reversiones en esta etapa.
+
+3. **Cancelación**
+
+   * Solo una compra en estado `REGISTERED` puede cancelarse.
+   * La cancelación no genera movimientos compensatorios en Inventory porque una compra recibida no puede ser cancelada.
+   * Debe registrarse auditoría de la cancelación.
+   * El motivo de cancelación será opcional en esta primera versión, pero podrá almacenarse si se define un campo de observación o metadata.
+
+4. **Artículos**
+
+   * Todos los ítems deben utilizar artículos existentes y activos.
+   * La validación debe hacerse exclusivamente mediante `ArticulosApi`.
+   * No se permite acceso directo a tablas o repositories de Artículos.
+   * La unidad utilizada será obligatoriamente la unidad base definida en Artículos.
+   * No se implementarán conversiones de unidad.
+
+5. **Cantidad**
+
+   * `cantidadSolicitada` debe ser mayor a cero.
+   * Si la unidad base es `UNIDAD`, la cantidad debe ser entera.
+   * No se almacenará `cantidadRecibida` en el MVP porque solo existe recepción total.
+
+6. **Artículos repetidos**
+
+   * Un mismo artículo no puede repetirse dentro de una misma compra.
+   * Debe existir unicidad lógica por `purchaseId + articuloId`.
+
+7. **Almacén**
+
+   * El almacén no pertenece al registro administrativo de Purchase.
+   * El almacén se seleccionará al momento de ejecutar la recepción.
+   * En el MVP toda la compra será recibida en un único almacén.
+   * No se permitirá dividir una compra entre varios almacenes en una misma recepción.
+
+8. **Lotes**
+
+   * Compras no administrará directamente `InventoryLot`.
+   * Compras únicamente enviará a `InventoryApi.registerInbound()` la información de lote que el contrato público de Inventory permita o requiera.
+   * La creación, reutilización o validación de lotes pertenece exclusivamente a Inventory.
+   * No se implementará lógica propia de lotes dentro de Compras.
+
+9. **Datos referenciales**
+   Se permite registrar:
+
+   * proveedor;
+   * NIT o identificador del proveedor;
+   * marca;
+   * precio unitario;
+   * moneda;
+   * número o referencia del documento;
+   * fecha del documento;
+   * observaciones.
+
+   Estos campos son únicamente administrativos, históricos y analíticos.
+
+   No afectan:
+
+   * stock;
+   * cantidades disponibles;
+   * clasificación del artículo;
+   * unidad base;
+   * costos contables;
+   * producción.
+
+10. **Proveedor y marca**
+
+    * No crear maestros `Supplier` ni `Brand` en esta etapa.
+    * Proveedor se almacenará como dato referencial de Purchase.
+    * Marca se almacenará como dato referencial de PurchaseItem.
+
+11. **Precio**
+
+    * `precioUnitario` debe utilizar decimal, nunca floating point.
+    * Es un precio referencial.
+    * No representa costo contable oficial.
+    * No implementar cálculos contables adicionales.
+
+12. **Moneda**
+
+    * La moneda será un código textual simple, por ejemplo `BOB` o `USD`.
+    * No crear un maestro de monedas en esta etapa.
+    * No realizar conversiones de moneda.
+
+13. **Edición**
+
+    * Una compra puede modificarse únicamente mientras esté en estado `REGISTERED`.
+    * Una compra `RECEIVED` o `CANCELLED` no puede modificarse funcionalmente.
+    * No se permite DELETE físico.
+
+14. **Inventory**
+
+    * La recepción debe realizarse exclusivamente mediante `InventoryApi.registerInbound()`.
+    * Compras no puede modificar directamente:
+
+      * `InventoryStock`
+      * `InventoryMovement`
+      * `InventoryLot`
+      * repositories internos
+      * tablas Prisma de Inventory.
+
+15. **Idempotencia**
+
+    * Cada ingreso debe tener una clave determinista y estable.
+    * Propuesta aprobada:
+      `purchase-receive:{purchaseId}:{purchaseItemId}`
+    * Un reintento de la misma recepción debe reutilizar exactamente la misma clave.
+    * No utilizar UUID aleatorio, timestamp ni valores regenerados para el mismo ingreso lógico.
+
+16. **Auditoría**
+    Deben auditarse:
+
+    * creación;
+    * modificación;
+    * recepción;
+    * cancelación.
+
+    El actor debe obtenerse exclusivamente del contexto autenticado.
+    No aceptar `performedByUserId` enviado por el cliente.
+
+17. **Permisos**
+    Definir permisos independientes para el nuevo módulo `compras`, como mínimo:
+
+    * `compras:read`
+    * `compras:create`
+    * `compras:update`
+    * `compras:receive`
+    * `compras:cancel`
+
+    No crear `compras:delete`.
+
+18. **Entidad conceptual inicial**
+
+    `Purchase`:
+
+    * id
+    * supplierName
+    * supplierTaxId opcional
+    * documentNumber opcional
+    * documentDate opcional
+    * currency opcional
+    * observations opcional
+    * status
+    * createdByUserId
+    * createdAt
+    * updatedAt
+
+    `PurchaseItem`:
+
+    * id
+    * purchaseId
+    * articuloId
+    * brand opcional
+    * requestedQuantity
+    * unit
+    * unitPrice opcional
+    * createdAt
+    * updatedAt
+
+Antes de implementar, necesito que realices únicamente una última validación técnica:
+
+1. Revisar el contrato actual exacto de `InventoryApi.registerInbound()` y confirmar si estas decisiones pueden representarse con dicho contrato sin acceder a internals de Inventory.
+2. Revisar el Unit of Work actual y explicar cómo garantizarías la atomicidad entre:
+
+   * Purchase;
+   * PurchaseItem;
+   * llamadas a Inventory;
+   * idempotencia;
+   * auditoría.
+3. Confirmar si existe algún conflicto técnico con las decisiones anteriores.
+
+No implementar código todavía.
+
+Devuelve únicamente:
+
+* compatibilidad con `registerInbound()`;
+* estrategia de atomicidad;
+* conflictos técnicos encontrados;
+* ajustes mínimos necesarios, si existen.
+
+Después de esa validación se generará `DECISION_COMPRAS.md` y se autorizará la implementación.
