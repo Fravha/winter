@@ -4,7 +4,7 @@ import { prisma } from "./infrastructure/database/prisma-client.js";
 import { logger } from "./infrastructure/logging/logger.js";
 
 const server = app.listen(env.PORT, () => {
-  logger.info({ port: env.PORT }, "Logger API started");
+  logger.info({ port: env.PORT }, "CDZ Logger - Production | server started");
 });
 
 let shuttingDown = false;

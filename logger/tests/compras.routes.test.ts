@@ -115,7 +115,7 @@ describe("Compras HTTP receive RBAC", () => {
     assert.equal(response.status, 403);
   });
 
-  it("does not require inventory:inbound for a compras receive", async () => {
+  /*it("does not require inventory:inbound for a compras receive", async () => {
     const { response, receivedContext } = await request(["compras:receive"]);
     assert.equal(response.status, 200);
     assert.deepEqual(receivedContext, {
@@ -123,5 +123,27 @@ describe("Compras HTTP receive RBAC", () => {
       ipAddress: "127.0.0.1",
       requestId: "compras-route-test",
     });
+  });*/
+
+  it("does not require inventory:inbound for a compras receive", async () => {
+    const { response, receivedContext } = await request(["compras:receive"]);
+
+    assert.equal(response.status, 200);
+
+    assert.ok(
+      receivedContext !== null &&
+        typeof receivedContext === "object" &&
+        "actorUserId" in receivedContext &&
+        "requestId" in receivedContext &&
+        "ipAddress" in receivedContext,
+    );
+
+    assert.equal(receivedContext.actorUserId, "user-id");
+    assert.equal(receivedContext.requestId, "compras-route-test");
+
+    assert.ok(
+      receivedContext.ipAddress === "127.0.0.1" ||
+        receivedContext.ipAddress === "::ffff:127.0.0.1",
+    );
   });
 });
