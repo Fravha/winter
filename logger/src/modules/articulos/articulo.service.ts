@@ -4,6 +4,8 @@ import type { CreateArticuloDto, UpdateArticuloDto } from "./articulo.dto.js";
 import type { ArticuloRepository } from "./articulo.repository.js";
 import type { ArticuloUnitOfWork } from "./articulo.unit-of-work.js";
 import type { ArticulosApi } from "./articulos.api.js";
+import type { SharedTransactionContext } from "../../core/database/shared-unit-of-work.js";
+import { PrismaArticuloRepository } from "./prisma-articulo.repository.js";
 import {
   createArticuloSchema,
   updateArticuloSchema,
@@ -74,6 +76,28 @@ export class ArticuloService implements ArticulosApi {
     }
 
     return { valid: true, articulo };
+  }
+
+  async validateArticuloInTransaction(
+    input: {
+      articuloId: string;
+      allowedClassifications?: readonly ArticuloClassification[];
+    },
+    transaction: SharedTransactionContext,
+  ) {
+    const repository = new PrismaArticuloRepository(transaction);
+    const articulo = await repository.findById(input.articuloId);
+    if (
+      !articulo
+      || !articulo.activo
+      || (
+        input.allowedClassifications !== undefined
+        && !input.allowedClassifications.includes(articulo.clasificacion)
+      )
+    ) {
+      return { valid: false } as const;
+    }
+    return { valid: true, articulo } as const;
   }
 
   createArticulo(

@@ -301,16 +301,21 @@ El resultado de cada ingreso debe incluir como mínimo:
 - `createdAt`.
 
 Compras puede conservar los identificadores de movimientos necesarios para
-trazabilidad. Esto no transfiere ownership: InventoryMovement continúa
-perteneciendo exclusivamente a Inventory.
+trazabilidad mediante registros normalizados explícitos que relacionen
+Purchase, PurchaseItem e InventoryMovement. Estos registros solo contienen
+identificadores y datos técnicos de relación; no copian datos operativos del
+movimiento (cantidad, unidad, saldos, almacén, lote ni actor). Esto no
+transfiere ownership: InventoryMovement continúa perteneciendo exclusivamente
+a Inventory.
 
 No debe duplicarse en Purchase información operativa que ya pertenece a
 Inventory, salvo identificadores de referencia necesarios.
 
 ## 13. Unit of Work compartido
 
-Debe incorporarse un mecanismo de Unit of Work compartido en Core o
-infraestructura.
+Debe incorporarse un mecanismo de Unit of Work compartido y reutilizable en
+Core o infraestructura. No es una abstracción específica de Compras ni debe
+contener reglas, nombres o dependencias del dominio de compras.
 
 El workflow completo de recepción debe participar en una única transacción
 Prisma con aislamiento `Serializable`.
@@ -404,8 +409,9 @@ La cancelación:
 - no modifica Inventory;
 - debe quedar auditada.
 
-El motivo de cancelación es opcional en el MVP. Puede conservarse en
-observaciones o metadata de auditoría.
+El motivo de cancelación es opcional en el MVP. Si se proporciona, se conserva
+únicamente en la metadata de auditoría de la cancelación. No se copia en
+`observations` ni existe un campo de motivo de cancelación en Purchase.
 
 Una Purchase `RECEIVED` no puede cancelarse.
 

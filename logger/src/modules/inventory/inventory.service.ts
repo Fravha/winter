@@ -1,11 +1,13 @@
 import { AppError } from "../../shared/errors/app-error.js";
 import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
 import type { InventoryApi } from "./inventory.api.js";
-import type { AdjustmentInput, LotInput, MovementInput, TransferInput, WarehouseInput } from "./inventory.dto.js";
-import type { ExecutionContext, InventoryLotClassification, InventoryUnit } from "./inventory.model.js";
+import type { AdjustmentInput, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput } from "./inventory.dto.js";
+import { isTrustedIntermoduleContext } from "./inventory.model.js";
+import type { ExecutionContext, InventoryLotClassification, InventoryUnit, TrustedIntermoduleContext } from "./inventory.model.js";
 import { InventoryUnitOfWork } from "./inventory.unit-of-work.js";
 import type { ArticulosApi } from "../articulos/articulos.api.js";
 import { createHash } from "node:crypto";
+import type { SharedTransactionContext } from "../../core/database/shared-unit-of-work.js";
 
 export const parseInventoryQuantity = (value: string | number): bigint => {
   const text = String(value).trim();
@@ -42,11 +44,182 @@ export const inventoryRequestFingerprint = (value: unknown): string =>
 export class InventoryService implements InventoryApi {
   private readonly uow: InventoryUnitOfWork;
   constructor(private readonly prisma: PrismaClient, private readonly articulos?: ArticulosApi) { this.uow = new InventoryUnitOfWork(prisma); }
-  private async validateArticle(input: MovementInput): Promise<void> {
+  private async validateArticle(
+    input: MovementInput,
+    transaction?: SharedTransactionContext,
+  ): Promise<void> {
     if (!this.articulos) throw new AppError("DEPENDENCY_UNAVAILABLE", "Articulos dependency is required", 500);
-    const result = await this.articulos.validateArticulo({ articuloId: input.articuloId });
+    const result = transaction
+      ? await this.articulos.validateArticuloInTransaction(
+        { articuloId: input.articuloId },
+        transaction,
+      )
+      : await this.articulos.validateArticulo({ articuloId: input.articuloId });
     if (!result.valid || !result.articulo) throw new AppError("ARTICULO_INVALID", "Articulo does not exist or is inactive", 400);
     if (result.articulo.unidadMedida !== input.unit) throw new AppError("UNIT_MISMATCH", "Quantity must use the Articulo base unit", 400, { expected: result.articulo.unidadMedida, received: input.unit });
+  }
+  async registerInbounds(
+    input: RegisterInboundInput,
+    context: TrustedIntermoduleContext,
+    transaction: SharedTransactionContext,
+  ): Promise<readonly RegisterInboundResult[]> {
+    if (!isTrustedIntermoduleContext(context)) {
+      throw new AppError("AUTH_FORBIDDEN", "Inventory inbound context is not trusted", 403);
+    }
+    if (input.entries.length === 0) {
+      throw new AppError("VALIDATION_ERROR", "At least one inbound entry is required", 400);
+    }
+
+    const articleIds = new Set<string>();
+    const idempotencyKeys = new Set<string>();
+    for (const entry of input.entries) {
+      if (articleIds.has(entry.articuloId)) {
+        throw new AppError("DUPLICATE_ARTICULO", "An articulo cannot be repeated in an inbound batch", 400);
+      }
+      articleIds.add(entry.articuloId);
+      if (idempotencyKeys.has(entry.idempotencyKey)) {
+        throw new AppError("IDEMPOTENCY_CONFLICT", "Inbound idempotency keys must be unique", 409);
+      }
+      idempotencyKeys.add(entry.idempotencyKey);
+      parsePositiveInventoryQuantity(entry.quantity, entry.unit);
+      if (!entry.idempotencyKey.trim()) {
+        throw new AppError("VALIDATION_ERROR", "Inbound idempotency keys are required", 400);
+      }
+    }
+
+    const warehouse = await transaction.warehouse.findUnique({
+      where: { id: input.warehouseId },
+    });
+    if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found", 404);
+    if (!warehouse.activo) {
+      throw new AppError("WAREHOUSE_INACTIVE", "Warehouse is inactive", 409);
+    }
+    for (const entry of input.entries) {
+      await this.validateArticle({
+        articuloId: entry.articuloId,
+        warehouseId: input.warehouseId,
+        quantity: entry.quantity,
+        unit: entry.unit,
+        source: "COMPRAS",
+        idempotencyKey: entry.idempotencyKey,
+        ...(entry.inventoryLotId === undefined ? {} : { inventoryLotId: entry.inventoryLotId }),
+      }, transaction);
+    }
+    for (const entry of input.entries) {
+      if (entry.inventoryLotId === undefined) continue;
+      const lot = await transaction.inventoryLot.findUnique({
+        where: { id: entry.inventoryLotId },
+      });
+      if (!lot) throw new AppError("NOT_FOUND", "Inventory lot not found", 404);
+      if (lot.articuloId !== entry.articuloId) {
+        throw new AppError(
+          "LOT_ARTICULO_MISMATCH",
+          "Lot articulo does not match movement articulo",
+          400,
+        );
+      }
+    }
+
+    const results: RegisterInboundResult[] = [];
+    for (const entry of input.entries) {
+      const amount = parsePositiveInventoryQuantity(entry.quantity, entry.unit);
+      const fingerprint = inventoryRequestFingerprint({
+        operation: "PURCHASE_INBOUND",
+        warehouseId: input.warehouseId,
+        entry,
+      });
+      const result = await this.idempotent(
+        transaction,
+        entry.idempotencyKey,
+        "PURCHASE_INBOUND",
+        fingerprint,
+        async (): Promise<RegisterInboundResult> => {
+          let inventoryLotId = entry.inventoryLotId ?? null;
+          if (inventoryLotId) {
+            const lot = await transaction.inventoryLot.findUnique({
+              where: { id: inventoryLotId },
+            });
+            if (!lot) throw new AppError("NOT_FOUND", "Inventory lot not found", 404);
+            if (lot.articuloId !== entry.articuloId) {
+              throw new AppError(
+                "LOT_ARTICULO_MISMATCH",
+                "Lot articulo does not match movement articulo",
+                400,
+              );
+            }
+          }
+
+          const existing = await transaction.inventoryStock.findFirst({
+            where: {
+              warehouseId: input.warehouseId,
+              articuloId: entry.articuloId,
+              inventoryLotId,
+            },
+          });
+          const before = parseInventoryQuantity(existing?.quantity?.toString() ?? "0");
+          const resulting = before + amount;
+          const stock = existing
+            ? await transaction.inventoryStock.update({
+              where: { id: existing.id },
+              data: { quantity: formatInventoryQuantity(resulting) },
+            })
+            : await transaction.inventoryStock.create({
+              data: {
+                warehouseId: input.warehouseId,
+                articuloId: entry.articuloId,
+                inventoryLotId,
+                quantity: formatInventoryQuantity(resulting),
+                unit: entry.unit,
+              },
+            });
+          const movement = await transaction.inventoryMovement.create({
+            data: {
+              type: "INBOUND",
+              source: "COMPRAS",
+              reason: null,
+              articuloId: entry.articuloId,
+              warehouseId: input.warehouseId,
+              inventoryLotId,
+              quantity: formatInventoryQuantity(amount),
+              unit: entry.unit,
+              stockBefore: formatInventoryQuantity(before),
+              resultingStock: formatInventoryQuantity(resulting),
+              actorUserId: context.actorUserId,
+              negativeStockAuthorized: false,
+              negativeStockAuthorizerUserId: null,
+              negativeStockReason: null,
+            },
+          });
+          await transaction.auditLog.create({
+            data: {
+              actorUserId: context.actorUserId,
+              action: "INVENTORY_PURCHASE_INBOUND_REGISTERED",
+              resourceType: "InventoryMovement",
+              resourceId: movement.id,
+              requestId: context.requestId ?? null,
+              metadata: {
+                articuloId: entry.articuloId,
+                warehouseId: input.warehouseId,
+                inventoryLotId,
+                quantity: formatInventoryQuantity(amount),
+                resultingStock: formatInventoryQuantity(resulting),
+              },
+            },
+          });
+          return {
+            movementId: movement.id,
+            articuloId: entry.articuloId,
+            inventoryLotId,
+            quantity: formatInventoryQuantity(amount),
+            unit: entry.unit,
+            resultingStock: stock.quantity.toString(),
+            createdAt: movement.createdAt.toISOString(),
+          };
+        },
+      );
+      results.push(result);
+    }
+    return results;
   }
   private async idempotent<T>(tx: Prisma.TransactionClient, key: string, operation: string, requestFingerprint: string, work: () => Promise<T>): Promise<T> {
     const prior = await tx.inventoryIdempotency.findUnique({ where: { key } });

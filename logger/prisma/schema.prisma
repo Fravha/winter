@@ -101,6 +101,7 @@ model Articulo {
   inventoryStocks      InventoryStock[]
   inventoryMovements   InventoryMovement[]
   purchaseLines        PurchaseLine[]
+  compraItems          CompraItem[]
   productionWorkInputs ProductionWorkInput[]
 
   @@index([codigo])
@@ -258,6 +259,7 @@ model InventoryMovement {
   warehouse                     Warehouse             @relation(fields: [warehouseId], references: [id])
   lot                           InventoryLot?         @relation(fields: [inventoryLotId], references: [id])
   articulo                      Articulo              @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  compraMovementRefs            CompraInventoryMovementReference[]
 
   @@index([articuloId, warehouseId, inventoryLotId, createdAt])
   @@map("inventory_movements")
@@ -274,6 +276,61 @@ model InventoryIdempotency {
   @@unique([key, operation])
   @@unique([key])
   @@map("inventory_idempotency")
+}
+
+model Compra {
+  id               String       @id @default(uuid()) @db.Uuid
+  supplierName     String       @map("supplier_name")
+  supplierTaxId    String?      @map("supplier_tax_id")
+  documentNumber   String?      @map("document_number")
+  documentDate     DateTime?    @map("document_date")
+  currency         String?
+  observations     String?
+  status           CompraStatus @default(REGISTERED)
+  createdByUserId  String       @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  items            CompraItem[]
+  movementRefs     CompraInventoryMovementReference[]
+
+  @@index([status, createdAt])
+  @@map("compras")
+}
+
+model CompraItem {
+  id                String       @id @default(uuid()) @db.Uuid
+  compraId          String       @map("compra_id") @db.Uuid
+  articuloId        String       @map("articulo_id") @db.Uuid
+  brand             String?
+  requestedQuantity Decimal      @map("requested_quantity") @db.Decimal(18, 3)
+  unit              ArticuloUnit
+  unitPrice         Decimal?     @map("unit_price") @db.Decimal(18, 3)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  compra            Compra       @relation(fields: [compraId], references: [id], onDelete: Restrict)
+  articulo          Articulo     @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  movementRefs      CompraInventoryMovementReference[]
+
+  @@unique([compraId, articuloId])
+  @@index([articuloId])
+  @@map("compra_items")
+}
+
+model CompraInventoryMovementReference {
+  id              String            @id @default(uuid()) @db.Uuid
+  compraId        String            @map("compra_id") @db.Uuid
+  compraItemId    String            @map("compra_item_id") @db.Uuid
+  inventoryMovementId String         @map("inventory_movement_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at")
+  compra          Compra            @relation(fields: [compraId], references: [id], onDelete: Restrict)
+  compraItem      CompraItem        @relation(fields: [compraItemId], references: [id], onDelete: Restrict)
+  inventoryMovement InventoryMovement @relation(fields: [inventoryMovementId], references: [id], onDelete: Restrict)
+
+  @@unique([compraItemId])
+  @@unique([compraItemId, inventoryMovementId])
+  @@index([compraId])
+  @@index([inventoryMovementId])
+  @@map("compra_inventory_movement_references")
 }
 
 enum UserStatus {
@@ -316,4 +373,10 @@ enum InventoryLotClassification {
 enum ProductionOrderStatus {
   OPEN
   CLOSED
+}
+
+enum CompraStatus {
+  REGISTERED
+  RECEIVED
+  CANCELLED
 }

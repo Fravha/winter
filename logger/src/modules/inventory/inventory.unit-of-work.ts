@@ -1,16 +1,9 @@
-import type { Prisma, PrismaClient } from "../../generated/prisma/client.js";
+import type { PrismaClient } from "../../generated/prisma/client.js";
+import { SharedUnitOfWork } from "../../core/database/shared-unit-of-work.js";
+import type { SharedTransactionContext } from "../../core/database/shared-unit-of-work.js";
 export class InventoryUnitOfWork {
  constructor(private readonly prisma: PrismaClient) {}
- execute<T>(work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-   const run = async (attempt: number): Promise<T> => {
-     try {
-       return await this.prisma.$transaction((tx) => work(tx), { isolationLevel: "Serializable" });
-     } catch (error) {
-       const code = (error as { code?: string }).code;
-       if (code === "P2034" && attempt < 3) return run(attempt + 1);
-       throw error;
-     }
-   };
-   return run(0);
+ execute<T>(work: (transaction: SharedTransactionContext) => Promise<T>): Promise<T> {
+   return new SharedUnitOfWork(this.prisma).execute(work);
  }
 }
