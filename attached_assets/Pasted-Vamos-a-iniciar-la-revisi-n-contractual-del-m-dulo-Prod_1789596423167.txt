@@ -1,0 +1,425 @@
+Vamos a iniciar la revisión contractual del módulo Production de Winter.
+
+IMPORTANTE:
+- No implementar código.
+- No modificar Prisma.
+- No crear migraciones.
+- No crear endpoints.
+- No modificar Inventory, Artículos, Compras ni Core.
+- No usar el contexto del chat como contrato.
+- Utilizar únicamente documentación persistida en el repositorio y código existente.
+
+## Fuentes obligatorias
+
+Leer físicamente desde el repositorio:
+
+- logger/docs/architecture/AI_IMPLEMENTATION_RULES.md
+- logger/docs/architecture/ARCHITECTURE.md
+- logger/docs/architecture/MODULE_CONTRACT.md
+- logger/docs/architecture/DOMAIN_MODEL.md
+- logger/docs/architecture/AGGREGATES_AND_ENTITIES.md
+- logger/docs/architecture/MODULE_MAP.md
+- logger/docs/architecture/WORKFLOWS.md
+- logger/docs/architecture/API_CONTRACTS.md
+
+Además revisar:
+
+- logger/DECISION_COMPRAS.md
+- logger/docs/articulos-api.md
+- logger/docs/inventory-api.md
+- logger/docs/compras-api.md
+- implementación actual de Artículos, Inventory y Compras;
+- tests relacionados con Production, Inventory y Artículos;
+- cualquier código existente de Production, si existe.
+
+Los módulos legacy o prototipos solo pueden utilizarse como referencia estructural cuando los contratos lo permitan. No trasladar reglas automáticamente.
+
+## Objetivo
+
+Determinar exactamente qué está definido, qué falta y qué entra en conflicto antes de construir Production.
+
+Production es un módulo crítico porque coordina transformación física, trazabilidad e Inventory.
+
+## Revisar obligatoriamente
+
+### 1. Responsabilidad y ownership
+Determinar qué información pertenece a Production y qué continúa perteneciendo a:
+
+- Artículos;
+- Inventory;
+- Auth/RBAC;
+- Core/Audit.
+
+No duplicar entidades cuyo ownership ya exista.
+
+### 2. Entidades y agregados
+
+Revisar al menos:
+
+- ProductionOrder
+- TransformationOrder
+- ProductionWork
+- ProductionBatch
+- Container
+- GrapeReception
+- Producer
+- GrapeVariety
+- ProductionConsumption
+- ProductionOutput
+- Transformation
+- ProductionLoss
+- Measurement
+
+Para cada una determinar:
+
+- propósito;
+- ownership;
+- campos documentados;
+- relaciones;
+- identidad;
+- lifecycle;
+- si realmente pertenece al MVP.
+
+No inventar campos faltantes.
+
+### 3. Órdenes
+
+Revisar la diferencia exacta entre:
+
+- ProductionOrder;
+- TransformationOrder.
+
+Confirmar:
+
+- cuándo se crean;
+- qué representan;
+- qué entidades dependen de ellas;
+- cierre;
+- bloqueo posterior al cierre;
+- relación con periodos contables/productivos.
+
+Estados aprobados previamente:
+
+ProductionOrder:
+- OPEN
+- CLOSED
+
+TransformationOrder:
+- OPEN
+- CLOSED
+
+No agregar estados.
+
+### 4. ProductionWork
+
+Determinar exactamente:
+
+- qué representa un trabajo;
+- si requiere ProductionOrder;
+- relación opcional con TransformationOrder;
+- relación con uno o varios ProductionBatch;
+- relación con uno o varios Container;
+- participantes;
+- fechas;
+- observaciones;
+- tipo de trabajo.
+
+No trasladar a ProductionWork datos que pertenecen a:
+
+- consumos;
+- outputs;
+- pérdidas;
+- mediciones;
+- movimientos de Inventory.
+
+### 5. ProductionBatch
+
+Revisar:
+
+- cómo se crea;
+- qué representa;
+- artículo asociado;
+- unidad;
+- cantidad;
+- origen;
+- trazabilidad;
+- relación con otros batches;
+- relación con InventoryLot;
+- relación con Container.
+
+Recordar que ProductionBatch no tiene estado persistido aprobado.
+
+Su situación se deriva del historial y cantidades disponibles.
+
+### 6. Container
+
+Determinar:
+
+- si es entidad propia de Production;
+- qué tipos existen;
+- identificación;
+- capacidad;
+- ubicación;
+- contenido;
+- relación temporal con batches.
+
+No inventar un módulo de activos si no está aprobado.
+
+### 7. Recepción de uva
+
+Revisar GrapeReception y confirmar:
+
+- Producer;
+- GrapeVariety;
+- cantidad;
+- unidad;
+- fecha;
+- mediciones Babo/Brix si están documentadas;
+- estado sanitario;
+- creación del primer batch;
+- integración con Inventory;
+- relación con ProductionOrder.
+
+Producer y GrapeVariety pertenecen a Production según AI_IMPLEMENTATION_RULES.
+
+Si sus campos exactos faltan, reportarlo.
+
+### 8. Consumos
+
+Production no modifica stock directamente.
+
+Revisar cómo ProductionConsumption debe utilizar la API pública de Inventory.
+
+Determinar:
+
+- qué consume;
+- warehouse;
+- lotes;
+- batch relacionado;
+- ProductionWork;
+- idempotencia;
+- stock insuficiente;
+- stock negativo;
+- atomicidad;
+- auditoría.
+
+No acceder a tablas ni repositories de Inventory.
+
+### 9. Outputs
+
+Revisar ProductionOutput:
+
+- qué genera;
+- artículo;
+- cantidad;
+- unidad;
+- batch;
+- InventoryLot;
+- warehouse;
+- lotCode;
+- idempotencia;
+- atomicidad.
+
+Inventory ya expone API intermodular para Production Output. Revisar su contrato real.
+
+### 10. Transformaciones
+
+Revisar Transformation como operación de dominio.
+
+Debe analizarse:
+
+- inputs;
+- outputs;
+- uno o varios batches de entrada;
+- uno o varios batches de salida;
+- pérdidas;
+- recipientes;
+- ProductionOrder;
+- TransformationOrder;
+- ProductionWork;
+- Inventory;
+- atomicidad;
+- idempotencia;
+- auditoría.
+
+Una transformación no puede dejar consumos persistidos sin sus outputs correspondientes cuando pertenezcan a la misma operación lógica.
+
+No crear entidad Subproducto.
+
+### 11. Pérdidas / mermas
+
+Revisar ProductionLoss:
+
+- cantidad;
+- unidad;
+- motivo;
+- batch;
+- trabajo;
+- transformación;
+- efecto sobre Inventory;
+- auditoría.
+
+Diferenciar claramente pérdida de output reutilizable.
+
+### 12. Mediciones
+
+Revisar Measurement:
+
+- qué se mide;
+- valor;
+- unidad;
+- fecha;
+- tipo;
+- ProductionWork;
+- ProductionBatch;
+- Container.
+
+Confirmar si una medición puede pertenecer específicamente a un recipiente además de batch/proceso.
+
+No inventar catálogo de mediciones si no está definido.
+
+### 13. Artículos
+
+Revisar qué clasificaciones de Artículo pueden participar como:
+
+- materia prima;
+- insumo;
+- producto en proceso;
+- producto envasado;
+- producto terminado.
+
+Usar exclusivamente ArticulosApi.
+
+No modificar clasificación o unidad de Artículo desde Production.
+
+### 14. Inventory
+
+Revisar APIs públicas actuales:
+
+- registerProductionConsumption
+- registerProductionOutput
+- getStock
+- getAvailableQuantity
+- getInventoryLot
+- transitionInventoryLotClassification
+
+Determinar si son suficientes.
+
+Si Production necesita batch atómico o contexto transaccional compartido adicional, reportar exactamente la limitación.
+
+No modificar todavía Inventory.
+
+### 15. Estados y transiciones
+
+Revisar todos los estados documentados.
+
+No crear estados nuevos por conveniencia técnica.
+
+Para cada transición indicar:
+
+- estado inicial;
+- estado final;
+- actor;
+- condición;
+- efecto;
+- bloqueo posterior.
+
+### 16. Atomicidad
+
+Identificar todos los workflows que deben ejecutarse en una única transacción.
+
+Especial atención a:
+
+- consumo + output;
+- transformación;
+- pérdida;
+- creación de batch;
+- InventoryMovement;
+- InventoryStock;
+- InventoryLot;
+- auditoría.
+
+Revisar cómo debe utilizarse SharedUnitOfWork.
+
+### 17. Idempotencia
+
+Determinar qué operations deben ser idempotentes y cómo generar claves estables.
+
+No utilizar UUID aleatorios por reintento.
+
+### 18. Auditoría
+
+Determinar eventos mínimos para:
+
+- creación/cierre de órdenes;
+- trabajos;
+- consumos;
+- outputs;
+- transformaciones;
+- pérdidas;
+- recepciones;
+- mediciones críticas, si corresponde.
+
+Actor siempre desde contexto autenticado.
+
+### 19. Permisos
+
+Revisar permisos definidos documentalmente.
+
+Si no están definidos, reportarlos como MISSING.
+
+No inventar permisos todavía.
+
+Todos deben seguir:
+
+<module>:<action>
+
+### 20. API
+
+Revisar:
+
+- commands;
+- queries;
+- endpoints HTTP;
+- API intermodular;
+- DTOs;
+- respuestas;
+- errores;
+- filtros;
+- paginación.
+
+No inventar endpoints todavía.
+
+## Resultado esperado
+
+Entregar una matriz con columnas:
+
+| Aspecto | Estado | Fuente | Definición actual | Problema / decisión requerida |
+
+Usar exclusivamente estos estados:
+
+- DEFINED
+- MISSING
+- AMBIGUOUS
+- CONTRADICTORY
+- OUT_OF_SCOPE
+
+Después de la matriz entregar:
+
+1. Responsabilidad final de Production.
+2. Entidades confirmadas.
+3. Entidades dudosas/no definidas.
+4. Estados confirmados.
+5. Invariantes confirmados.
+6. Dependencias con Artículos.
+7. Dependencias con Inventory.
+8. Workflows atómicos.
+9. Conflictos entre documentos y código.
+10. Decisiones faltantes priorizadas.
+11. Qué puede implementarse sin nuevas decisiones.
+12. Qué partes quedan bloqueadas.
+13. Propuesta de siguiente documento `DECISION_PRODUCTION.md`, pero NO crearlo todavía.
+
+Si una regla necesaria no está definida, detener esa parte y reportarla.
+
+No implementar código.
