@@ -18,6 +18,9 @@ model User {
   lastLoginAt DateTime?  @map("last_login_at")
   auditLogs   AuditLog[] @relation("AuditActor")
   roles       UserRole?
+  managedWarehouses Warehouse[] @relation("WarehouseManager")
+  inventoryMovementsAsActor InventoryMovement[] @relation("InventoryMovementActor")
+  inventoryMovementsAsNegativeStockAuthorizer InventoryMovement[] @relation("InventoryMovementAuthorizer")
 
   @@map("users")
 }
@@ -124,7 +127,7 @@ model Product {
 }
 
 model Purchase {
-  id           String         @id @default(uuid())
+  id           String         @id
   reference    String         @unique
   supplierName String         @map("supplier_name")
   total        Decimal        @db.Decimal(12, 2)
@@ -137,7 +140,7 @@ model Purchase {
 }
 
 model PurchaseLine {
-  id         String       @id @default(uuid()) @db.Uuid
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   purchaseId String       @map("purchase_id")
   articuloId String       @map("articulo_id") @db.Uuid
   quantity   Decimal      @db.Decimal(18, 3)
@@ -151,7 +154,7 @@ model PurchaseLine {
 }
 
 model ProductionOrder {
-  id        String                @id @default(uuid()) @db.Uuid
+  id        String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   reference String                @unique
   status    ProductionOrderStatus @default(OPEN)
   createdAt DateTime              @default(now()) @map("created_at")
@@ -162,7 +165,7 @@ model ProductionOrder {
 }
 
 model ProductionWork {
-  id                String                @id @default(uuid()) @db.Uuid
+  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productionOrderId String                @map("production_order_id") @db.Uuid
   createdAt         DateTime              @default(now()) @map("created_at")
   productionOrder   ProductionOrder       @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
@@ -173,7 +176,7 @@ model ProductionWork {
 }
 
 model ProductionWorkInput {
-  id               String         @id @default(uuid()) @db.Uuid
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productionWorkId String         @map("production_work_id") @db.Uuid
   articuloId       String         @map("articulo_id") @db.Uuid
   quantity         Decimal        @db.Decimal(18, 3)
@@ -187,59 +190,59 @@ model ProductionWorkInput {
 }
 
 model WorkType {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code String @unique
   name String
   active Boolean @default(true)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-  @@index([active])
+  @@index([active], map: "production_work_types_active_idx")
   @@map("production_work_types")
 }
 
 model MeasurementType {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code String @unique
   name String
   active Boolean @default(true)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-  @@index([active])
+  @@index([active], map: "production_measurement_types_active_idx")
   @@map("production_measurement_types")
 }
 
 model ProductionParticipant {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code String @unique
   name String
   active Boolean @default(true)
   userId String? @map("user_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-  @@index([active])
-  @@index([userId])
+  @@index([active], map: "production_participants_active_idx")
+  @@index([userId], map: "production_participants_user_id_idx")
   @@map("production_participants")
 }
 
 model Producer {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code String @unique
   name String
   active Boolean @default(true)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-  @@index([active])
+  @@index([active], map: "production_producers_active_idx")
   @@map("production_producers")
 }
 
 model GrapeVariety {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code String @unique
   name String
   active Boolean @default(true)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-  @@index([active])
+  @@index([active], map: "production_grape_varieties_active_idx")
   @@map("production_grape_varieties")
 }
 
@@ -259,7 +262,7 @@ enum CustomFieldDataType {
 }
 
 model CustomFieldDefinition {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   entityType CustomFieldEntityType @map("entity_type")
   code String
   label String
@@ -272,13 +275,13 @@ model CustomFieldDefinition {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   values CustomFieldValue[]
-  @@unique([entityType, code])
-  @@index([entityType, active, displayOrder])
+  @@unique([entityType, code], map: "production_custom_field_definitions_entity_type_code_key")
+  @@index([entityType, active, displayOrder], map: "production_custom_field_definitions_list_idx")
   @@map("production_custom_field_definitions")
 }
 
 model CustomFieldValue {
-  id String @id @default(uuid()) @db.Uuid
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   definitionId String @map("definition_id") @db.Uuid
   entityType CustomFieldEntityType @map("entity_type")
   entityId String @map("entity_id") @db.Uuid
@@ -288,17 +291,17 @@ model CustomFieldValue {
   booleanValue Boolean? @map("boolean_value")
   dateValue DateTime? @map("date_value")
   selectValue String? @map("select_value")
-  definition CustomFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  definition CustomFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Restrict, map: "production_custom_field_values_definition_id_fkey")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-  @@unique([definitionId, entityId])
-  @@index([entityType, entityId])
-  @@index([definitionId])
+  @@unique([definitionId, entityId], map: "production_custom_field_values_definition_id_entity_id_key")
+  @@index([entityType, entityId], map: "production_custom_field_values_entity_idx")
+  @@index([definitionId], map: "production_custom_field_values_definition_idx")
   @@map("production_custom_field_values")
 }
 
 model Warehouse {
-  id              String              @id @default(uuid()) @db.Uuid
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   codigo          String
   nombre          String
   ubicacion       String?
@@ -308,14 +311,15 @@ model Warehouse {
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
   stocks          InventoryStock[]
-  movements       InventoryMovement[]
+  sourceMovements InventoryMovement[] @relation("InventoryMovementSourceWarehouse")
+  destinationMovements InventoryMovement[] @relation("InventoryMovementDestinationWarehouse")
+  manager         User?               @relation("WarehouseManager", fields: [encargadoUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "warehouses_manager_user_id_fkey")
 
-  @@index([codigo])
   @@map("warehouses")
 }
 
 model InventoryLot {
-  id                      String                     @id @default(uuid()) @db.Uuid
+  id                      String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   lotCode                 String                     @map("lot_code")
   articuloId              String                     @map("articulo_id") @db.Uuid
   originProductionBatchId String?                    @map("origin_production_batch_id")
@@ -333,7 +337,7 @@ model InventoryLot {
 }
 
 model InventoryStock {
-  id             String        @id @default(uuid()) @db.Uuid
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   warehouseId    String        @map("warehouse_id") @db.Uuid
   articuloId     String        @map("articulo_id") @db.Uuid
   inventoryLotId String?       @map("inventory_lot_id") @db.Uuid
@@ -341,16 +345,15 @@ model InventoryStock {
   unit           ArticuloUnit
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
-  warehouse      Warehouse     @relation(fields: [warehouseId], references: [id])
-  lot            InventoryLot? @relation(fields: [inventoryLotId], references: [id])
+  warehouse      Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "inventory_stocks_warehouse_id_fkey")
+  lot            InventoryLot? @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "inventory_stocks_lot_id_fkey")
   articulo       Articulo      @relation(fields: [articuloId], references: [id], onDelete: Restrict)
 
-  @@unique([warehouseId, articuloId, inventoryLotId])
   @@map("inventory_stocks")
 }
 
 model InventoryMovement {
-  id                            String                @id @default(uuid()) @db.Uuid
+  id                            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   type                          InventoryMovementType
   source                        String
   reason                        String?
@@ -367,30 +370,32 @@ model InventoryMovement {
   negativeStockAuthorizerUserId String?               @map("negative_stock_authorizer_user_id") @db.Uuid
   negativeStockReason           String?               @map("negative_stock_reason")
   createdAt                     DateTime              @default(now()) @map("created_at")
-  warehouse                     Warehouse             @relation(fields: [warehouseId], references: [id])
-  lot                           InventoryLot?         @relation(fields: [inventoryLotId], references: [id])
+  warehouse                     Warehouse             @relation("InventoryMovementSourceWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "inventory_movements_warehouse_id_fkey")
+  destinationWarehouse          Warehouse?            @relation("InventoryMovementDestinationWarehouse", fields: [destinationWarehouseId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "inventory_movements_destination_warehouse_id_fkey")
+  lot                           InventoryLot?         @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "inventory_movements_lot_id_fkey")
   articulo                      Articulo              @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  actor                         User?                 @relation("InventoryMovementActor", fields: [actorUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "inventory_movements_actor_user_id_fkey")
+  negativeStockAuthorizer       User?                 @relation("InventoryMovementAuthorizer", fields: [negativeStockAuthorizerUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "inventory_movements_authorizer_user_id_fkey")
   compraMovementRefs            CompraInventoryMovementReference[]
 
-  @@index([articuloId, warehouseId, inventoryLotId, createdAt])
+  @@index([articuloId, warehouseId, inventoryLotId, createdAt], map: "inventory_movements_position_idx")
   @@map("inventory_movements")
 }
 
 model InventoryIdempotency {
-  id                 String   @id @default(uuid()) @db.Uuid
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   key                String
   operation          String
   requestFingerprint String   @map("request_fingerprint")
   response           Json
   createdAt          DateTime @default(now()) @map("created_at")
 
-  @@unique([key, operation])
   @@unique([key])
   @@map("inventory_idempotency")
 }
 
 model Compra {
-  id               String       @id @default(uuid()) @db.Uuid
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   supplierName     String       @map("supplier_name")
   supplierTaxId    String?      @map("supplier_tax_id")
   documentNumber   String?      @map("document_number")
@@ -409,7 +414,7 @@ model Compra {
 }
 
 model CompraItem {
-  id                String       @id @default(uuid()) @db.Uuid
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   compraId          String       @map("compra_id") @db.Uuid
   articuloId        String       @map("articulo_id") @db.Uuid
   brand             String?
@@ -428,7 +433,7 @@ model CompraItem {
 }
 
 model CompraInventoryMovementReference {
-  id              String            @id @default(uuid()) @db.Uuid
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   compraId        String            @map("compra_id") @db.Uuid
   compraItemId    String            @map("compra_item_id") @db.Uuid
   inventoryMovementId String         @map("inventory_movement_id") @db.Uuid
@@ -438,7 +443,7 @@ model CompraInventoryMovementReference {
   inventoryMovement InventoryMovement @relation(fields: [inventoryMovementId], references: [id], onDelete: Restrict)
 
   @@unique([compraItemId])
-  @@unique([compraItemId, inventoryMovementId])
+  @@unique([compraItemId, inventoryMovementId], map: "compra_inventory_movement_references_compra_item_id_inventory_m")
   @@index([compraId])
   @@index([inventoryMovementId])
   @@map("compra_inventory_movement_references")

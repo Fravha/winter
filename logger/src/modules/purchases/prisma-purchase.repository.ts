@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient, type Purchase as PrismaPurchase } from "../../generated/prisma/client.js";
 import { AppError } from "../../shared/errors/app-error.js";
 import type { CreatePurchaseDto, UpdatePurchaseDto } from "./purchase.dto.js";
@@ -24,7 +25,7 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
 
   async create(data: CreatePurchaseDto): Promise<Purchase> {
     try {
-      return this.toDomain(await this.client.purchase.create({ data }));
+      return this.toDomain(await this.client.purchase.create({ data: { id: randomUUID(), ...data } }));
     } catch (error) { this.rethrowWriteError(error); }
   }
 

@@ -21,10 +21,16 @@ if (connectionString) {
   }
 }
 
-(available ? describe : describe.skip)("Production P1 PostgreSQL integration (skipped without WINTER_DATABASE_URL/schema)", () => {
-  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: connectionString! }) });
-  const audit = new AuditService(new PrismaAuditRepository(prisma));
-  const service = new ProductionService(prisma, audit);
+const integrationOptions = available
+  ? {}
+  : { skip: "requires WINTER_DATABASE_URL with the Production P1 schema" };
+
+describe("Production P1 PostgreSQL integration", () => {
+  const prisma = connectionString
+    ? new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
+    : undefined;
+  const audit = prisma ? new AuditService(new PrismaAuditRepository(prisma)) : undefined;
+  const service = prisma && audit ? new ProductionService(prisma, audit) : undefined;
   const createdProducerIds: string[] = [];
   const createdDefinitionIds: string[] = [];
   const createdWorkTypeIds: string[] = [];
@@ -32,12 +38,14 @@ if (connectionString) {
   const actorUserId = randomUUID();
 
   before(async () => {
+    if (!available || !prisma) return;
     await prisma.user.create({
       data: { id: actorUserId, firebaseUid: `production-p1-${actorUserId}`, email: `${actorUserId}@test.invalid`, status: "ACTIVE" },
     });
   });
 
   after(async () => {
+    if (!available || !prisma) return;
     await prisma.customFieldValue.deleteMany({ where: { definitionId: { in: createdDefinitionIds } } });
     await prisma.customFieldDefinition.deleteMany({ where: { id: { in: createdDefinitionIds } } });
     await prisma.workType.deleteMany({ where: { id: { in: createdWorkTypeIds } } });
@@ -48,7 +56,8 @@ if (connectionString) {
     await prisma.$disconnect();
   });
 
-  it("applies uniqueness, foreign key and exactly-one-value constraints", async () => {
+  it("applies uniqueness, foreign key and exactly-one-value constraints", integrationOptions, async () => {
+    assert.ok(prisma);
     const producer = await prisma.producer.create({ data: { code: `P1-${randomUUID()}`, name: "P1 integration" } });
     createdProducerIds.push(producer.id);
     const definition = await prisma.customFieldDefinition.create({
@@ -65,13 +74,17 @@ if (connectionString) {
     await assert.rejects(() => prisma.customFieldValue.create({ data: { definitionId: definition.id, entityType: "PRODUCER", entityId: producer.id, textValue: "b" } }));
   });
 
-  it("rolls back catalog write when transactional audit fails", async () => {
+  it("rolls back catalog write when transactional audit fails", integrationOptions, async () => {
+    assert.ok(prisma);
+    assert.ok(service);
     const code = `ROLLBACK-${randomUUID()}`;
     await assert.rejects(() => service.create("producers", { code, name: "Must rollback" }, { actorUserId: randomUUID(), requestId: randomUUID() }));
     assert.equal(await prisma.producer.count({ where: { code } }), 0);
   });
 
-  it("persists, uniquely identifies and logically deactivates work and measurement types", async () => {
+  it("persists, uniquely identifies and logically deactivates work and measurement types", integrationOptions, async () => {
+    assert.ok(prisma);
+    assert.ok(service);
     const workCode = `WORK-${randomUUID()}`;
     const measurementCode = `MEASUREMENT-${randomUUID()}`;
     const context = { actorUserId, requestId: randomUUID() };
@@ -94,7 +107,9 @@ if (connectionString) {
     assert.equal((await prisma.measurementType.findUniqueOrThrow({ where: { id: measurement.id } })).active, false);
   });
 
-  it("rolls back work and measurement type writes when transactional audit fails", async () => {
+  it("rolls back work and measurement type writes when transactional audit fails", integrationOptions, async () => {
+    assert.ok(prisma);
+    assert.ok(service);
     for (const kind of ["work-types", "measurement-types"] as const) {
       const code = `ROLLBACK-${kind}-${randomUUID()}`;
       await assert.rejects(() => service.create(kind, { code, name: "Must rollback" }, {

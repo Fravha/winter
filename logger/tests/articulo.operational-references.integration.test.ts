@@ -76,6 +76,7 @@ describeWithDatabase("Articulo operational references integration", () => {
         } else if (consumer === "compras") {
           const purchase = await prisma.purchase.create({
             data: {
+              id: randomUUID(),
               reference: `PUR-${suffix}`,
               supplierName: "Integration supplier",
               total: "1",
