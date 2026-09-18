@@ -1,4 +1,4 @@
-# Production P2/P3 API
+# Production P2/P3/P6 API
 
 Base URL: `/api/v1/production`. All endpoints require authentication. List
 queries use `page`, `pageSize`, `search` and `active`.
@@ -122,8 +122,19 @@ and `POST /custom-fields/definitions/:id/activate|deactivate` require
 the same management permission. Values are strict by definition: DATE is an
 ISO-8601 string (converted server-side), DECIMAL is a decimal string (never a
 JSON number), INTEGER is a safe integer, and TEXT/SELECT/BOOLEAN use their
-corresponding JSON primitive. GrapeReception values are explicitly rejected
- until P6.
+ corresponding JSON primitive. GrapeReception values may be supplied during
+ reception creation and are validated against active definitions.
+
+## Grape receptions (P6)
+
+`GET /grape-receptions` and `GET /grape-receptions/:id` require
+`production:read`; `POST /grape-receptions` requires
+`production:reception_create`, a stable `operationKey` and `requestHash`.
+Each item creates exactly one initial ProductionBatch through P3 primitives.
+Articles are validated through ArticulosApi and units must match exactly. The
+contractual classification matrix does not currently exist, so no
+classification restriction is invented or enforced. Receptions have no PATCH
+or DELETE endpoint and do not create InventoryMovement records.
 
 ## Production work (P5)
 

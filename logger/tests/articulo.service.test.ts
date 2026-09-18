@@ -276,11 +276,12 @@ describe("ArticuloService", () => {
     assert.equal((await service.validateArticulo({
       articuloId: articulo.id,
       allowedClassifications: ["MATERIA_PRIMA"],
-    })).valid, false);
+    })).reason, "INVALID_CLASSIFICATION");
     await service.deactivateArticulo(articulo.id, context);
     assert.equal((await service.validateArticulo({
       articuloId: articulo.id,
-    })).valid, false);
+    })).reason, "INACTIVE");
+    assert.equal((await service.validateArticulo({ articuloId: "00000000-0000-4000-8000-000000000099" })).reason, "NOT_FOUND");
     assert.equal((await service.activateArticulo(
       articulo.id,
       context,

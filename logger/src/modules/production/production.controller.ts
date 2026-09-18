@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { buildAuthenticatedAuditContext } from "../../shared/http/audit-context.js";
-import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema } from "./production.schema.js";
+import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema, grapeReceptionSchema } from "./production.schema.js";
 import type { CatalogKind, ReadCatalogKind } from "./production.dto.js";
 import type { ProductionService } from "./production.service.js";
 import { AppError } from "../../shared/errors/app-error.js";
@@ -40,4 +40,7 @@ export class ProductionController {
   getWork = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.getWork(idParamsSchema.parse(req.params).id) }); } catch (e) { next(e); } };
   createWork = async (req: Request, res: Response, next: NextFunction) => { try { res.status(201).json({ data: await this.service.createWork(workCreateSchema.parse(req.body), buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
   correctWork = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.correctWork(idParamsSchema.parse(req.params).id, workCorrectionSchema.parse(req.body), buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
+  listReceptions = async (req: Request, res: Response, next: NextFunction) => { try { const q = listSchema.parse(req.query); const r = await this.service.listReceptions(q); res.json({ data: r.items, meta: r.pagination }); } catch (e) { next(e); } };
+  getReception = async (req: Request, res: Response, next: NextFunction) => { try { const item = await this.service.getReception(idParamsSchema.parse(req.params).id); if (!item) return next(new AppError("GRAPE_RECEPTION_NOT_FOUND", "Grape reception not found", 404)); res.json({ data: item }); } catch (e) { next(e); } };
+  createReception = async (req: Request, res: Response, next: NextFunction) => { try { res.status(201).json({ data: await this.service.createReception(grapeReceptionSchema.parse(req.body), buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
 }

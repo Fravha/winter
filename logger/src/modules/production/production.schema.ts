@@ -59,3 +59,11 @@ export const workCorrectionSchema = z.object({
   newValue: z.string().nullable(),
   reason: z.string().trim().min(1).max(2000),
 }).strict();
+export const grapeReceptionSchema = z.object({
+  productionOrderId: z.string().uuid(), producerId: z.string().uuid().optional(),
+  receivedAt: z.coerce.date(), status: z.enum(["ACCEPTED", "ACCEPTED_WITH_OBSERVATIONS"]),
+  observations: z.string().max(2000).optional(),
+  items: z.array(z.object({ grapeVarietyId: z.string().uuid(), articuloId: z.string().uuid(), quantity, unit: z.enum(["KG","G","L","M","UNIDAD"]) }).strict()).min(1),
+  customFields: z.array(z.object({ definitionId: z.string().uuid(), value: z.union([z.string(), z.number(), z.boolean()]) }).strict()).optional(),
+  operationKey: z.string().trim().min(1).max(200), requestHash: z.string().trim().min(1).max(500),
+}).strict();

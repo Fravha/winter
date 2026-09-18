@@ -18,4 +18,7 @@ export interface ArticulosApi {
     articuloId: string;
     allowedClassifications?: readonly ArticuloClassification[];
   }, transaction: SharedTransactionContext): Promise<ValidateArticuloResult>;
+  lockAndValidateArticulosInTransaction(input: {
+    articuloIds: readonly string[];
+  }, transaction: SharedTransactionContext): Promise<Map<string, ValidateArticuloResult>>;
 }

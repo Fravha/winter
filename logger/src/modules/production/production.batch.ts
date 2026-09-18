@@ -273,11 +273,9 @@ export class ProductionBatchService {
     return this.executeCommand(data.operationKey, "BATCH_CREATED", data.requestHash, async () => this.operationWithTransaction(data.operationKey, "BATCH_CREATED", data.requestHash, async tx => {
         await this.orderOpen(tx, data.productionOrderId);
         const occurredAt = data.occurredAt ?? new Date();
-        const batch = await tx.productionBatch.create({ data: { code: data.code, productionOrderId: data.productionOrderId, articuloId: data.articuloId, unit: data.unit, ...(data.observations !== undefined ? { observations: data.observations } : {}) } });
-        await new BatchLedgerService(tx, true).append(batch.id, "GENERATED", quantity, data.unit, `${data.operationKey}:generated`, context.actorUserId, occurredAt);
-        const balance = await new BatchAvailabilityService(tx, true).rebuild(batch.id);
-        await this.auditIn(tx).record(context, { action: "BATCH_CREATED", resourceType: "production.batch", resourceId: batch.id, metadata: { code: batch.code, quantity: quantityString(quantity), unit: data.unit } });
-        return { ...mapBatch(batch), balance };
+        const generated = await createInitialBatchPrimitive(tx, { code: data.code, productionOrderId: data.productionOrderId, articuloId: data.articuloId, unit: data.unit, quantity: data.quantity, operationKey: data.operationKey, requestHash: data.requestHash, ...(data.observations !== undefined ? { observations: data.observations } : {}) }, context, occurredAt);
+        await this.auditIn(tx).record(context, { action: "BATCH_CREATED", resourceType: "production.batch", resourceId: generated.id, metadata: { code: generated.code, quantity: quantityString(quantity), unit: data.unit } });
+        return generated;
       }));
   }
   async consumeBatch(data: BatchConsumptionInput, context: AuthenticatedAuditContext): Promise<BatchBalanceDto> {
@@ -405,6 +403,28 @@ export async function splitOneBatchInTransaction(
   const childBalance = await new BatchAvailabilityService(tx, true).rebuild(child.id);
   const parentBalance = await new BatchAvailabilityService(tx, true).rebuild(parent.id);
   return { parent: parentBalance, child: { ...mapBatch(child), balance: childBalance } };
+}
+
+/** P6 primitive: generation plus the P3 ledger/balance services in the caller's transaction. */
+export async function createInitialBatchInTransaction(
+  tx: SharedTransactionContext,
+  data: { code: string; productionOrderId: string; articuloId: string; unit: string; quantity: string; operationKey: string; requestHash: string },
+  context: AuthenticatedAuditContext,
+  occurredAt: Date,
+): Promise<BatchDetailDto> {
+  const quantity = decimal(data.quantity);
+  requireText(data.requestHash, "Request hash");
+  return createInitialBatchPrimitive(tx, data, context, occurredAt);
+}
+async function createInitialBatchPrimitive(
+  tx: SharedTransactionContext,
+  data: { code: string; productionOrderId: string; articuloId: string; unit: string; quantity: string; operationKey: string; requestHash: string; observations?: string },
+  context: AuthenticatedAuditContext,
+  occurredAt: Date,
+): Promise<BatchDetailDto> {
+  const batch = await tx.productionBatch.create({ data: { code: data.code, productionOrderId: data.productionOrderId, articuloId: data.articuloId, unit: data.unit, ...(data.observations !== undefined ? { observations: data.observations } : {}) } });
+  await new BatchLedgerService(tx, true).append(batch.id, "GENERATED", decimal(data.quantity), data.unit, `${data.operationKey}:generated`, context.actorUserId, occurredAt, { requestHash: data.requestHash });
+  return { ...mapBatch(batch), balance: await new BatchAvailabilityService(tx, true).rebuild(batch.id) };
 }
 function isPrismaCode(error: unknown, code: string): boolean { return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code; }
 function isCodeUniqueConflict(error: unknown): boolean {

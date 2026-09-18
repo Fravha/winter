@@ -12,13 +12,18 @@ import type { ContainerCreateInput, ContainerMoveInput, ContainerUpdateInput } f
 import { ProductionWorkService } from "./production.work.js";
 import type { WorkCreateInput, WorkCorrectionInput } from "./production.work.js";
 import type { BatchCreateInput, BatchConsumptionInput, BatchListFilters, BatchMergeInput, BatchSplitInput } from "./production.batch.js";
+import { ProductionReceptionService } from "./production.reception.js";
+import type { ReceptionInput } from "./production.reception.js";
+import type { ArticulosApi } from "../articulos/articulos.api.js";
+import { persistCustomFieldValue } from "./custom-fields.js";
 import type { CatalogFilters, CatalogInput, CatalogKind, OrderFilters, ProductionOrderInput, TransformationOrderInput } from "./production.dto.js";
 const kindMap = { participants: "participants", producers: "producers", "grape-varieties": "grape-varieties", "work-types": "work-types", "measurement-types": "measurement-types" } as const;
 export class ProductionService {
   private readonly batches: ProductionBatchService;
   private readonly containers: ProductionContainerService;
   private readonly works: ProductionWorkService;
-  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); }
+  private readonly receptions: ProductionReceptionService;
+  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, articulos?: ArticulosApi) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); if (articulos) this.receptions = new ProductionReceptionService(prisma, articulos); else this.receptions = undefined as unknown as ProductionReceptionService; }
   private auditIn(tx: SharedTransactionContext): AuditService { return new AuditService(new PrismaAuditRepository(tx)); }
   list(kind: CatalogKind | "work-types" | "measurement-types", f: CatalogFilters) { return new ProductionRepository(this.prisma).list(kindMap[kind], f); }
   async create(kind: CatalogKind, data: CatalogInput, context: AuthenticatedAuditContext) {
@@ -79,19 +84,7 @@ export class ProductionService {
   async setValue(data: ValueInput, context: AuthenticatedAuditContext) {
     if (data.entityType === "GRAPE_RECEPTION") throw new AppError("CUSTOM_FIELD_ENTITY_NOT_AVAILABLE", "GrapeReception custom values are unavailable until P6", 409);
     const item = await new SharedUnitOfWork(this.prisma).execute(async tx => {
-      const definition = await tx.customFieldDefinition.findUnique({ where: { id: data.definitionId } });
-      if (!definition || definition.entityType !== data.entityType) throw new AppError("CUSTOM_FIELD_DEFINITION_NOT_FOUND", "Custom field definition not found", 404);
-      if (!definition.active) throw new AppError("CUSTOM_FIELD_DEFINITION_INACTIVE", "Custom field definition is inactive", 409);
-      const owner = data.entityType === "PRODUCER" ? await tx.producer.findUnique({ where: { id: data.entityId } }) : await tx.grapeVariety.findUnique({ where: { id: data.entityId } });
-      if (!owner) throw new AppError("CUSTOM_FIELD_ENTITY_NOT_FOUND", "Custom field entity not found", 404);
-      if (!owner.active) throw new AppError("CUSTOM_FIELD_ENTITY_INACTIVE", "Custom field entity is inactive", 409);
-      const keys: Record<string, string> = { TEXT: "textValue", INTEGER: "integerValue", DECIMAL: "decimalValue", BOOLEAN: "booleanValue", DATE: "dateValue", SELECT: "selectValue" };
-      const field = keys[definition.dataType];
-      const valid = field !== undefined && ((definition.dataType === "TEXT" && typeof data.value === "string") || (definition.dataType === "INTEGER" && typeof data.value === "number" && Number.isInteger(data.value) && data.value >= -2_147_483_648 && data.value <= 2_147_483_647) || (definition.dataType === "DECIMAL" && typeof data.value === "string" && /^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(data.value)) || (definition.dataType === "BOOLEAN" && typeof data.value === "boolean") || (definition.dataType === "DATE" && typeof data.value === "string" && !Number.isNaN(Date.parse(data.value))) || (definition.dataType === "SELECT" && typeof data.value === "string" && ((definition.options as string[] | null) ?? []).includes(data.value)));
-      if (!valid) throw new AppError("CUSTOM_FIELD_VALUE_INVALID", "Value does not match custom field type", 400);
-      const valueForDb = definition.dataType === "DATE" ? new Date(data.value as string) : data.value;
-      const value = await tx.customFieldValue.upsert({ where: { definitionId_entityId: { definitionId: data.definitionId, entityId: data.entityId } }, update: { entityType: data.entityType, [field]: valueForDb }, create: { definitionId: data.definitionId, entityType: data.entityType, entityId: data.entityId, [field]: valueForDb } });
-      await this.auditIn(tx).record(context, { action: "PRODUCTION_CUSTOM_FIELD_VALUE_SET", resourceType: "production.custom_field_value", resourceId: value.id }); return value;
+       return persistCustomFieldValue(tx, data, context);
     });
     return item;
   }
@@ -108,6 +101,9 @@ export class ProductionService {
   getBatchBalance(id: string) { return this.batches.getAvailableBatchQuantity(id); }
   validateBatch(id: string) { return this.batches.validateProductionBatch(id); }
   getBatchLineage(id: string) { return this.batches.lineage(id); }
+  createReception(data: ReceptionInput, context: AuthenticatedAuditContext) { if (!this.receptions) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for receptions", 500); return this.receptions.create(data, context); }
+  listReceptions(filters: { page?: number; pageSize?: number } = {}) { return this.receptions.list(filters.page ?? 1, filters.pageSize ?? 20); }
+  getReception(id: string) { return this.receptions.get(id); }
   listContainers() { return this.containers.list(); }
   getContainer(id: string) { return this.containers.get(id); }
   getContainerOccupancies(id: string) { return this.containers.occupancies(id); }

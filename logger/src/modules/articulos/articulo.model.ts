@@ -48,4 +48,5 @@ export interface PaginatedArticulos {
 export interface ValidateArticuloResult {
   valid: boolean;
   articulo?: Articulo;
+  reason?: "NOT_FOUND" | "INACTIVE" | "INVALID_CLASSIFICATION";
 }

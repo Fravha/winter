@@ -18,7 +18,7 @@ export class PrismaArticuloRepository implements ArticuloRepository {
   constructor(
     private readonly client: Pick<
       PrismaClient,
-      "articulo" | "inventoryMovement" | "purchaseLine" | "productionWorkInput"
+      "articulo" | "inventoryMovement" | "purchaseLine" | "productionWorkInput" | "productionBatch" | "$queryRaw"
     >,
   ) {}
 
@@ -27,8 +27,18 @@ export class PrismaArticuloRepository implements ArticuloRepository {
     return articulo ? this.toDomain(articulo) : null;
   }
 
+  async lockAndValidateMany(ids: readonly string[]) {
+    const result = new Map<string, { valid: boolean; articulo?: Articulo; reason?: "NOT_FOUND" | "INACTIVE" | "INVALID_CLASSIFICATION" }>();
+    for (const id of ids) {
+      await this.client.$queryRaw`SELECT id FROM articulos WHERE id = ${id}::uuid FOR UPDATE`;
+      const articulo = await this.findById(id);
+      result.set(id, !articulo ? { valid: false, reason: "NOT_FOUND" } : !articulo.activo ? { valid: false, reason: "INACTIVE" } : { valid: true, articulo });
+    }
+    return result;
+  }
+
   async hasOperationalReferences(id: string): Promise<boolean> {
-    const [inventoryMovement, purchaseLine, productionWorkInput] =
+    const [inventoryMovement, purchaseLine, productionWorkInput, productionBatch] =
       await Promise.all([
         this.client.inventoryMovement.findFirst({
           where: { articuloId: id },
@@ -42,11 +52,16 @@ export class PrismaArticuloRepository implements ArticuloRepository {
           where: { articuloId: id },
           select: { id: true },
         }),
+        this.client.productionBatch.findFirst({
+          where: { articuloId: id },
+          select: { id: true },
+        }),
       ]);
 
     return inventoryMovement !== null
       || purchaseLine !== null
-      || productionWorkInput !== null;
+      || productionWorkInput !== null
+      || productionBatch !== null;
   }
 
   async findByCodeInsensitive(codigo: string): Promise<Articulo | null> {

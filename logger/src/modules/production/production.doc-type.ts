@@ -1,6 +1,9 @@
 import type { DocType } from "../doc-types/doc-type.js";
 import { createProductionRouter } from "./production.routes.js";
 import { ProductionService } from "./production.service.js";
+import { ArticuloService } from "../articulos/articulo.service.js";
+import { PrismaArticuloRepository } from "../articulos/prisma-articulo.repository.js";
+import { PrismaArticuloUnitOfWork } from "../articulos/prisma-articulo.unit-of-work.js";
 export const productionDocType: DocType = {
   name: "production", route: "/production",
   permissions: [
@@ -18,9 +21,11 @@ export const productionDocType: DocType = {
     { code: "production:container_manage", name: "Manage production containers" },
     { code: "production:work_create", name: "Create production work" },
     { code: "production:work_correct", name: "Correct production work" },
+    { code: "production:reception_create", name: "Create grape receptions" },
   ],
   register(dependencies) {
-    const service = new ProductionService(dependencies.prisma, dependencies.auditService);
+    const articulos = new ArticuloService(new PrismaArticuloRepository(dependencies.prisma), new PrismaArticuloUnitOfWork(dependencies.prisma));
+    const service = new ProductionService(dependencies.prisma, dependencies.auditService, articulos);
     return { api: service, router: createProductionRouter(dependencies.tokenVerifier, dependencies.userRepository, service) };
   },
 };

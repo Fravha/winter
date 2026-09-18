@@ -64,16 +64,9 @@ export class ArticuloService implements ArticulosApi {
   }) {
     const articulo = await this.articuloRepository.findById(articuloId);
 
-    if (
-      !articulo
-      || !articulo.activo
-      || (
-        allowedClassifications !== undefined
-        && !allowedClassifications.includes(articulo.clasificacion)
-      )
-    ) {
-      return { valid: false };
-    }
+    if (!articulo) return { valid: false, reason: "NOT_FOUND" as const };
+    if (!articulo.activo) return { valid: false, reason: "INACTIVE" as const };
+    if (allowedClassifications !== undefined && !allowedClassifications.includes(articulo.clasificacion)) return { valid: false, reason: "INVALID_CLASSIFICATION" as const };
 
     return { valid: true, articulo };
   }
@@ -87,17 +80,19 @@ export class ArticuloService implements ArticulosApi {
   ) {
     const repository = new PrismaArticuloRepository(transaction);
     const articulo = await repository.findById(input.articuloId);
-    if (
-      !articulo
-      || !articulo.activo
-      || (
-        input.allowedClassifications !== undefined
-        && !input.allowedClassifications.includes(articulo.clasificacion)
-      )
-    ) {
-      return { valid: false } as const;
-    }
+    if (!articulo) return { valid: false, reason: "NOT_FOUND" as const };
+    if (!articulo.activo) return { valid: false, reason: "INACTIVE" as const };
+    if (input.allowedClassifications !== undefined && !input.allowedClassifications.includes(articulo.clasificacion)) return { valid: false, reason: "INVALID_CLASSIFICATION" as const };
     return { valid: true, articulo } as const;
+  }
+
+  async lockAndValidateArticulosInTransaction(
+    input: { articuloIds: readonly string[] },
+    transaction: SharedTransactionContext,
+  ) {
+    const ids = [...new Set(input.articuloIds)].sort();
+    const repository = new PrismaArticuloRepository(transaction);
+    return repository.lockAndValidateMany(ids);
   }
 
   createArticulo(
