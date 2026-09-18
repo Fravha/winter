@@ -6,12 +6,16 @@ import { AuditService } from "../src/core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { after, before, describe, it } from "node:test";
-import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
+import { createTemporaryProductionDatabaseResource } from "./helpers/production-test-database.js";
 
-const connectionString = getTemporaryProductionDatabaseUrl("P1_DATABASE_URL");
+const database = createTemporaryProductionDatabaseResource("P1_DATABASE_URL", connectionString => ({
+  connectionString,
+  createClient: () => new PrismaClient({ adapter: new PrismaPg({ connectionString }) }),
+}));
+const connectionString = database?.connectionString;
 let available = false;
-if (connectionString) {
-  const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+if (database) {
+  const probe = database.createClient();
   try {
     await probe.$queryRaw`SELECT 1 FROM production_producers LIMIT 1`;
     available = true;
@@ -28,9 +32,7 @@ const integrationOptions = available
 if (connectionString && !available) throw new Error("P1_DATABASE_URL was supplied but the P1 migration/database is unavailable");
 
 describe("Production P1 PostgreSQL integration", () => {
-  const prisma = connectionString
-    ? new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
-    : undefined;
+  const prisma = database?.createClient();
   const audit = prisma ? new AuditService(new PrismaAuditRepository(prisma)) : undefined;
   const service = prisma && audit ? new ProductionService(prisma, audit) : undefined;
   const createdProducerIds: string[] = [];

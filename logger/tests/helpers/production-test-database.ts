@@ -35,6 +35,15 @@ export function getTemporaryProductionDatabaseUrl(variableName: string, env: Nod
   return connectionString;
 }
 
+export function createTemporaryProductionDatabaseResource<T>(
+  variableName: string,
+  factory: (connectionString: string) => T,
+  env: NodeJS.ProcessEnv = process.env,
+): T | undefined {
+  const connectionString = getTemporaryProductionDatabaseUrl(variableName, env);
+  return connectionString ? factory(connectionString) : undefined;
+}
+
 function identifiesSameDatabase(left: URL, right: URL): boolean {
   const port = (url: URL) => url.port || "5432";
   return left.hostname === right.hostname

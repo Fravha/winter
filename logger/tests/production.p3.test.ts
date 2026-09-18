@@ -8,12 +8,16 @@ import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { BatchLineageService } from "../src/modules/production/production.batch.js";
 import { Prisma } from "../src/generated/prisma/client.js";
-import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
+import { createTemporaryProductionDatabaseResource } from "./helpers/production-test-database.js";
 
-const connectionString = getTemporaryProductionDatabaseUrl("P3_DATABASE_URL");
+const database = createTemporaryProductionDatabaseResource("P3_DATABASE_URL", connectionString => ({
+  connectionString,
+  createClient: () => new PrismaClient({ adapter: new PrismaPg({ connectionString }) }),
+}));
+const connectionString = database?.connectionString;
 let available = false;
-if (connectionString) {
-  const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+if (database) {
+  const probe = database.createClient();
   try {
     await probe.$queryRaw`SELECT 1 FROM production_batch_operations LIMIT 1`;
     available = true;
@@ -27,7 +31,7 @@ const integrationOptions = available ? {} : { skip: "requires P3_DATABASE_URL wi
 if (connectionString && !available) throw new Error("P3_DATABASE_URL was supplied but the P3 migration/database is unavailable");
 
 describe("Production P3 PostgreSQL", () => {
-  const prisma = connectionString ? new PrismaClient({ adapter: new PrismaPg({ connectionString }) }) : undefined;
+  const prisma = database?.createClient();
   const actorUserId = randomUUID();
   const service = prisma ? new ProductionService(prisma, new AuditService(new PrismaAuditRepository(prisma))) : undefined;
   const context = { actorUserId, requestId: randomUUID() };

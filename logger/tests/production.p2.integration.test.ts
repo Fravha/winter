@@ -6,12 +6,16 @@ import { PrismaClient } from "../src/generated/prisma/client.js";
 import { AuditService } from "../src/core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
-import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
+import { createTemporaryProductionDatabaseResource } from "./helpers/production-test-database.js";
 
-const connectionString = getTemporaryProductionDatabaseUrl("P2_DATABASE_URL");
+const database = createTemporaryProductionDatabaseResource("P2_DATABASE_URL", connectionString => ({
+  connectionString,
+  createClient: () => new PrismaClient({ adapter: new PrismaPg({ connectionString }) }),
+}));
+const connectionString = database?.connectionString;
 let available = false;
-if (connectionString) {
-  const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+if (database) {
+  const probe = database.createClient();
   try {
     await probe.$queryRaw`SELECT 1 FROM transformation_orders LIMIT 1`;
     available = true;
@@ -25,7 +29,7 @@ const integrationOptions = available ? {} : { skip: "requires P2_DATABASE_URL wi
 if (connectionString && !available) throw new Error("P2_DATABASE_URL was supplied but the P2 migration/database is unavailable");
 
 describe("Production P2 PostgreSQL integration", () => {
-  const prisma = connectionString ? new PrismaClient({ adapter: new PrismaPg({ connectionString }) }) : undefined;
+  const prisma = database?.createClient();
   const service = prisma ? new ProductionService(prisma, new AuditService(new PrismaAuditRepository(prisma))) : undefined;
   const actorUserId = randomUUID();
   const orderIds: string[] = [];

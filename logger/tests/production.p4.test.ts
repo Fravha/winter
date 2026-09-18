@@ -7,12 +7,16 @@ import { AuditService } from "../src/core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { ProductionContainerService } from "../src/modules/production/production.container.js";
-import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
+import { createTemporaryProductionDatabaseResource } from "./helpers/production-test-database.js";
 
-const connectionString = getTemporaryProductionDatabaseUrl("P4_DATABASE_URL");
+const database = createTemporaryProductionDatabaseResource("P4_DATABASE_URL", connectionString => ({
+  connectionString,
+  createClient: () => new PrismaClient({ adapter: new PrismaPg({ connectionString }) }),
+}));
+const connectionString = database?.connectionString;
 let available = false;
-if (connectionString) {
-  const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+if (database) {
+  const probe = database.createClient();
   try { await probe.$queryRaw`SELECT 1 FROM production_container_operations LIMIT 1`; available = true; } catch { available = false; }
   await probe.$disconnect();
 }
@@ -20,7 +24,7 @@ const integrationOptions = available ? {} : { skip: "requires P4_DATABASE_URL wi
 if (connectionString && !available) throw new Error("P4_DATABASE_URL was supplied but the P4 migration/database is unavailable");
 
 describe("Production P4 PostgreSQL", () => {
-  const prisma = connectionString ? new PrismaClient({ adapter: new PrismaPg({ connectionString }) }) : undefined;
+  const prisma = database?.createClient();
   const actorUserId = randomUUID();
   const context = { actorUserId, requestId: randomUUID() };
   const service = prisma ? new ProductionService(prisma, new AuditService(new PrismaAuditRepository(prisma))) : undefined;

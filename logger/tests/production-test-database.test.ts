@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
+import {
+  createTemporaryProductionDatabaseResource,
+  getTemporaryProductionDatabaseUrl,
+} from "./helpers/production-test-database.js";
 
 describe("Production history test database guard", () => {
   it("does not inherit the development database when the suite-specific variable is absent", () => {
@@ -13,6 +16,15 @@ describe("Production history test database guard", () => {
     assert.throws(
       () => getTemporaryProductionDatabaseUrl("P5_DATABASE_URL", {
         P5_DATABASE_URL: "postgresql://user:pass@development.example.com/winter",
+      }),
+      /temporary PostgreSQL database on 127\.0\.0\.1/,
+    );
+  });
+
+  it("rejects a remote host even when the database name looks temporary", () => {
+    assert.throws(
+      () => getTemporaryProductionDatabaseUrl("P5_DATABASE_URL", {
+        P5_DATABASE_URL: "postgresql://user:pass@development.example.com/winter_p5_test",
       }),
       /temporary PostgreSQL database on 127\.0\.0\.1/,
     );
@@ -59,5 +71,38 @@ describe("Production history test database guard", () => {
       getTemporaryProductionDatabaseUrl("P5_DATABASE_URL", { P5_DATABASE_URL: connectionString }),
       connectionString,
     );
+  });
+
+  it("does not construct a database resource before the guard passes", () => {
+    let resourceCreations = 0;
+    const factory = (connectionString: string) => {
+      resourceCreations += 1;
+      return connectionString;
+    };
+
+    assert.equal(
+      createTemporaryProductionDatabaseResource("P5_DATABASE_URL", factory, {
+        WINTER_DATABASE_URL: "postgresql://user:pass@development.example.com/winter",
+      }),
+      undefined,
+    );
+    assert.equal(resourceCreations, 0);
+
+    assert.throws(
+      () => createTemporaryProductionDatabaseResource("P5_DATABASE_URL", factory, {
+        P5_DATABASE_URL: "postgresql://user:pass@development.example.com/winter_p5_test",
+      }),
+      /temporary PostgreSQL database on 127\.0\.0\.1/,
+    );
+    assert.equal(resourceCreations, 0);
+
+    const connectionString = "postgresql://postgres:postgres@127.0.0.1:5432/winter_p5_test";
+    assert.equal(
+      createTemporaryProductionDatabaseResource("P5_DATABASE_URL", factory, {
+        P5_DATABASE_URL: connectionString,
+      }),
+      connectionString,
+    );
+    assert.equal(resourceCreations, 1);
   });
 });
