@@ -329,10 +329,13 @@ prototipos al dominio final.
 ### RULE-023 --- Identidad de actor y participantes
 
 El actor autenticado de una operación se identifica mediante `User.id` del
-sistema de acceso existente. No crear un agregado `Person` en el MVP. Los
-equipos o personas participantes en trabajos productivos se conservan en una
-lista operativa del trabajo y no adquieren por ello identidad de usuario, rol
-o permiso.
+sistema de acceso existente y se obtiene exclusivamente del contexto
+autenticado; nunca se acepta como actor desde el body. No crear un agregado
+`Person` en el MVP. Los participantes de trabajos productivos pertenecen a una
+entidad operativa propia `ProductionParticipant`, que puede relacionarse
+opcionalmente con un `User`, pero no requiere uno. Un trabajo puede tener
+múltiples participantes y roles descriptivos configurables. Un participante no
+es el actor del sistema ni adquiere por ello permisos.
 
 ### RULE-024 --- Clasificación de lotes de Inventory por command
 
@@ -492,6 +495,58 @@ No debe utilizarse como sustituto de:
 - movimiento de Inventory.
 
 Cada concepto conserva su ownership y reglas propias.
+
+### RULE-PROD-006 — Batches, transformaciones y cantidades
+
+`ProductionBatch` es la fuente de verdad del producto en proceso y representa
+una cantidad identificable y trazable de un `Articulo`. Cada transformación que
+cambia el producto crea un nuevo batch; una operación que no lo cambia puede
+mantener el mismo batch. Un consumo parcial conserva el remanente del batch
+original y la cantidad disponible nunca puede ser negativa.
+
+Una división física crea batches hijos irreversibles. La mezcla de dos o más
+batches crea un nuevo batch con trazabilidad hacia todos sus orígenes. Un
+`Container` productivo no contiene dos batches independientes; introducir otro
+batch constituye una mezcla/transformación.
+
+Los consumos y outputs son conceptos de la operación de transformación y no
+implican necesariamente entidades persistidas independientes. Todo output
+reutilizable se representa como `ProductionBatch`; no crear `Subproducto`.
+La transformación completa, incluidos consumos, outputs y pérdidas explícitas,
+es atómica.
+
+### RULE-PROD-007 — Cierres y correcciones irreversibles
+
+`ProductionOrder` y `TransformationOrder` solo utilizan los estados `OPEN` y
+`CLOSED`. El cierre valida sus precondiciones, es irreversible y no existe
+reapertura. Los registros operativos históricos no se eliminan físicamente;
+toda corrección es explícita, auditable y requiere motivo.
+
+### RULE-PROD-008 — Custom Fields
+
+Los campos contractuales (`CORE_FIELDS`) no se sustituyen por campos
+configurables. Los `CUSTOM_FIELDS` deben utilizar las definiciones y tipos
+aprobados por Production, conservar valores históricos al desactivarse y
+mantener código estable. No pueden convertirse automáticamente en invariantes,
+relaciones ni reglas estructurales del dominio.
+
+Los tipos iniciales son `TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE` y
+`SELECT`. Las entidades soportadas inicialmente son `Producer`,
+`GrapeVariety` y `GrapeReception`. Las definiciones con valores históricos no
+se eliminan físicamente; todo cambio administrativo se audita.
+
+### RULE-PROD-009 — Frontera Production → Inventory
+
+Mientras el producto está en proceso, `ProductionBatch` es la fuente de verdad
+y no se representa simultáneamente como `InventoryStock`. Production no escribe
+directamente lotes, movimientos ni stock de Inventory: solicita la operación
+mediante la API pública de Inventory.
+
+La salida es una única operación atómica y explícitamente tipada que coordina la
+reducción del batch, el `InventoryLot` con `originProductionBatchId`, el
+`InventoryMovement`, el `InventoryStock` y las auditorías correspondientes.
+Puede ser parcial y originar varios lotes, sin duplicar cantidades; cualquier
+fallo provoca rollback completo.
 
 ### RULE-PROD-005 — Detenerse ante ambigüedad física
 

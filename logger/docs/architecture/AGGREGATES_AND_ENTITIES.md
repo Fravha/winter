@@ -313,7 +313,8 @@ No debe existir más de una vendimia para el mismo año.
 
 Representar un ingreso físico real de uva a la bodega.
 
-Una recepción pertenece a un solo productor.
+Una recepción pertenece a un solo productor y puede contener una o varias
+variedades; cada variedad/cantidad genera un batch inicial independiente.
 
 ### Datos conceptuales
 
@@ -322,7 +323,7 @@ id
 codigo
 vendimiaId
 producerId
-grapeVarietyId
+varieties: variedad + cantidad recibida (1..N)
 fechaHora
 pesoSolicitado
 pesoRecibido
@@ -331,7 +332,7 @@ brix
 calidad
 estado
 observaciones
-responsableUserId
+actor autenticado (fuera del body)
 createdAt
 updatedAt
 ```
@@ -603,9 +604,8 @@ id
 codigo
 ordenProduccionId
 articuloId
-cantidadActual
+cantidadGenerada (disponibilidad derivada del historial)
 unidad
-estado
 fechaCreacion
 observaciones
 ```
@@ -624,6 +624,9 @@ LoteProduccion 1 ─── N OcupacionRecipiente
 - Puede sufrir entradas, retiros, movimientos y mermas.
 - Puede convertirse en otro lote mediante una transformación.
 - Puede combinarse con otros lotes durante un corte/ensamble.
+- No tiene estado persistido ni cantidad disponible negativa. Una división crea
+  batches hijos irreversibles y una mezcla crea un batch nuevo trazable a todos
+  sus orígenes.
 - No implica genealogía completa hasta cada lote de uva.
 
 ---
@@ -687,9 +690,9 @@ sus entidades específicas y no deben duplicarse dentro de `TrabajoProduccion`.
 `actorUserId` identifica al usuario autenticado que registra o modifica la
 operación.
 
-Adicionalmente, un trabajo puede conservar una lista operativa de personas o
-equipos participantes. Esta lista no crea un agregado `Person` y no concede
-roles ni permisos.
+Adicionalmente, un trabajo puede relacionarse con múltiples
+`ProductionParticipant`, entidad operativa independiente de `User`, con relación
+opcional a `User` y rol descriptivo configurable. No concede permisos.
 
 No se modelan todavía supervisor y autorizador.
 
@@ -908,7 +911,8 @@ observaciones
 
 - Un lote puede ocupar varios recipientes.
 - Un producto puede estar simultáneamente distribuido entre varios recipientes.
-- Un recipiente puede contener varios lotes.
+- Un recipiente no puede contener dos batches independientes simultáneamente;
+  introducir otro batch es una mezcla/transformación y genera uno nuevo.
 - La salida parcial de volumen no necesariamente termina la ocupación.
 
 No existe la obligación de construir una consulta histórica especializada del tipo “qué había exactamente en el tanque X entre dos fechas”; basta con conservar correctamente las ocupaciones y movimientos para poder derivarla en consultas futuras.
@@ -1658,6 +1662,37 @@ Asignación futura de tareas a trabajadores
 ```
 
 La planificación anticipada de productores/cantidades para una vendimia puede evolucionar posteriormente a un agregado específico, pero no se introduce en este documento hasta que exista una regla de negocio concreta que lo requiera.
+
+---
+
+# 44. Alineación con decisiones contractuales de Production
+
+Esta sección corrige y concreta las descripciones históricas anteriores:
+
+- `GrapeReception` usa una colección de líneas variedad/cantidad (una o varias)
+  y cada línea crea su `ProductionBatch` inicial. El actor no es un campo del
+  body.
+- `ProductionParticipant` es una entidad operativa propia, con `id`, `codigo`,
+  `nombre`, `activo`, timestamps y relación opcional con `User`; un trabajo
+  puede tener múltiples participantes y roles descriptivos.
+- `ProductionBatch` es la cantidad trazable de un `Articulo`; no tiene estado
+  persistido. La cantidad disponible deriva del historial y no puede ser
+  negativa. División, mezcla y trazabilidad siguen las reglas contractuales;
+  los batches hijos nunca se recombinan con el original.
+- `TransformationInput` solo acepta uno o varios `ProductionBatch` con cantidad.
+  `TransformationOutput` representa uno o varios outputs reutilizables como
+  `ProductionBatch`; no existe `Subproducto`. Consumos y outputs son conceptos
+  canónicos (`ProductionConsumption` y `ProductionOutput`) aunque no se exige
+  una tabla independiente.
+- `ProductionOrder` y `TransformationOrder` solo tienen `OPEN`/`CLOSED`;
+  `CLOSED` es irreversible y el cierre aplica sus precondiciones contractuales.
+- `CustomFieldDefinition` y sus valores son configurables, auditables y se
+  conservan históricamente; soportan `TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`,
+  `DATE` y `SELECT`, sin sustituir campos CORE ni invariantes.
+- La salida a Inventory es una operación atómica compartida: reducción de
+  ProductionBatch, output, InventoryLot con `originProductionBatchId`,
+  InventoryMovement, InventoryStock y ambas auditorías usan `SharedUnitOfWork`.
+  Production no posee ni duplica stock de producto en proceso.
 
 ---
 

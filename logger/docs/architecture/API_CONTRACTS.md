@@ -122,8 +122,9 @@ autenticado de Logger/Core y representarse mediante `User.id`. Los campos
 `performedByUserId`, `responsibleUserId` o `userId` de contratos internos no
 deben permitir que el frontend suplante al actor autenticado.
 
-Los participantes físicos de un trabajo se representan como lista operativa y
-no requieren ser usuarios del sistema.
+Los participantes físicos de un trabajo se representan como lista de
+`ProductionParticipant`; no requieren ser usuarios del sistema y nunca
+reemplazan al actor autenticado.
 
 ## 4.5 Errores
 
@@ -526,7 +527,6 @@ Entrada conceptual:
     type: string
     referenceId: string
   }
-  performedByUserId: string
   observations?: string
 }
 ```
@@ -567,7 +567,6 @@ Entrada:
     type: string
     referenceId: string
   }
-  performedByUserId: string
   observations?: string
 }
 ```
@@ -589,7 +588,6 @@ Entrada:
   destinationWarehouseId: string
   inventoryLotId?: string
   quantity: DecimalString
-  performedByUserId: string
   observations?: string
 }
 ```
@@ -612,7 +610,6 @@ Entrada:
   quantity: DecimalString
   direction: "INCREASE" | "DECREASE"
   reason: string
-  performedByUserId: string
   observations: string
 }
 ```
@@ -638,7 +635,6 @@ Entrada conceptual:
     transformationOrderId?: string
     productionWorkId: string
   }
-  performedByUserId: string
   observations?: string
 }
 ```
@@ -664,16 +660,18 @@ Entrada:
   inventoryLotCode?: string
   productionReference: {
     productionOrderId: string
-    productionBatchId?: string
+    productionBatchId: string
     productionWorkId?: string
   }
-  performedByUserId: string
   observations?: string
 }
 ```
 
 El resultado genera o actualiza una existencia administrada por
-Inventory. Cuando proviene del embotellado, su clasificación inicial es
+Inventory. Debe conservar `originProductionBatchId`. La reducción del batch,
+el output, el `InventoryLot`, el `InventoryMovement`, el stock y ambas
+auditorías forman una única operación atómica y tipada; cualquier fallo
+revierte todo. Cuando proviene del embotellado, su clasificación inicial es
 `PRODUCTO_ENVASADO`.
 
 ------------------------------------------------------------------------
@@ -801,8 +799,9 @@ La planificación no crea stock.
 # 13. Production API --- Recepción de uva
 
 `Producer` y `GrapeVariety` son catálogos propiedad de Production.
-`GrapeReception` debe referenciarlos por ID. No se aceptan como texto libre ni
-como Articulo. Los campos exactos y los contracts de administración de estos
+`GrapeReception` debe referenciarlos por ID. Una recepción puede contener una o
+varias variedades con sus cantidades; no se aceptan como texto libre ni como
+Articulo. Los campos exactos y los contracts de administración de estos
 catálogos deben quedar definidos en Production antes de implementar esta
 sección; la IA no debe inventarlos.
 
@@ -814,7 +813,13 @@ Entrada conceptual:
 {
   harvestId: string
   producerId: string
-  grapeVarietyId?: string
+  varieties: [
+    {
+      grapeVarietyId: string
+      quantity: DecimalString
+      unit: string
+    }
+  ]
   dateTime: string
 
   requestedWeight: DecimalString
@@ -826,12 +831,19 @@ Entrada conceptual:
 
   status: "ACCEPTED" | "ACCEPTED_WITH_OBSERVATIONS"
 
-  responsibleUserId: string
   observations?: string
 }
 ```
 
 No se acepta un estado `REJECTED`.
+
+Los campos adicionales de `Producer`, `GrapeVariety` y `GrapeReception` se
+gestionan como `CUSTOM_FIELDS`, separados de los `CORE_FIELDS` contractuales.
+Inicialmente admiten `TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE` y
+`SELECT`. Sus definiciones tienen código estable, pueden desactivarse sin
+perder valores históricos, no se eliminan físicamente cuando tienen valores y
+todo cambio administrativo se audita. Un campo configurable no sustituye
+invariantes, relaciones ni reglas estructurales del dominio.
 
 ------------------------------------------------------------------------
 
@@ -966,6 +978,10 @@ Cierra el período cuando el resultado correspondiente ha sido
 registrado.
 
 Debe validar los invariantes necesarios antes del cierre.
+
+Las órdenes utilizan únicamente los estados `OPEN` y `CLOSED`. `CLOSED` es
+irreversible: no existe reapertura. No puede cerrarse con trabajos,
+transformaciones u operaciones productivas incompletas.
 
 ------------------------------------------------------------------------
 
@@ -1114,7 +1130,6 @@ Entrada:
   unit: string
 
   dateTime: string
-  userId: string
   observations?: string
 }
 ```
@@ -1152,7 +1167,6 @@ Entrada:
   productionBatchId?: string
   decisionType: string
   dateTime: string
-  userId: string
   observations: string
 }
 ```
@@ -1297,8 +1311,6 @@ Entrada:
   unit: string
 
   dateTime: string
-  userId: string
-
   reason: string
   observations?: string
 }
@@ -1324,7 +1336,6 @@ Entrada:
   transformationOrderId: string
   transformationTypeId: string
   dateTime: string
-  userId: string
   observations?: string
 }
 ```
@@ -1338,15 +1349,14 @@ Entrada:
 ``` ts
 {
   transformationId: string
-  productionBatchId?: string
-  articuloId?: string
+  productionBatchId: string
   quantity: DecimalString
   unit: string
 }
 ```
 
-El input debe utilizar la referencia que corresponda a la realidad del
-proceso.
+Todo input de una `Transformation` es uno o varios `ProductionBatch` trazables;
+no se aceptan inputs identificados únicamente por `articuloId`.
 
 ------------------------------------------------------------------------
 
@@ -1363,6 +1373,10 @@ Entrada:
   unit: string
 }
 ```
+
+Todo output reutilizable se representa mediante `ProductionBatch`; este
+contrato conceptual no implica una entidad persistida independiente de output.
+La transformación completa, incluidos consumos, outputs y pérdidas, es atómica.
 
 ------------------------------------------------------------------------
 
@@ -1400,7 +1414,6 @@ Entrada:
   unit: string
 
   dateTime: string
-  userId: string
   observations?: string
 }
 ```
@@ -1437,6 +1450,11 @@ Antes de cerrar debe validar las reglas del dominio correspondientes.
 
 No debe permitir cerrar arbitrariamente una producción que aún tenga
 información obligatoria pendiente.
+
+La orden solo utiliza los estados `OPEN` y `CLOSED`. `CLOSED` es irreversible:
+no existe reapertura. No puede cerrarse si tiene `TransformationOrder` abiertas,
+trabajos pendientes o transformaciones incompletas; puede cerrarse aunque
+existan batches con saldo disponible.
 
 ------------------------------------------------------------------------
 

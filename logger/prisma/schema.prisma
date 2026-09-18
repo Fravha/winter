@@ -186,6 +186,117 @@ model ProductionWorkInput {
   @@map("production_work_inputs")
 }
 
+model WorkType {
+  id String @id @default(uuid()) @db.Uuid
+  code String @unique
+  name String
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@index([active])
+  @@map("production_work_types")
+}
+
+model MeasurementType {
+  id String @id @default(uuid()) @db.Uuid
+  code String @unique
+  name String
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@index([active])
+  @@map("production_measurement_types")
+}
+
+model ProductionParticipant {
+  id String @id @default(uuid()) @db.Uuid
+  code String @unique
+  name String
+  active Boolean @default(true)
+  userId String? @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@index([active])
+  @@index([userId])
+  @@map("production_participants")
+}
+
+model Producer {
+  id String @id @default(uuid()) @db.Uuid
+  code String @unique
+  name String
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@index([active])
+  @@map("production_producers")
+}
+
+model GrapeVariety {
+  id String @id @default(uuid()) @db.Uuid
+  code String @unique
+  name String
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@index([active])
+  @@map("production_grape_varieties")
+}
+
+enum CustomFieldEntityType {
+  PRODUCER
+  GRAPE_VARIETY
+  GRAPE_RECEPTION
+}
+
+enum CustomFieldDataType {
+  TEXT
+  INTEGER
+  DECIMAL
+  BOOLEAN
+  DATE
+  SELECT
+}
+
+model CustomFieldDefinition {
+  id String @id @default(uuid()) @db.Uuid
+  entityType CustomFieldEntityType @map("entity_type")
+  code String
+  label String
+  dataType CustomFieldDataType @map("data_type")
+  required Boolean @default(false)
+  active Boolean @default(true)
+  options Json?
+  displayOrder Int @default(0) @map("display_order")
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  values CustomFieldValue[]
+  @@unique([entityType, code])
+  @@index([entityType, active, displayOrder])
+  @@map("production_custom_field_definitions")
+}
+
+model CustomFieldValue {
+  id String @id @default(uuid()) @db.Uuid
+  definitionId String @map("definition_id") @db.Uuid
+  entityType CustomFieldEntityType @map("entity_type")
+  entityId String @map("entity_id") @db.Uuid
+  textValue String? @map("text_value")
+  integerValue Int? @map("integer_value")
+  decimalValue Decimal? @map("decimal_value") @db.Decimal(18, 6)
+  booleanValue Boolean? @map("boolean_value")
+  dateValue DateTime? @map("date_value")
+  selectValue String? @map("select_value")
+  definition CustomFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@unique([definitionId, entityId])
+  @@index([entityType, entityId])
+  @@index([definitionId])
+  @@map("production_custom_field_values")
+}
+
 model Warehouse {
   id              String              @id @default(uuid()) @db.Uuid
   codigo          String

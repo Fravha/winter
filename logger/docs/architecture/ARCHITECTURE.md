@@ -170,9 +170,12 @@ Production
   ├── TransformationOrder
   ├── ProductionBatch
   ├── ProductionWork
+  ├── ProductionParticipant
   ├── Container
   ├── Transformation
-  └── demás entidades productivas definidas por el dominio
+  ├── ProductionLoss
+  ├── Measurement
+  └── CustomFieldDefinition / values
 
 Inventory
   ├── Warehouse
@@ -329,7 +332,12 @@ simple `PATCH`.
 ## 11. Transacciones
 
 Una escritura de negocio y su auditoría deben ejecutarse atómicamente
-cuando forman parte de la misma operación.
+cuando forman parte de la misma operación. En la salida de Production hacia
+Inventory, la misma operación lógica incluye la reducción del
+`ProductionBatch`, el `InventoryLot` con `originProductionBatchId`, el
+`InventoryMovement`, el `InventoryStock` y ambas auditorías. El intercambio
+entre módulos utiliza resultados explícitamente tipados; cualquier fallo
+provoca rollback completo.
 
 ``` text
 BEGIN

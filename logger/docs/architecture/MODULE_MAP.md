@@ -135,7 +135,7 @@ Los definidos por el módulo Core/Access Management.
 Production utiliza `User.id` como identificador del actor autenticado que
 registra o modifica información.
 
-Puede conservar referencias como:
+Puede conservar referencias técnicas de autoría como:
 
 ``` text
 userId
@@ -145,7 +145,9 @@ updatedByUserId
 
 según corresponda al contrato existente de Logger.
 
-No debe crear un sistema paralelo de usuarios o permisos.
+No debe crear un sistema paralelo de usuarios o permisos. Las personas que
+participan físicamente se modelan como `ProductionParticipant`, independiente
+del actor autenticado.
 
 ## Regla
 
@@ -231,9 +233,8 @@ Por ejemplo:
 
 ``` text
 ProductionBatch.articuloId
-ProductionWorkInput.articuloId
-TransformationInput.articuloId
-TransformationOutput.articuloId
+ProductionConsumption.productionBatchId / inventoryLotId
+ProductionOutput.productionBatchId
 ```
 
 Production no debe modificar directamente Articulo.
@@ -558,7 +559,7 @@ maestras utilizadas por `GrapeReception`.
 
 ``` text
 GrapeReception.producerId      -> Producer
-GrapeReception.grapeVarietyId  -> GrapeVariety
+GrapeReception.varieties[]     -> GrapeVariety + cantidad
 ```
 
 No pertenecen a Articulos ni Core y no deben almacenarse como texto libre.
@@ -606,7 +607,7 @@ Una recepción:
 
 -   pertenece a una vendimia;
 -   referencia un `Producer` por `producerId`;
--   referencia una `GrapeVariety` por `grapeVarietyId` cuando corresponda;
+-   contiene una o varias variedades, cada una con su cantidad;
 -   corresponde a un único productor;
 -   registra peso solicitado y recibido;
 -   registra mediciones iniciales;
@@ -925,7 +926,9 @@ cuánto volumen tenía inicialmente
 cuánto volumen quedó/finalizó
 ```
 
-Un recipiente puede contener varios lotes.
+Un recipiente no puede contener dos batches independientes simultáneamente.
+Introducir otro batch constituye una mezcla/transformación y genera un batch
+nuevo.
 
 Un lote de producción puede estar distribuido en varios recipientes.
 
@@ -978,15 +981,14 @@ Registrar qué transformación física ocurrió dentro de una
 Puede tener:
 
 ``` text
-inputs
-outputs
+ProductionConsumption inputs (uno o varios ProductionBatch)
+ProductionOutput outputs (uno o varios ProductionBatch)
 ```
 
 y asociarse a:
 
 ``` text
 ProductionBatch
-Articulo
 cantidad
 unidad
 ```
@@ -1654,3 +1656,35 @@ Esta estructura sustituye el mapa provisional donde `Products` y
 `Purchases` aparecían como módulos finales. `Products` pasa
 conceptualmente a `Articulos`, mientras que `Compras` queda como módulo
 de adquisición integrado con Inventory.
+
+---
+
+# 37. Alineación contractual de Production
+
+Production es propietario de `ProductionBatch`, `Container`,
+`ProductionParticipant`, consumos, outputs, transformaciones y su trazabilidad.
+`ProductionParticipant` es independiente de Core/User; el actor de cada comando
+proviene exclusivamente del contexto autenticado.
+
+`GrapeReception` puede contener múltiples variedades y cantidades, generando un
+batch inicial por cada variedad. `Transformation` consume uno o varios
+`ProductionBatch` (nunca un `Articulo` sin identidad de batch) y genera uno o
+varios `ProductionOutput`; todo output reutilizable es otro `ProductionBatch`.
+Los consumos y outputs son canónicos y no se duplican dentro de
+`ProductionWorkInput`.
+
+La disponibilidad de un batch se deriva de su historial y nunca puede ser
+negativa. Las divisiones crean hijos irreversibles; las mezclas crean un batch
+nuevo trazable a todos sus orígenes. Un `Container` no contiene dos batches
+independientes: introducir otro es una mezcla/transformación.
+
+`ProductionOrder` y `TransformationOrder` solo tienen estados `OPEN` y
+`CLOSED`; el cierre es irreversible y no existe reapertura. Los Custom Fields
+son configurables, auditables y preservan valores históricos, con tipos
+`TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE` y `SELECT`.
+
+La frontera con Inventory empieza cuando el producto sale de Production. La
+salida es atómica mediante `SharedUnitOfWork`: reducción del batch, output,
+`InventoryLot.originProductionBatchId`, `InventoryMovement`,
+`InventoryStock` y auditorías se confirman o revierten juntos. El producto en
+proceso dentro de recipientes no es stock de Inventory.

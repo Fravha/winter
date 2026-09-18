@@ -69,12 +69,14 @@ Toda operación física debe registrar como mínimo:
 -   fecha/hora efectiva;
 -   cantidad;
 -   unidad;
--   actor autenticado (`User.id`) cuando la operación se registra en el sistema;
+-   actor autenticado, obtenido exclusivamente del contexto de autenticación,
+    cuando la operación se registra en el sistema;
 -   documento causal cuando corresponda.
 
 Cuando un trabajo requiera registrar personas o equipos que participaron
-físicamente, estos se conservan en una lista operativa separada del actor
-autenticado. No se crea un agregado `Person` en el MVP.
+    físicamente, se conservan como `ProductionParticipant`, entidad operativa
+    independiente del actor autenticado. Puede relacionarse opcionalmente con
+    un `User`, pero no es el actor del sistema.
 
 La unidad depende del contexto:
 
@@ -138,6 +140,13 @@ arbitrarios.
 
 No se crean trabajos que no ocurrieron.
 
+`ProductionOrder` y `TransformationOrder` solo utilizan `OPEN` y `CLOSED`.
+`CLOSED` es irreversible y no existe reapertura. Una `ProductionOrder` no
+puede cerrarse con `TransformationOrder` abiertas, trabajos pendientes o
+transformaciones incompletas; puede cerrarse aunque queden batches con saldo.
+Una `TransformationOrder` no puede cerrarse con trabajos, transformaciones u
+operaciones productivas incompletas.
+
 ------------------------------------------------------------------------
 
 # 4. Workflow A --- Planificación de Vendimia
@@ -186,7 +195,7 @@ Registrar el ingreso físico de una cantidad de uva a la bodega.
 
 ``` text
 Producer (`producerId`)
-GrapeVariety (`grapeVarietyId`)
+Una o varias variedades (`varieties[]`, cada una con su cantidad)
 Fecha/hora
 Peso solicitado
 Peso recibido
@@ -194,7 +203,7 @@ Grado alcohólico / Brix
 Calidad
 Estado
 Observaciones
-Responsable
+(El actor se obtiene del contexto autenticado)
 ```
 
 ## Flujo
@@ -227,10 +236,12 @@ Si la uva no se acepta físicamente, no se crea la recepción.
 
 ## Regla de negocio
 
-Una recepción corresponde a un solo productor.
+Una recepción corresponde a un solo productor y puede contener una o varias
+variedades. Cada variedad y cantidad recibida genera su propio `ProductionBatch`
+inicial.
 
-Una nueva entrega realizada otro día constituye una nueva recepción,
-aunque corresponda al mismo productor y variedad.
+Una nueva entrega realizada otro día constituye una nueva recepción, aunque
+corresponda al mismo productor o a las mismas variedades.
 
 Ejemplo:
 
@@ -252,8 +263,9 @@ Recepción R-002
 
 # 6. Workflow C --- Lote de Uva
 
-Una recepción genera uno o más lotes de uva cuando el negocio necesita
-separar la materia prima por características relevantes.
+Cada variedad y cantidad de una recepción genera su propio batch inicial. La
+separación posterior por características relevantes puede generar batches hijos
+cuando corresponda.
 
 La diferenciación puede considerar:
 
@@ -386,9 +398,9 @@ Determinar trabajo realizado
         ↓
 Registrar ProductionWork
         ↓
-Registrar actor autenticado (User.id)
+Registrar el actor desde el contexto autenticado
         ↓
-Registrar lista de participantes cuando aplique
+Registrar `ProductionParticipant` cuando aplique, separado del actor
         ↓
 Relacionar uno o varios ProductionBatch y/o Container cuando aplique
         ↓
@@ -425,7 +437,7 @@ Cuando un trabajo los necesita:
 ``` text
 ProductionWork
       ↓
-ProductionWorkInput
+Consumo real asociado al `ProductionWork`
       ↓
 Inventory API
       ↓
@@ -525,16 +537,19 @@ Cerrar ocupación origen
 Crear/actualizar ocupación destino
 ```
 
-El mismo `ProductionBatch` puede quedar repartido en varios recipientes.
+Un traslado total entre recipientes mantiene el mismo `ProductionBatch`. Un
+traslado parcial crea batches hijos; los hijos no vuelven a convertirse en el
+batch original. Un recipiente no contiene dos batches independientes
+simultáneamente.
 
 Ejemplo:
 
 ``` text
 3000 L
 
-TK-01 → 1000 L
-TK-02 → 800 L
-TK-03 → 1200 L
+TK-01 → 1000 L (batch hijo)
+TK-02 → 800 L (batch hijo)
+TK-03 → 1200 L (batch hijo)
 ```
 
 El sistema debe soportar estas distribuciones.
@@ -600,7 +615,10 @@ actualizar ocupaciones
 registrar merma si corresponde
 ```
 
-Una transformación puede tener múltiples entradas y múltiples salidas.
+Una transformación puede tener múltiples entradas y múltiples salidas. Todas
+las entradas son `ProductionBatch` trazables y todo output reutilizable se
+representa mediante `ProductionBatch`; no se crea una entidad independiente de
+subproducto/output por defecto.
 
 No debe asumirse que:
 
@@ -795,7 +813,7 @@ El sistema debe registrar:
 -   cantidades;
 -   salida;
 -   fecha;
--   responsable;
+-   actor obtenido del contexto autenticado;
 -   observaciones;
 -   transformación asociada.
 
@@ -961,7 +979,7 @@ Cada resultado relevante debe registrar:
 volumen
 grado alcohólico
 fecha
-responsable
+actor obtenido del contexto autenticado
 destino
 observaciones
 ```
@@ -1067,7 +1085,11 @@ de las barricas utilizadas.
 
 # 28. Workflow Y --- Envasado
 
-El envasado es un `ProductionWork`.
+El envasado es un `ProductionWork`. La salida de Production hacia Inventory es
+atómica y tipada: reducción del `ProductionBatch`, registro del output,
+`InventoryLot` con `originProductionBatchId`, movimiento, stock y auditorías
+forman una única transacción lógica. Cualquier fallo revierte la operación
+completa.
 
 ## Flujo
 
@@ -1090,9 +1112,9 @@ Registrar:
   mermas
   observaciones
       ↓
-Inventory.registerProductionOutput
-      ↓
-Crear / actualizar InventoryLot
+Inventory API: salida Production → Inventory
+       ↓
+Inventory crea/reutiliza `InventoryLot` y actualiza stock
       ↓
 Clasificación inicial: PRODUCTO_ENVASADO
       ↓

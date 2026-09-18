@@ -89,7 +89,7 @@ Una recepción debe poder registrar, según corresponda:
 - fecha;
 - proveedor/productor;
 - finca/origen;
-- variedad;
+- una o varias variedades, cada una con su cantidad;
 - calidad/estado;
 - quintales solicitados;
 - quintales recibidos;
@@ -563,17 +563,10 @@ Puede quedar:
 - lleno;
 - vacío.
 
-Puede contener múltiples lotes/contenidos de proceso cuando la operación lo permite.
+Un recipiente no contiene simultáneamente dos batches independientes. Introducir
+otro batch constituye una mezcla/transformación y genera un nuevo batch.
 
 Ejemplo:
-
-```text
-Tanque T-01
-
-Lote/proceso A -> 1.000 L
-Lote/proceso B ->   800 L
-Total          -> 1.800 L
-```
 
 La disponibilidad física del recipiente debe reflejar siempre los movimientos realizados.
 
@@ -1898,6 +1891,40 @@ La implementación puede agrupar algunas entidades físicamente cuando exista un
 # 45. Regla para la IA
 
 Cuando una nueva implementación parezca requerir una entidad, relación o estado que no esté definido aquí, la IA no debe inventarlo automáticamente si afecta al significado del negocio.
+
+---
+
+# 41. Alineación contractual de Production
+
+Las siguientes reglas prevalecen sobre cualquier descripción conceptual anterior
+de este documento:
+
+- `GrapeReception` pertenece a una `ProductionOrder`, puede contener una o
+  varias variedades y cada par variedad/cantidad genera su `ProductionBatch`
+  inicial.
+- El actor de cada cambio se obtiene exclusivamente del contexto autenticado.
+  Las personas que participaron físicamente se modelan como
+  `ProductionParticipant`, entidad operativa independiente de `User`, con
+  relación opcional a un usuario y rol descriptivo configurable.
+- Los consumos y outputs se representan mediante conceptos canónicos
+  `ProductionConsumption` y `ProductionOutput` (sin duplicar consumos en
+  `ProductionWork`); su forma de persistencia queda para el diseño técnico.
+  Los consumos de transformación siempre referencian uno o más
+  `ProductionBatch`, nunca solamente un `Articulo`.
+- `ProductionBatch` no tiene estado persistido: su disponibilidad se deriva del
+  historial (`generada - consumida - separada - pérdidas - transferida`) y nunca
+  puede ser negativa. Una división crea batches hijos irreversibles; una mezcla
+  crea un batch nuevo con trazabilidad a todos sus orígenes.
+- `ProductionOrder` y `TransformationOrder` solo admiten `OPEN` y `CLOSED`.
+  `CLOSED` es irreversible y no existe reapertura. Se aplican las
+  precondiciones de cierre aprobadas en `DECISION_PRODUCTION.md`.
+- Los campos adicionales son `Custom Fields` administrables, con definiciones
+  estables, tipos `TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE` y `SELECT`,
+  preservación histórica y auditoría. No sustituyen invariantes estructurales.
+- El cruce `Production → Inventory` es atómico: reducción del batch, output,
+  `InventoryLot` con `originProductionBatchId`, movimiento, stock y auditorías
+  se confirman o revierten juntos mediante `SharedUnitOfWork`. El producto en
+  proceso no es `InventoryStock`.
 
 Debe:
 

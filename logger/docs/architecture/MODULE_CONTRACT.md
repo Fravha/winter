@@ -202,9 +202,9 @@ que deben ser atómicas.
 Ejemplo:
 
 ``` ts
-interface ProductionUnitOfWork {
+interface SharedUnitOfWork {
   execute<T>(
-    work: (transaction: ProductionTransaction) => Promise<T>
+    work: (transaction: SharedTransaction) => Promise<T>
   ): Promise<T>;
 }
 ```
@@ -214,9 +214,17 @@ La transacción puede incluir:
 ``` text
 domain write
 related domain write
-inventory movement
+typed Inventory API operation
 audit
 ```
+
+En la salida de Production hacia Inventory, la operación atómica incluye la
+reducción de `ProductionBatch`, la creación o reutilización del
+`InventoryLot` con `originProductionBatchId`, el `InventoryMovement`, la
+actualización de `InventoryStock` y las auditorías de ambos módulos. Production
+no escribe directamente entidades de Inventory. Debe utilizar el
+`SharedUnitOfWork` autorizado y un resultado explícitamente tipado; cualquier
+fallo provoca rollback completo.
 
 ------------------------------------------------------------------------
 
@@ -322,6 +330,10 @@ IN_PROGRESS
 
 No asumir que todos los estados pueden modificarse libremente.
 
+Para Production, `ProductionOrder` y `TransformationOrder` tienen únicamente
+los estados `OPEN` y `CLOSED`. `CLOSED` es irreversible, no existe reapertura
+y el cierre debe validar sus precondiciones y dependencias pendientes.
+
 ------------------------------------------------------------------------
 
 ## 14. Invariantes
@@ -340,6 +352,24 @@ A cancelled operation cannot be completed.
 
 Las invariantes deben protegerse en backend y, cuando corresponda,
 también mediante restricciones de base de datos.
+
+En Production, `ProductionBatch` es la fuente de verdad del producto en proceso,
+su cantidad disponible no puede ser negativa y el remanente de un consumo
+parcial conserva la identidad del batch. Una división crea batches hijos y una
+mezcla crea un nuevo batch trazable hacia todos sus orígenes. Un recipiente no
+contiene dos batches independientes simultáneamente.
+
+Los consumos y outputs son conceptos de la transformación y no requieren
+entidades persistidas independientes. Un output reutilizable se representa
+mediante `ProductionBatch`; no existe `Subproducto`. La transformación completa
+es atómica e incluye consumos, outputs y pérdidas explícitas.
+
+Los campos contractuales (`CORE_FIELDS`) no pueden sustituirse
+administrativamente. Los `CUSTOM_FIELDS` de Production soportan inicialmente
+`TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE` y `SELECT`, para
+`Producer`, `GrapeVariety` y `GrapeReception`. Su `code` es estable, las
+definiciones con valores históricos no se eliminan físicamente y desactivarlas
+conserva los valores previos.
 
 ------------------------------------------------------------------------
 
@@ -456,6 +486,10 @@ Los códigos de permisos son contratos estables.
 No cambiar códigos existentes sin migración y actualización de
 consumidores.
 
+Production utiliza la base aprobada de permisos específicos
+`production:<action>`; no debe reducir sus operaciones a un permiso genérico
+único.
+
 ------------------------------------------------------------------------
 
 ## 19. HTTP Routes
@@ -529,6 +563,11 @@ metadata
 
 Cuando la operación es transaccional, la auditoría debe participar en la
 misma transacción.
+
+El actor se obtiene del contexto autenticado y no forma parte del body. Las
+personas que participaron físicamente se modelan como
+`ProductionParticipant`, entidad operativa independiente de `User`; un trabajo
+puede tener múltiples participantes y roles descriptivos configurables.
 
 ------------------------------------------------------------------------
 
@@ -611,6 +650,10 @@ immutable history
 Una entidad que forma parte de trazabilidad no debe eliminarse si
 hacerlo destruye el historial requerido por el negocio.
 
+Las entidades operativas históricas de Production no se eliminan físicamente.
+Las correcciones son explícitas, auditables y requieren motivo; los cierres no
+se revierten.
+
 ------------------------------------------------------------------------
 
 ## 25. Trazabilidad
@@ -652,8 +695,10 @@ Inventory
     owns stock and movements
 ```
 
-Production solicita al módulo de Inventory las operaciones necesarias
-para consumir o ingresar existencias.
+Production solicita al módulo de Inventory, mediante su API pública, las
+operaciones necesarias para la salida de producto en proceso. Mientras el
+producto permanezca en proceso, `ProductionBatch` es la fuente de verdad y no
+se duplica como `InventoryStock`.
 
 Inventory es propietario de:
 
@@ -664,10 +709,17 @@ Inventory es propietario de:
 
 Production es propietario de:
 
--   production orders/lots;
+-   production orders;
+-   `ProductionBatch` y su trazabilidad;
 -   production states;
 -   process activities;
--   product transformation records.
+-   product transformation records;
+-   production losses, measurements, containers y participants.
+
+Al salir del proceso, la frontera es
+`ProductionBatch -> InventoryLot -> InventoryMovement -> InventoryStock`, sin
+duplicar cantidades. El cruce es una operación atómica y tipada mediante la
+API pública de Inventory.
 
 ------------------------------------------------------------------------
 
