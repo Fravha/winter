@@ -154,14 +154,44 @@ model PurchaseLine {
 }
 
 model ProductionOrder {
-  id        String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  reference String                @unique
-  status    ProductionOrderStatus @default(OPEN)
-  createdAt DateTime              @default(now()) @map("created_at")
-  updatedAt DateTime              @updatedAt @map("updated_at")
-  works     ProductionWork[]
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String                @unique
+  status         ProductionOrderStatus @default(OPEN)
+  startDate      DateTime              @map("start_date")
+  observations   String?
+  closedAt       DateTime?             @map("closed_at")
+  closedByUserId String?               @map("closed_by_user_id") @db.Uuid
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+  version        Int                   @default(0)
+  works          ProductionWork[]
+  transformationOrders TransformationOrder[]
+
+  @@index([status])
+  @@index([startDate])
 
   @@map("production_orders")
+}
+
+model TransformationOrder {
+  id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code             String
+  productionOrderId String               @map("production_order_id") @db.Uuid
+  status           ProductionOrderStatus @default(OPEN)
+  periodStart      DateTime              @map("period_start")
+  periodEnd        DateTime?             @map("period_end")
+  observations     String?
+  closedAt         DateTime?             @map("closed_at")
+  closedByUserId   String?               @map("closed_by_user_id") @db.Uuid
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  version          Int                   @default(0)
+  productionOrder  ProductionOrder      @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+
+  @@unique([productionOrderId, code])
+  @@index([productionOrderId, status])
+  @@index([periodStart, periodEnd])
+  @@map("transformation_orders")
 }
 
 model ProductionWork {

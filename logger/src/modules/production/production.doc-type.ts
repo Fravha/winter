@@ -11,6 +11,10 @@ export const productionDocType: DocType = {
     { code: "production:custom_fields_manage", name: "Manage production custom fields" },
     { code: "production:work_type_manage", name: "Manage production work types" },
     { code: "production:measurement_type_manage", name: "Manage production measurement types" },
+    { code: "production:order_create", name: "Create production orders" },
+    { code: "production:order_close", name: "Close production orders" },
+    { code: "production:transformation_order_create", name: "Create transformation orders" },
+    { code: "production:transformation_order_close", name: "Close transformation orders" },
   ],
   register(dependencies) {
     const service = new ProductionService(dependencies.prisma, dependencies.auditService);

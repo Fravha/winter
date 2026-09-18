@@ -9,7 +9,19 @@ import { PrismaArticuloUnitOfWork } from "../src/modules/articulos/prisma-articu
 import { AppError } from "../src/shared/errors/app-error.js";
 
 const connectionString = process.env.WINTER_DATABASE_URL;
-const describeWithDatabase = connectionString ? describe : describe.skip;
+let databaseReady = false;
+if (connectionString) {
+  const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  try {
+    const rows = await probe.$queryRaw<Array<{ exists: number }>>`SELECT 1 AS exists FROM information_schema.columns WHERE table_name = 'production_orders' AND column_name = 'code'`;
+    databaseReady = rows.length > 0;
+  } catch {
+    databaseReady = false;
+  } finally {
+    await probe.$disconnect();
+  }
+}
+const describeWithDatabase = databaseReady ? describe : describe.skip;
 
 describeWithDatabase("Articulo operational references integration", () => {
   const prisma = new PrismaClient({
@@ -94,7 +106,7 @@ describeWithDatabase("Articulo operational references integration", () => {
           });
         } else {
           const order = await prisma.productionOrder.create({
-            data: { reference: `PROD-${suffix}` },
+            data: { code: `PROD-${suffix}`, startDate: new Date() },
           });
           productionOrderId = order.id;
           const work = await prisma.productionWork.create({

@@ -1,4 +1,4 @@
-# Production P1 API
+# Production P2 API
 
 Base URL: `/api/v1/production`. All endpoints require authentication. List
 queries use `page`, `pageSize`, `search` and `active`.
@@ -33,8 +33,31 @@ Codes are unique and immutable; there is no DELETE. Deactivation is logical.
 Every administrative command obtains its actor from the authentication context
 and records an audit event atomically with the catalog change.
 
-P1 deliberately does not expose orders, batches, works, receptions,
-transformations, containers or operational measurements.
+P2 exposes only the order aggregates below. Batches, works, receptions,
+transformations, containers and operational measurements remain outside this
+phase.
+
+## Production orders
+
+`GET /orders` and `GET /orders/:id` require `production:read`.
+`POST /orders` requires `production:order_create` and accepts
+`{ "code": "...", "startDate": "...", "observations": "..." }`.
+`POST /orders/:id/close` requires `production:order_close`.
+An order is created `OPEN` and can be closed once only; closing is irreversible.
+An order with an open transformation order cannot be closed.
+
+## Transformation orders
+
+`GET /transformation-orders` and `GET /transformation-orders/:id` require
+`production:read`. `POST /transformation-orders` requires
+`production:transformation_order_create` and accepts
+`{ "code": "...", "productionOrderId": "...", "periodStart": "...",
+"periodEnd": "...", "observations": "..." }`. `POST
+/transformation-orders/:id/close` requires
+`production:transformation_order_close`. Transformation orders belong to a
+ProductionOrder, use `OPEN`/`CLOSED`, and cannot be reopened. P2 has no
+operational child entities, so additional incomplete-operation preconditions
+remain an explicit extension point for later phases.
 
 ## Custom fields
 

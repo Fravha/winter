@@ -1,12 +1,12 @@
 import { AuditService } from "../../core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../../core/audit/prisma-audit.repository.js";
 import type { AuthenticatedAuditContext } from "../../core/audit/audit.types.js";
-import { SharedUnitOfWork } from "../../core/database/shared-unit-of-work.js";
+import { isSerializationConflict, SharedUnitOfWork } from "../../core/database/shared-unit-of-work.js";
 import type { SharedTransactionContext } from "../../core/database/shared-unit-of-work.js";
 import { AppError } from "../../shared/errors/app-error.js";
 import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
 import { ProductionRepository } from "./production.repository.js";
-import type { CatalogFilters, CatalogInput, CatalogKind } from "./production.dto.js";
+import type { CatalogFilters, CatalogInput, CatalogKind, OrderFilters, ProductionOrderInput, TransformationOrderInput } from "./production.dto.js";
 const kindMap = { participants: "participants", producers: "producers", "grape-varieties": "grape-varieties", "work-types": "work-types", "measurement-types": "measurement-types" } as const;
 export class ProductionService {
   constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService) {}
@@ -86,7 +86,86 @@ export class ProductionService {
     });
     return item;
   }
+  listOrders(filters: OrderFilters) { return new ProductionRepository(this.prisma).listOrders(filters); }
+  getOrder(id: string) { return new ProductionRepository(this.prisma).findOrder(id); }
+  listTransformationOrders(filters: OrderFilters) { return new ProductionRepository(this.prisma).listTransformationOrders(filters); }
+  getTransformationOrder(id: string) { return new ProductionRepository(this.prisma).findTransformationOrder(id); }
+  async createOrder(data: ProductionOrderInput, context: AuthenticatedAuditContext) {
+    return new SharedUnitOfWork(this.prisma).execute(async tx => {
+      const repo = new ProductionRepository(tx);
+      if (await tx.productionOrder.findUnique({ where: { code: data.code } })) throw new AppError("PRODUCTION_CODE_ALREADY_EXISTS", "Production order code already exists", 409);
+      try {
+        const item = await repo.createOrder(data);
+        await this.auditIn(tx).record(context, { action: "PRODUCTION_ORDER_CREATED", resourceType: "production.order", resourceId: item.id, metadata: { code: item.code } });
+        return item;
+      } catch (error) { if (isPrismaCode(error, "P2002")) throw new AppError("PRODUCTION_CODE_ALREADY_EXISTS", "Production order code already exists", 409); throw error; }
+    });
+  }
+  async closeOrder(id: string, context: AuthenticatedAuditContext) {
+    try {
+      return await new SharedUnitOfWork(this.prisma).execute(async tx => {
+        const order = await tx.productionOrder.findUnique({ where: { id } });
+        if (!order) throw new AppError("PRODUCTION_ORDER_NOT_FOUND", "Production order not found", 404);
+        if (order.status === "CLOSED") throw new AppError("PRODUCTION_ORDER_CLOSED", "Production order is already closed", 409);
+        const openChild = await tx.transformationOrder.count({ where: { productionOrderId: id, status: "OPEN" } });
+        if (openChild > 0) throw new AppError("PRODUCTION_ORDER_NOT_CLOSABLE", "Production order has open transformation orders", 409);
+        const item = await tx.productionOrder.update({ where: { id, version: order.version }, data: { status: "CLOSED", closedAt: new Date(), closedByUserId: context.actorUserId, version: { increment: 1 } } });
+        await this.auditIn(tx).record(context, { action: "PRODUCTION_ORDER_CLOSED", resourceType: "production.order", resourceId: id });
+        return item;
+      });
+    } catch (error) {
+      if (!isConcurrentWriteError(error)) throw error;
+      const current = await this.prisma.productionOrder.findUnique({ where: { id } });
+      if (!current) throw new AppError("PRODUCTION_ORDER_NOT_FOUND", "Production order not found", 404);
+      if (current.status === "CLOSED") throw new AppError("PRODUCTION_ORDER_CLOSED", "Production order is already closed", 409);
+      throw new AppError("PRODUCTION_ORDER_NOT_CLOSABLE", "Production order changed concurrently", 409);
+    }
+  }
+  async createTransformationOrder(data: TransformationOrderInput, context: AuthenticatedAuditContext) {
+    try {
+      return await new SharedUnitOfWork(this.prisma).execute(async tx => {
+        const parent = await tx.productionOrder.findUnique({ where: { id: data.productionOrderId } });
+        if (!parent) throw new AppError("PRODUCTION_ORDER_NOT_FOUND", "Production order not found", 404);
+        if (parent.status === "CLOSED") throw new AppError("PRODUCTION_ORDER_CLOSED", "Production order is closed", 409);
+        if (await tx.transformationOrder.findUnique({ where: { productionOrderId_code: { productionOrderId: data.productionOrderId, code: data.code } } })) throw new AppError("PRODUCTION_CODE_ALREADY_EXISTS", "Transformation order code already exists", 409);
+        try {
+          const item = await new ProductionRepository(tx).createTransformationOrder(data);
+          await this.auditIn(tx).record(context, { action: "TRANSFORMATION_ORDER_CREATED", resourceType: "production.transformation_order", resourceId: item.id, metadata: { code: item.code, productionOrderId: item.productionOrderId } });
+          return item;
+        } catch (error) { if (isPrismaCode(error, "P2002")) throw new AppError("PRODUCTION_CODE_ALREADY_EXISTS", "Transformation order code already exists", 409); throw error; }
+      });
+    } catch (error) {
+      if (!isConcurrentWriteError(error)) throw error;
+      const parent = await this.prisma.productionOrder.findUnique({ where: { id: data.productionOrderId } });
+      if (!parent) throw new AppError("PRODUCTION_ORDER_NOT_FOUND", "Production order not found", 404);
+      if (parent.status === "CLOSED") throw new AppError("PRODUCTION_ORDER_CLOSED", "Production order is closed", 409);
+      throw new AppError("PRODUCTION_ORDER_NOT_CLOSABLE", "Production order changed concurrently", 409);
+    }
+  }
+  async closeTransformationOrder(id: string, context: AuthenticatedAuditContext) {
+    try {
+      return await new SharedUnitOfWork(this.prisma).execute(async tx => {
+        const item = await tx.transformationOrder.findUnique({ where: { id } });
+        if (!item) throw new AppError("TRANSFORMATION_ORDER_NOT_FOUND", "Transformation order not found", 404);
+        if (item.status === "CLOSED") throw new AppError("TRANSFORMATION_ORDER_CLOSED", "Transformation order is already closed", 409);
+        // P2 has no operational child entities yet; this hook is intentionally extensible for P3/P5/P8.
+        const notClosable = await this.transformationOrderHasIncompleteOperations(tx, id);
+        if (notClosable) throw new AppError("TRANSFORMATION_ORDER_NOT_CLOSABLE", "Transformation order has incomplete operations", 409);
+        const closed = await tx.transformationOrder.update({ where: { id, version: item.version }, data: { status: "CLOSED", closedAt: new Date(), closedByUserId: context.actorUserId, version: { increment: 1 } } });
+        await this.auditIn(tx).record(context, { action: "TRANSFORMATION_ORDER_CLOSED", resourceType: "production.transformation_order", resourceId: id });
+        return closed;
+      });
+    } catch (error) {
+      if (!isConcurrentWriteError(error)) throw error;
+      const current = await this.prisma.transformationOrder.findUnique({ where: { id } });
+      if (!current) throw new AppError("TRANSFORMATION_ORDER_NOT_FOUND", "Transformation order not found", 404);
+      if (current.status === "CLOSED") throw new AppError("TRANSFORMATION_ORDER_CLOSED", "Transformation order is already closed", 409);
+      throw new AppError("TRANSFORMATION_ORDER_NOT_CLOSABLE", "Transformation order changed concurrently", 409);
+    }
+  }
+  private async transformationOrderHasIncompleteOperations(_tx: SharedTransactionContext, _id: string) { return false; }
 }
 type DefinitionInput = { entityType: "PRODUCER" | "GRAPE_VARIETY" | "GRAPE_RECEPTION"; code: string; label: string; dataType: "TEXT" | "INTEGER" | "DECIMAL" | "BOOLEAN" | "DATE" | "SELECT"; required: boolean; active: boolean; options?: string[] | undefined; displayOrder: number };
 type ValueInput = { definitionId: string; entityType: "PRODUCER" | "GRAPE_VARIETY" | "GRAPE_RECEPTION"; entityId: string; value: string | number | boolean };
 function isPrismaCode(error: unknown, code: string): boolean { return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code; }
+function isConcurrentWriteError(error: unknown): boolean { return isPrismaCode(error, "P2025") || isSerializationConflict(error); }

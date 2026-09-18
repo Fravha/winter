@@ -1,8 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 import { buildAuthenticatedAuditContext } from "../../shared/http/audit-context.js";
-import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema } from "./production.schema.js";
+import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema } from "./production.schema.js";
 import type { CatalogKind, ReadCatalogKind } from "./production.dto.js";
 import type { ProductionService } from "./production.service.js";
+import { AppError } from "../../shared/errors/app-error.js";
 export class ProductionController {
   constructor(private readonly service: ProductionService, private readonly kind: ReadCatalogKind) {}
   list = async (req: Request, res: Response, next: NextFunction) => { try { const q = listSchema.parse(req.query); const filters = { page: q.page, pageSize: q.pageSize, ...(q.search !== undefined ? { search: q.search } : {}), ...(q.active !== undefined ? { active: q.active } : {}) }; const r = await this.service.list(this.kind, filters); res.json({ data: r.items, meta: r.pagination }); } catch (e) { next(e); } };
@@ -16,4 +17,12 @@ export class ProductionController {
   activateDefinition = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.setDefinitionActive(idParamsSchema.parse(req.params).id, true, buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
   deactivateDefinition = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.setDefinitionActive(idParamsSchema.parse(req.params).id, false, buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
   setValue = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.setValue(customValueSchema.parse(req.body), buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
+  listOrders = async (req: Request, res: Response, next: NextFunction) => { try { const q = orderListSchema.parse(req.query); const r = await this.service.listOrders(q); res.json({ data: r.items, meta: r.pagination }); } catch (e) { next(e); } };
+  getOrder = async (req: Request, res: Response, next: NextFunction) => { try { const item = await this.service.getOrder(idParamsSchema.parse(req.params).id); if (!item) return next(new AppError("PRODUCTION_ORDER_NOT_FOUND", "Production order not found", 404)); res.json({ data: item }); } catch (e) { next(e); } };
+  createOrder = async (req: Request, res: Response, next: NextFunction) => { try { res.status(201).json({ data: await this.service.createOrder(productionOrderCreateSchema.parse(req.body), buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
+  closeOrder = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.closeOrder(idParamsSchema.parse(req.params).id, buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
+  listTransformationOrders = async (req: Request, res: Response, next: NextFunction) => { try { const q = orderListSchema.parse(req.query); const r = await this.service.listTransformationOrders(q); res.json({ data: r.items, meta: r.pagination }); } catch (e) { next(e); } };
+  getTransformationOrder = async (req: Request, res: Response, next: NextFunction) => { try { const item = await this.service.getTransformationOrder(idParamsSchema.parse(req.params).id); if (!item) return next(new AppError("TRANSFORMATION_ORDER_NOT_FOUND", "Transformation order not found", 404)); res.json({ data: item }); } catch (e) { next(e); } };
+  createTransformationOrder = async (req: Request, res: Response, next: NextFunction) => { try { res.status(201).json({ data: await this.service.createTransformationOrder(transformationOrderCreateSchema.parse(req.body), buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
+  closeTransformationOrder = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.closeTransformationOrder(idParamsSchema.parse(req.params).id, buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
 }

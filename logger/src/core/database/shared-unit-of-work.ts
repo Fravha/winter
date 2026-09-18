@@ -14,12 +14,24 @@ export interface SharedUnitOfWorkOptions {
   maxSerializationRetries?: number;
 }
 
-const isSerializationConflict = (error: unknown): boolean => (
-  typeof error === "object"
-  && error !== null
-  && "code" in error
-  && (error as { code?: unknown }).code === "P2034"
-);
+export const isSerializationConflict = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as {
+    code?: unknown;
+    name?: unknown;
+    message?: unknown;
+    cause?: { kind?: unknown; message?: unknown };
+  };
+  return candidate.code === "P2034"
+    || (
+      candidate.name === "DriverAdapterError"
+      && (
+        candidate.message === "TransactionWriteConflict"
+        || candidate.cause?.kind === "TransactionWriteConflict"
+        || candidate.cause?.message === "TransactionWriteConflict"
+      )
+    );
+};
 
 /**
  * Shared infrastructure for workflows that must atomically coordinate more

@@ -29,6 +29,28 @@ describe("SharedUnitOfWork", () => {
     assert.equal(callbackRuns, 3);
   });
 
+  it("retries TransactionWriteConflict from the Prisma driver adapter", async () => {
+    let attempts = 0;
+    const fakeClient = {
+      $transaction: async <T>(
+        work: (transaction: unknown) => Promise<T>,
+      ): Promise<T> => {
+        attempts++;
+        const result = await work(undefined);
+        if (attempts === 1) {
+          throw Object.assign(new Error("TransactionWriteConflict"), {
+            name: "DriverAdapterError",
+          });
+        }
+        return result;
+      },
+    };
+    const result = await new SharedUnitOfWork(fakeClient as unknown as PrismaClient)
+      .execute(async () => "completed");
+    assert.equal(result, "completed");
+    assert.equal(attempts, 2);
+  });
+
   it("stops after its bounded retry policy", async () => {
     let attempts = 0;
     const fakeClient = {
