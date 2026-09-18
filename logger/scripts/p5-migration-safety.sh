@@ -2,6 +2,20 @@
 set -euo pipefail
 
 : "${P5_SAFETY_DATABASE_URL:?P5_SAFETY_DATABASE_URL must point to a temporary 127.0.0.1 PostgreSQL}"
+node -e '
+  const url = new URL(process.env.P5_SAFETY_DATABASE_URL);
+  const databaseName = decodeURIComponent(url.pathname.slice(1));
+  if (!["postgres:", "postgresql:"].includes(url.protocol) || url.hostname !== "127.0.0.1" || !/_(?:test|temp)$/i.test(databaseName) || url.search !== "") {
+    throw new Error("P5_SAFETY_DATABASE_URL must point directly to a temporary PostgreSQL database on 127.0.0.1 whose name ends in _test or _temp, without query parameters");
+  }
+  if (process.env.WINTER_DATABASE_URL) {
+    const development = new URL(process.env.WINTER_DATABASE_URL);
+    const port = candidate => candidate.port || "5432";
+    if (url.hostname === development.hostname && port(url) === port(development) && decodeURIComponent(url.pathname) === decodeURIComponent(development.pathname)) {
+      throw new Error("P5_SAFETY_DATABASE_URL must not identify the same database as WINTER_DATABASE_URL");
+    }
+  }
+'
 root="$(cd "$(dirname "$0")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

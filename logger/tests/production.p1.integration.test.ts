@@ -6,8 +6,9 @@ import { AuditService } from "../src/core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { after, before, describe, it } from "node:test";
+import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
 
-const connectionString = process.env.WINTER_DATABASE_URL;
+const connectionString = getTemporaryProductionDatabaseUrl("P1_DATABASE_URL");
 let available = false;
 if (connectionString) {
   const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
@@ -23,7 +24,8 @@ if (connectionString) {
 
 const integrationOptions = available
   ? {}
-  : { skip: "requires WINTER_DATABASE_URL with the Production P1 schema" };
+  : { skip: "requires P1_DATABASE_URL with the Production P1 schema" };
+if (connectionString && !available) throw new Error("P1_DATABASE_URL was supplied but the P1 migration/database is unavailable");
 
 describe("Production P1 PostgreSQL integration", () => {
   const prisma = connectionString

@@ -8,8 +8,9 @@ import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { BatchLineageService } from "../src/modules/production/production.batch.js";
 import { Prisma } from "../src/generated/prisma/client.js";
+import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
 
-const connectionString = process.env.P3_DATABASE_URL ?? process.env.WINTER_DATABASE_URL;
+const connectionString = getTemporaryProductionDatabaseUrl("P3_DATABASE_URL");
 let available = false;
 if (connectionString) {
   const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
@@ -23,7 +24,7 @@ if (connectionString) {
   }
 }
 const integrationOptions = available ? {} : { skip: "requires P3_DATABASE_URL with the P3 migration applied" };
-if (process.env.P3_DATABASE_URL && !available) throw new Error("P3_DATABASE_URL was supplied but the P3 migration/database is unavailable");
+if (connectionString && !available) throw new Error("P3_DATABASE_URL was supplied but the P3 migration/database is unavailable");
 
 describe("Production P3 PostgreSQL", () => {
   const prisma = connectionString ? new PrismaClient({ adapter: new PrismaPg({ connectionString }) }) : undefined;

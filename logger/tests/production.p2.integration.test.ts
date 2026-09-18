@@ -6,8 +6,9 @@ import { PrismaClient } from "../src/generated/prisma/client.js";
 import { AuditService } from "../src/core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
+import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
 
-const connectionString = process.env.WINTER_DATABASE_URL;
+const connectionString = getTemporaryProductionDatabaseUrl("P2_DATABASE_URL");
 let available = false;
 if (connectionString) {
   const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
@@ -20,7 +21,8 @@ if (connectionString) {
     await probe.$disconnect();
   }
 }
-const integrationOptions = available ? {} : { skip: "requires WINTER_DATABASE_URL with the Production P2 migration applied" };
+const integrationOptions = available ? {} : { skip: "requires P2_DATABASE_URL with the Production P2 migration applied" };
+if (connectionString && !available) throw new Error("P2_DATABASE_URL was supplied but the P2 migration/database is unavailable");
 
 describe("Production P2 PostgreSQL integration", () => {
   const prisma = connectionString ? new PrismaClient({ adapter: new PrismaPg({ connectionString }) }) : undefined;

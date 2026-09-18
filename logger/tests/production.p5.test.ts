@@ -7,14 +7,15 @@ import { AuditService } from "../src/core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { ProductionWorkService } from "../src/modules/production/production.work.js";
+import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
 
-const connectionString = process.env.P5_DATABASE_URL;
+const connectionString = getTemporaryProductionDatabaseUrl("P5_DATABASE_URL");
 let available = false;
 if (connectionString) {
   const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
   try { await probe.$queryRaw`SELECT 1 FROM production_work_corrections LIMIT 1`; available = true; } catch { available = false; } finally { await probe.$disconnect(); }
 }
-if (process.env.P5_DATABASE_URL && !available) throw new Error("P5_DATABASE_URL was supplied but the P5 migration/database is unavailable");
+if (connectionString && !available) throw new Error("P5_DATABASE_URL was supplied but the P5 migration/database is unavailable");
 const options = available ? {} : { skip: "requires P5_DATABASE_URL with the P5 migration applied" };
 
 describe("Production P5 PostgreSQL", () => {

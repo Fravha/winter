@@ -13,4 +13,4 @@ Las suites que escriben entidades históricas o append-only deben ejecutarse sol
 
 **Why:** Una ejecución P5 heredó la URL de desarrollo, creó un `ProductionWork` de prueba y no pudo limpiarlo porque el contrato prohíbe su borrado físico.
 
-**How to apply:** Sobrescribir todas las variables de base relevantes en el mismo comando de test y comprobar que el host sea `127.0.0.1`. Las pruebas de entidades inmutables deben usar una base efímera, no cleanup destructivo sobre desarrollo.
+**How to apply:** Sobrescribir todas las variables de base relevantes en el mismo comando de test; exigir host `127.0.0.1`, nombre terminado en `_test` o `_temp`, URL sin parámetros de query, y comprobar que no sea la misma base identificada por `WINTER_DATABASE_URL`. Las pruebas de entidades inmutables deben usar una base efímera, no cleanup destructivo sobre desarrollo.

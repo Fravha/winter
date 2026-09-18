@@ -7,8 +7,9 @@ import { AuditService } from "../src/core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { ProductionContainerService } from "../src/modules/production/production.container.js";
+import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
 
-const connectionString = process.env.P4_DATABASE_URL ?? process.env.WINTER_DATABASE_URL;
+const connectionString = getTemporaryProductionDatabaseUrl("P4_DATABASE_URL");
 let available = false;
 if (connectionString) {
   const probe = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
@@ -16,7 +17,7 @@ if (connectionString) {
   await probe.$disconnect();
 }
 const integrationOptions = available ? {} : { skip: "requires P4_DATABASE_URL with the P4 migration applied" };
-if (process.env.P4_DATABASE_URL && !available) throw new Error("P4_DATABASE_URL was supplied but the P4 migration/database is unavailable");
+if (connectionString && !available) throw new Error("P4_DATABASE_URL was supplied but the P4 migration/database is unavailable");
 
 describe("Production P4 PostgreSQL", () => {
   const prisma = connectionString ? new PrismaClient({ adapter: new PrismaPg({ connectionString }) }) : undefined;
