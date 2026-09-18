@@ -219,6 +219,11 @@ Reglas:
 - No existe eliminación física.
 - Las correcciones son explícitas y auditables.
 - Los tipos de trabajo son configurables.
+- El `ProductionWork` de prueba creado accidentalmente en desarrollo el
+  18 de septiembre de 2026 se conserva como evidencia histórica. No se
+  elimina, no se corrige y no se aísla mediante una regla administrativa.
+  Su procedencia queda demostrada por su versión `0`, la ausencia de
+  correcciones y sus identificadores técnicos de orden y tipo de trabajo.
 
 ## 10. ProductionParticipant
 

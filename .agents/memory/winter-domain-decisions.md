@@ -6,6 +6,7 @@ description: Reglas autoritativas para trabajos, transformaciones, inventario, a
 Winter debe aplicar estas decisiones sin asumir comportamientos adicionales:
 
 - Todo `ProductionWork` pertenece obligatoriamente a una `ProductionOrder`; puede pertenecer además a una `TransformationOrder` y vincularse con uno o varios batches y recipientes.
+- Los registros históricos creados accidentalmente en desarrollo se conservan como evidencia cuando así lo aprueba dominio; no se borran, corrigen ni aíslan sin una nueva decisión explícita.
 - No inventar estados ni transiciones. Si una operación requiere uno no documentado, detener esa lógica y reportar la decisión pendiente.
 - `ProductionOrder` y `TransformationOrder` se crean `OPEN` y solo transicionan a `CLOSED`; cerradas bloquean nuevos registros operativos y conservan el historial.
 - `Purchase` se crea `REGISTERED` y solo transiciona a `RECEIVED` o `CANCELLED`. La recepción exige éxito atómico de Inventory; no existe reversión inicial desde `RECEIVED`.
