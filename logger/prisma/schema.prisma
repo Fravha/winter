@@ -18,6 +18,8 @@ model User {
   lastLoginAt DateTime?  @map("last_login_at")
   auditLogs   AuditLog[] @relation("AuditActor")
   roles       UserRole?
+  productionWorksCreated ProductionWork[] @relation("ProductionWorkCreator")
+  productionWorkCorrections ProductionWorkCorrection[] @relation("ProductionWorkCorrectionActor")
   managedWarehouses Warehouse[] @relation("WarehouseManager")
   inventoryMovementsAsActor InventoryMovement[] @relation("InventoryMovementActor")
   inventoryMovementsAsNegativeStockAuthorizer InventoryMovement[] @relation("InventoryMovementAuthorizer")
@@ -199,6 +201,7 @@ model ProductionBatch {
   containerMovementsTo ProductionBatchContainerMovement[] @relation("ContainerMovementDestinationBatch")
   parents          ProductionBatchLineage[] @relation("BatchLineageChild")
   children         ProductionBatchLineage[] @relation("BatchLineageParent")
+  workLinks         ProductionWorkBatch[]
 
   @@index([productionOrderId])
   @@index([articuloId])
@@ -298,6 +301,7 @@ model ProductionContainer {
   occupancies ProductionContainerOccupancy[]
   movementsFrom ProductionBatchContainerMovement[] @relation("ContainerMovementSource")
   movementsTo   ProductionBatchContainerMovement[] @relation("ContainerMovementDestination")
+  workLinks ProductionWorkContainer[]
 
   @@index([status, code], map: "production_containers_status_code_idx")
   @@map("production_containers")
@@ -373,6 +377,7 @@ model TransformationOrder {
   updatedAt        DateTime              @updatedAt @map("updated_at")
   version          Int                   @default(0)
   productionOrder  ProductionOrder      @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  works ProductionWork[]
 
   @@unique([productionOrderId, code])
   @@index([productionOrderId, status])
@@ -383,12 +388,76 @@ model TransformationOrder {
 model ProductionWork {
   id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productionOrderId String                @map("production_order_id") @db.Uuid
+  transformationOrderId String?           @map("transformation_order_id") @db.Uuid
+  workTypeId        String                @map("work_type_id") @db.Uuid
+  performedAt       DateTime              @map("performed_at")
+  observations      String?
+  createdByUserId   String                @map("created_by_user_id") @db.Uuid
   createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  version           Int                   @default(0)
   productionOrder   ProductionOrder       @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  transformationOrder TransformationOrder? @relation(fields: [transformationOrderId], references: [id], onDelete: Restrict)
+  workType          WorkType              @relation(fields: [workTypeId], references: [id], onDelete: Restrict)
+  createdBy         User                 @relation("ProductionWorkCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
   inputs            ProductionWorkInput[]
+  batches           ProductionWorkBatch[]
+  containers        ProductionWorkContainer[]
+  participants      ProductionWorkParticipant[]
+  corrections       ProductionWorkCorrection[]
 
   @@index([productionOrderId])
   @@map("production_works")
+}
+
+model ProductionWorkBatch {
+  productionWorkId String @map("production_work_id") @db.Uuid
+  productionBatchId String @map("production_batch_id") @db.Uuid
+  productionWork ProductionWork @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
+  productionBatch ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
+  @@id([productionWorkId, productionBatchId])
+  @@index([productionBatchId])
+  @@map("production_work_batches")
+}
+
+model ProductionWorkContainer {
+  productionWorkId String @map("production_work_id") @db.Uuid
+  productionContainerId String @map("production_container_id") @db.Uuid
+  productionWork ProductionWork @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
+  productionContainer ProductionContainer @relation(fields: [productionContainerId], references: [id], onDelete: Restrict)
+  @@id([productionWorkId, productionContainerId])
+  @@index([productionContainerId])
+  @@map("production_work_containers")
+}
+
+model ProductionWorkParticipant {
+  productionWorkId String @map("production_work_id") @db.Uuid
+  productionParticipantId String @map("production_participant_id") @db.Uuid
+  role String?
+  productionWork ProductionWork @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
+  productionParticipant ProductionParticipant @relation(fields: [productionParticipantId], references: [id], onDelete: Restrict)
+  @@id([productionWorkId, productionParticipantId])
+  @@index([productionParticipantId])
+  @@map("production_work_participants")
+}
+
+model ProductionWorkCorrection {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productionWorkId String @map("production_work_id") @db.Uuid
+  field String
+  previousValue Json @map("previous_value")
+  newValue Json @map("new_value")
+  reason String
+  correctedAt DateTime @map("corrected_at")
+  actorUserId String @map("actor_user_id") @db.Uuid
+  fromVersion Int @map("from_version")
+  toVersion Int @map("to_version")
+  productionWork ProductionWork @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
+  actor User @relation("ProductionWorkCorrectionActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  @@unique([productionWorkId, toVersion], map: "production_work_corrections_work_to_version_key")
+  @@index([productionWorkId, correctedAt])
+  @@index([productionWorkId, fromVersion, toVersion], map: "production_work_corrections_work_version_idx")
+  @@map("production_work_corrections")
 }
 
 model ProductionWorkInput {
@@ -412,6 +481,7 @@ model WorkType {
   active Boolean @default(true)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  works ProductionWork[]
   @@index([active], map: "production_work_types_active_idx")
   @@map("production_work_types")
 }
@@ -433,6 +503,7 @@ model ProductionParticipant {
   name String
   active Boolean @default(true)
   userId String? @map("user_id") @db.Uuid
+  works ProductionWorkParticipant[]
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   @@index([active], map: "production_participants_active_idx")

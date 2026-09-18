@@ -9,13 +9,16 @@ import { ProductionRepository } from "./production.repository.js";
 import { ProductionBatchService } from "./production.batch.js";
 import { ProductionContainerService } from "./production.container.js";
 import type { ContainerCreateInput, ContainerMoveInput, ContainerUpdateInput } from "./production.container.js";
+import { ProductionWorkService } from "./production.work.js";
+import type { WorkCreateInput, WorkCorrectionInput } from "./production.work.js";
 import type { BatchCreateInput, BatchConsumptionInput, BatchListFilters, BatchMergeInput, BatchSplitInput } from "./production.batch.js";
 import type { CatalogFilters, CatalogInput, CatalogKind, OrderFilters, ProductionOrderInput, TransformationOrderInput } from "./production.dto.js";
 const kindMap = { participants: "participants", producers: "producers", "grape-varieties": "grape-varieties", "work-types": "work-types", "measurement-types": "measurement-types" } as const;
 export class ProductionService {
   private readonly batches: ProductionBatchService;
   private readonly containers: ProductionContainerService;
-  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); }
+  private readonly works: ProductionWorkService;
+  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); }
   private auditIn(tx: SharedTransactionContext): AuditService { return new AuditService(new PrismaAuditRepository(tx)); }
   list(kind: CatalogKind | "work-types" | "measurement-types", f: CatalogFilters) { return new ProductionRepository(this.prisma).list(kindMap[kind], f); }
   async create(kind: CatalogKind, data: CatalogInput, context: AuthenticatedAuditContext) {
@@ -116,6 +119,10 @@ export class ProductionService {
   assignBatchToContainer(data: ContainerMoveInput, context: AuthenticatedAuditContext) { return this.containers.assign(data, context); }
   transferBatchBetweenContainers(data: ContainerMoveInput, context: AuthenticatedAuditContext) { return this.containers.transferTotal(data, context); }
   transferBatchPartiallyBetweenContainers(data: ContainerMoveInput, context: AuthenticatedAuditContext) { return this.containers.transferPartial(data, context); }
+  listWorks(filters: { page?: number | undefined; pageSize?: number | undefined; productionOrderId?: string | undefined; workTypeId?: string | undefined }) { return this.works.list(filters); }
+  getWork(id: string) { return this.works.get(id); }
+  createWork(data: WorkCreateInput, context: AuthenticatedAuditContext) { return this.works.create(data, context); }
+  correctWork(id: string, data: WorkCorrectionInput, context: AuthenticatedAuditContext) { return this.works.correct(id, data, context); }
   async createOrder(data: ProductionOrderInput, context: AuthenticatedAuditContext) {
     return new SharedUnitOfWork(this.prisma).execute(async tx => {
       const repo = new ProductionRepository(tx);

@@ -5,7 +5,7 @@ import type { TokenVerifier } from "../../core/auth/auth.types.js";
 import type { UserRepository } from "../../core/users/user.repository.js";
 import { validateRequest } from "../../shared/http/validate-request.js";
 import { ProductionController } from "./production.controller.js";
-import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema } from "./production.schema.js";
+import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema } from "./production.schema.js";
 import type { ProductionService } from "./production.service.js";
 const manage: Record<string, string> = { participants: "production:participant_manage", producers: "production:producer_manage", "grape-varieties": "production:grape_variety_manage", "work-types": "production:work_type_manage", "measurement-types": "production:measurement_type_manage" };
 export function createProductionRouter(verifier: TokenVerifier, users: UserRepository, service: ProductionService) {
@@ -40,6 +40,10 @@ export function createProductionRouter(verifier: TokenVerifier, users: UserRepos
   router.post("/containers/:id/activate", ...auth, requirePermission("production:container_manage"), validateRequest({ params: idParamsSchema }), controller.activateContainer);
   router.post("/containers/:id/deactivate", ...auth, requirePermission("production:container_manage"), validateRequest({ params: idParamsSchema }), controller.deactivateContainer);
   router.get("/custom-fields/definitions", ...auth, requirePermission("production:read"), controller.definitions);
+  router.get("/works", ...auth, requirePermission("production:read"), validateRequest({ query: workListSchema }), controller.listWorks);
+  router.get("/works/:id", ...auth, requirePermission("production:read"), validateRequest({ params: idParamsSchema }), controller.getWork);
+  router.post("/works", ...auth, requirePermission("production:work_create"), validateRequest({ body: workCreateSchema }), controller.createWork);
+  router.post("/works/:id/corrections", ...auth, requirePermission("production:work_correct"), validateRequest({ params: idParamsSchema, body: workCorrectionSchema }), controller.correctWork);
   router.post("/custom-fields/definitions", ...auth, requirePermission("production:custom_fields_manage"), validateRequest({ body: customDefinitionSchema }), controller.createDefinition);
   router.patch("/custom-fields/definitions/:id", ...auth, requirePermission("production:custom_fields_manage"), validateRequest({ params: idParamsSchema, body: customDefinitionUpdateSchema }), controller.updateDefinition);
   router.post("/custom-fields/definitions/:id/activate", ...auth, requirePermission("production:custom_fields_manage"), validateRequest({ params: idParamsSchema }), controller.activateDefinition);

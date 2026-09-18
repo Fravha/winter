@@ -16,6 +16,8 @@ export const productionDocType: DocType = {
     { code: "production:transformation_order_create", name: "Create transformation orders" },
     { code: "production:transformation_order_close", name: "Close transformation orders" },
     { code: "production:container_manage", name: "Manage production containers" },
+    { code: "production:work_create", name: "Create production work" },
+    { code: "production:work_correct", name: "Correct production work" },
   ],
   register(dependencies) {
     const service = new ProductionService(dependencies.prisma, dependencies.auditService);

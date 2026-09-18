@@ -46,3 +46,16 @@ const quantity = z.string().regex(/^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/);
 export const containerCreateSchema = z.object({ code: code, capacity: quantity, capacityUnit: z.string().trim().min(1).max(30), observations: z.string().max(2000).optional() }).strict();
 export const containerUpdateSchema = z.object({ capacity: quantity.optional(), observations: z.string().max(2000).optional() }).strict();
 export const containerMoveSchema = z.object({ batchId: z.string().uuid(), sourceContainerId: z.string().uuid().optional(), destinationContainerId: z.string().uuid(), quantity: quantity.optional(), childCode: code.optional(), operationKey: code, requestHash: z.string().trim().min(1).max(500), occurredAt: z.coerce.date().optional() }).strict();
+export const workListSchema = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20), productionOrderId: z.string().uuid().optional(), workTypeId: z.string().uuid().optional() }).strict();
+export const workParticipantSchema = z.object({ participantId: z.string().uuid(), role: z.string().trim().min(1).max(100).optional() }).strict();
+export const workCreateSchema = z.object({
+  productionOrderId: z.string().uuid(), transformationOrderId: z.string().uuid().optional(), workTypeId: z.string().uuid(),
+  performedAt: z.coerce.date(), observations: z.string().max(2000).optional(),
+  batchIds: z.array(z.string().uuid()).default([]), containerIds: z.array(z.string().uuid()).default([]),
+  participants: z.array(workParticipantSchema).default([]),
+}).strict();
+export const workCorrectionSchema = z.object({
+  field: z.enum(["performedAt", "workTypeId", "transformationOrderId", "observations"]),
+  newValue: z.string().nullable(),
+  reason: z.string().trim().min(1).max(2000),
+}).strict();

@@ -33,6 +33,7 @@ describeWithDatabase("Articulo operational references integration", () => {
     new PrismaArticuloUnitOfWork(prisma),
   );
   const actorUserId = randomUUID();
+  const workTypeId = randomUUID();
   const context = { actorUserId, requestId: randomUUID() };
 
   before(async () => {
@@ -44,11 +45,12 @@ describeWithDatabase("Articulo operational references integration", () => {
         status: "ACTIVE",
       },
     });
+    await prisma.workType.create({ data: { id: workTypeId, code: `ARTICULO-OP-${actorUserId}`, name: "Operational reference" } });
   });
 
   after(async () => {
     await prisma.auditLog.deleteMany({ where: { actorUserId } });
-    await prisma.user.delete({ where: { id: actorUserId } });
+    // Production work is append-only and intentionally retained for audit history.
     await prisma.$disconnect();
   });
 
@@ -110,7 +112,7 @@ describeWithDatabase("Articulo operational references integration", () => {
           });
           productionOrderId = order.id;
           const work = await prisma.productionWork.create({
-            data: { productionOrderId },
+            data: { productionOrderId, workTypeId, performedAt: new Date(), createdByUserId: actorUserId },
           });
           productionWorkId = work.id;
           await prisma.productionWorkInput.create({
@@ -159,16 +161,7 @@ describeWithDatabase("Articulo operational references integration", () => {
         await prisma.productionWorkInput.deleteMany({
           where: { articuloId: articulo.id },
         });
-        if (productionWorkId) {
-          await prisma.productionWork.delete({
-            where: { id: productionWorkId },
-          });
-        }
-        if (productionOrderId) {
-          await prisma.productionOrder.delete({
-            where: { id: productionOrderId },
-          });
-        }
+        // ProductionWork and its parent order are immutable historical records.
         if (purchaseId) {
           await prisma.purchase.delete({ where: { id: purchaseId } });
         }

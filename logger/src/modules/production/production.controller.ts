@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { buildAuthenticatedAuditContext } from "../../shared/http/audit-context.js";
-import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, containerMoveSchema } from "./production.schema.js";
+import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema } from "./production.schema.js";
 import type { CatalogKind, ReadCatalogKind } from "./production.dto.js";
 import type { ProductionService } from "./production.service.js";
 import { AppError } from "../../shared/errors/app-error.js";
@@ -36,4 +36,8 @@ export class ProductionController {
   updateContainer = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.updateContainer(idParamsSchema.parse(req.params).id, containerUpdateSchema.parse(req.body), buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
   activateContainer = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.activateContainer(idParamsSchema.parse(req.params).id, buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
   deactivateContainer = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.deactivateContainer(idParamsSchema.parse(req.params).id, buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
+  listWorks = async (req: Request, res: Response, next: NextFunction) => { try { const q = workListSchema.parse(req.query); const result = await this.service.listWorks(q); res.json({ data: result.items, meta: result.pagination }); } catch (e) { next(e); } };
+  getWork = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.getWork(idParamsSchema.parse(req.params).id) }); } catch (e) { next(e); } };
+  createWork = async (req: Request, res: Response, next: NextFunction) => { try { res.status(201).json({ data: await this.service.createWork(workCreateSchema.parse(req.body), buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
+  correctWork = async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await this.service.correctWork(idParamsSchema.parse(req.params).id, workCorrectionSchema.parse(req.body), buildAuthenticatedAuditContext(req, res)) }); } catch (e) { next(e); } };
 }

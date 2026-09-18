@@ -123,4 +123,16 @@ the same management permission. Values are strict by definition: DATE is an
 ISO-8601 string (converted server-side), DECIMAL is a decimal string (never a
 JSON number), INTEGER is a safe integer, and TEXT/SELECT/BOOLEAN use their
 corresponding JSON primitive. GrapeReception values are explicitly rejected
-until P6.
+ until P6.
+
+## Production work (P5)
+
+`GET /works` and `GET /works/:id` require `production:read`. `POST /works`
+requires `production:work_create`; `POST /works/:id/corrections` requires
+`production:work_correct`. Work records require an open production order and
+active work type. A transformation order, batches, containers and active
+participants may be linked without changing their quantities or state.
+
+Work creation records the authenticated actor and preserves `performedAt`
+separately from `createdAt`. Corrections are explicit, require a reason, and
+retain previous and new values. There is no DELETE or generic PATCH endpoint.
