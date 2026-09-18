@@ -504,9 +504,9 @@ GrapeLot
 
 ProductionProcess
 ProductionLine
-ProductionWorkType
+ProductionWorkType (administrado con `production:work_type_manage`)
 TransformationType
-MeasurementType
+MeasurementType (administrado con `production:measurement_type_manage`)
 LossType
 
 ProductionOrder
@@ -1358,6 +1358,8 @@ PRODUCTION
 ├── production:reception_create
 ├── production:work_create
 ├── production:measurement_create
+├── production:work_type_manage
+├── production:measurement_type_manage
 ├── production:decision_create
 ├── production:transformation_create
 └── production:loss_create

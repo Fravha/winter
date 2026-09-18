@@ -3,12 +3,20 @@
 Base URL: `/api/v1/production`. All endpoints require authentication. List
 queries use `page`, `pageSize`, `search` and `active`.
 
-## Read-only catalogs
+## Catalogs
 
-* `GET /work-types`
-* `GET /measurement-types`
+* `GET /work-types` and `GET /measurement-types` require `production:read`.
+* `POST /work-types`, `PATCH /work-types/:id`, and
+  `POST /work-types/:id/activate|deactivate` require
+  `production:work_type_manage`.
+* `POST /measurement-types`, `PATCH /measurement-types/:id`, and
+  `POST /measurement-types/:id/activate|deactivate` require
+  `production:measurement_type_manage`.
 
-Both require `production:read`. They are intentionally read-only in P1.
+Bodies are `{ "code": "...", "name": "..." }` on creation and `{ "name": "..." }`
+on update. Codes are immutable, active is logical, and neither catalog has a
+DELETE endpoint. These are administrative catalog commands, not historical
+production commands, and P1 creates no seed data.
 
 ## Administrative catalogs
 

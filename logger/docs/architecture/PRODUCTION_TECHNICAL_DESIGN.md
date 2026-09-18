@@ -45,7 +45,7 @@ operativa o relación histórica se elimina físicamente.
 Las entidades enumeradas a continuación describen el modelo técnico completo
 previsto para Production. El alcance entregable de P1 es deliberadamente menor
 y se define en `PRODUCTION_IMPLEMENTATION_PLAN.md`: únicamente bootstrap,
-catálogos WorkType/MeasurementType de solo lectura, Participant, Producer,
+catálogos administrativos WorkType/MeasurementType, Participant, Producer,
 GrapeVariety y custom fields. Órdenes, batches, trabajos, recepciones,
 transformaciones, recipientes, mediciones operativas y correcciones se reservan
 para sus fases posteriores; no forman parte de la migración P1.
@@ -372,6 +372,9 @@ Catálogo configurable propiedad de Production.
 | `updatedAt` | Timestamp | no | actualización |
 
 Índice `(active)`; unique `code`. No se añaden reglas estructurales al tipo.
+Es un catálogo administrativo, no un comando histórico: se crea, se edita
+únicamente `name` y se activa/desactiva lógicamente con
+`production:work_type_manage`; no se elimina ni se generan datos seed.
 
 ### 4.11 Tablas de unión de ProductionWork
 
@@ -580,6 +583,9 @@ InventoryMovement por sí sola y no se elimina.
 Índice `(active)`; unique `code`. Puede configurar Brix, Babo, temperatura,
 pH, densidad, grado alcohólico y otras mediciones sin convertirlas en columnas
 rígidas.
+Es un catálogo administrativo, no un comando histórico: se crea, se edita
+`name` y se activa/desactiva lógicamente con
+`production:measurement_type_manage`; no se elimina ni se generan datos seed.
 
 ### 4.23 `Measurement`
 
@@ -826,12 +832,16 @@ production:container_manage
 production:producer_manage
 production:grape_variety_manage
 production:participant_manage
+production:work_type_manage
+production:measurement_type_manage
 production:custom_fields_manage
 ```
 
 No se inventan permisos para batch, output, input, ledger o corrección
 genérica. La administración de custom fields exige
 `production:custom_fields_manage`; catálogos exigen su permiso específico.
+WorkType y MeasurementType usan los permisos específicos anteriores para CRUD
+administrativo; no son comandos históricos ni tienen seed.
 
 ## 12. Errores de dominio
 

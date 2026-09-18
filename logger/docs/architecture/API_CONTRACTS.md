@@ -798,7 +798,11 @@ La planificación no crea stock.
 
 # 13. Production API --- Recepción de uva
 
-`Producer` y `GrapeVariety` son catálogos propiedad de Production.
+`Producer`, `GrapeVariety`, `WorkType` y `MeasurementType` son catálogos
+propiedad de Production. WorkType y MeasurementType admiten CRUD administrativo
+sin DELETE: GET/list con `production:read`, y POST/PATCH/activate/deactivate
+con `production:work_type_manage` o `production:measurement_type_manage`,
+respectivamente. Son catálogos, no comandos históricos, y no tienen seed.
 `GrapeReception` debe referenciarlos por ID. Una recepción puede contener una o
 varias variedades con sus cantidades; no se aceptan como texto libre ni como
 Articulo. Los campos exactos y los contracts de administración de estos
@@ -1679,6 +1683,8 @@ production:decision_create
 production:transformation_create
 production:loss_create
 production:container_manage
+production:work_type_manage
+production:measurement_type_manage
 ```
 
 La convención definitiva de permisos de Winter es `<module>:<action>` y debe

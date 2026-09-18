@@ -42,7 +42,7 @@ ocupaciones, mediciones operativas, pérdidas ni transferencias a Inventory.
 
 Modelos Prisma:
 
-- `WorkType`, `MeasurementType`;
+- `WorkType`, `MeasurementType` (catálogos administrativos);
 - `ProductionParticipant`;
 - `Producer`, `GrapeVariety`;
 - `CustomFieldDefinition` y `CustomFieldValue`, únicamente para
@@ -69,12 +69,14 @@ crea FK externa. Los `CORE_FIELDS` no se administran como custom fields.
   paginación y transacciones; no se exponen a otros módulos.
 - APIs intermodulares: ninguna llamada productiva. Se deja el boundary para
   `ArticulosApi`, `InventoryApi`, Core/Auth y Core/Audit sin inventar métodos.
-- Permisos: `production:read`, `production:participant_manage`,
+- Permisos: `production:read`, `production:work_type_manage`,
+  `production:measurement_type_manage`, `production:participant_manage`,
   `production:producer_manage`, `production:grape_variety_manage` y
   `production:custom_fields_manage`, según cada operación. No se crea un
   permiso de catálogo genérico.
-  WorkType y MeasurementType permanecen exclusivamente de lectura en P1:
-  no existe permiso aprobado para administrarlos y no se crean valores seed.
+  WorkType y MeasurementType admiten CRUD administrativo (alta, edición de
+  nombre y activación/desactivación lógica), no comandos históricos; no se
+  crean valores seed. No tienen DELETE.
 - Auditoría: administración de catálogos y custom fields, con actor del
   contexto autenticado, acción, recurso, fecha y metadata. No hay eventos
   operativos en esta fase.
@@ -249,8 +251,8 @@ Endpoints aprobados: `POST /api/v1/production/measurements` y
 lectura paginada con `production:read`.
 
 Services `MeasurementService`, `MeasurementTypeService` y repositories.
-`MeasurementType` se administra con `production:custom_fields_manage` solo si
-la operación es administración de ese catálogo no histórico; la creación de
+`MeasurementType` se administra con `production:measurement_type_manage`; la
+operación es administración de ese catálogo no histórico; la creación de
 mediciones usa `production:measurement_create`. APIs Core/Auth y Core/Audit;
 participante se valida dentro de Production.
 

@@ -536,9 +536,16 @@ Base aprobada:
 - `production:producer_manage`;
 - `production:grape_variety_manage`;
 - `production:participant_manage`;
+- `production:work_type_manage`;
+- `production:measurement_type_manage`;
 - `production:custom_fields_manage`.
 
 No se utiliza un permiso genérico único.
+
+`WorkType` y `MeasurementType` son catálogos administrativos con CRUD
+controlado: lectura con `production:read` y altas, edición de nombre y
+activación/desactivación con su permiso `*_manage` específico. No son comandos
+históricos ni generan datos seed.
 
 ## 24. API HTTP
 

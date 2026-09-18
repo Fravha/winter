@@ -4,6 +4,7 @@ const code = z.string().trim().min(1).max(100);
 const name = z.string().trim().min(1).max(200);
 export const idParamsSchema = z.object({ id: z.string().uuid() }).strict();
 export const catalogInputSchema = z.object({ code, name, userId: z.string().uuid().optional() }).strict();
+export const administrativeCatalogInputSchema = z.object({ code, name }).strict();
 export const catalogUpdateSchema = z.object({ name: name.optional() }).strict();
 export const listSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
