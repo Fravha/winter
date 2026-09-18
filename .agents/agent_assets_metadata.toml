@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "kLGhJS_ZTSK62s5IxeAhp"
+uri = "file://winter-p2-p4.bundle"
+type = "unspecified"
+title = "Git bundle Production P2–P4"
+description = "Bundle completo y verificado de la rama dev/winter-replit, sin push al remoto."
+logical_id = "bbcbbe66-ded6-4c97-a94d-c44eed7258c4"
+content_hash = "sha256:703ae3baf90963474f41802cd595c4d8923e1fca3a49dba2a23fac20ccbe289b"
+size = 871136
+mtime_ms = 1789753252494
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:ff165625-a9aa-49fc-b965-306ec0b5c74f/bbcbbe66-ded6-4c97-a94d-c44eed7258c4/e2a8bcd0-2fff-4864-ad12-aebe7334608d"
+storage_version_token = "1789753274181491"
+content_type = "application/octet-stream"
