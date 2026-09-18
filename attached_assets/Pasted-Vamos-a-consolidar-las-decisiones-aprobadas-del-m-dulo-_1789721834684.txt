@@ -1,0 +1,600 @@
+Vamos a consolidar las decisiones aprobadas del módulo Production.
+
+IMPORTANTE:
+- No implementar Production.
+- No modificar Prisma.
+- No crear migraciones.
+- No crear endpoints.
+- No modificar Inventory, Artículos, Compras ni Core.
+- Solo crear documentación contractual.
+
+Crear:
+
+logger/docs/architecture/DECISION_PRODUCTION.md
+
+El documento debe consolidar las siguientes decisiones aprobadas.
+
+# 1. ProductionBatch
+
+- Cada transformación que cambia el producto crea un nuevo ProductionBatch.
+- Si una operación no cambia el producto, puede mantenerse el mismo batch.
+- Cada batch referencia un Articulo.
+- Las etapas del proceso productivo se representan mediante Artículos, tomando como referencia el catálogo de Procesos y Codigo de Articulo de listaMaestros_v1.1.xlsx.
+- ProductionBatch no tiene estado persistido.
+- Su situación se deriva de cantidades e historial.
+- Puede consumirse parcialmente en distintos momentos.
+- El remanente continúa siendo el mismo batch original.
+- Nunca puede tener cantidad disponible negativa.
+- Si llega a cantidad disponible 0 sigue existiendo históricamente.
+- Un batch puede ser consumido por ProductionOrders posteriores manteniendo su identidad y trazabilidad.
+
+## División
+
+- Una división física crea nuevos batches hijos.
+- Los batches hijos no vuelven a convertirse en el batch original.
+- Si posteriormente se mezclan, la mezcla crea un nuevo batch.
+
+## Mezcla
+
+- Dos o más batches que se unen generan un nuevo ProductionBatch.
+- El nuevo batch conserva trazabilidad hacia todos sus batches de origen.
+- Un recipiente nunca contiene dos batches independientes simultáneamente.
+
+# 2. Cantidad disponible
+
+La cantidad disponible debe derivarse del historial productivo.
+
+Conceptualmente:
+
+cantidadDisponible =
+cantidadGenerada
+- cantidadConsumida
+- cantidadSeparada
+- pérdidas que afecten al batch
+- cantidad transferida fuera de Production
+
+Regla obligatoria:
+
+cantidadDisponible >= 0
+
+No utilizar cantidad negativa en Production.
+
+# 3. Container
+
+- Container pertenece a Production.
+- Un batch puede existir temporalmente sin recipiente.
+- En operación normal debe poder conocerse su ubicación cuando corresponda.
+- Un traslado total entre recipientes mantiene el mismo batch.
+- Un traslado parcial crea batches hijos.
+- DISPONIBLE -> OCUPADO cuando recibe un batch.
+- OCUPADO -> DISPONIBLE cuando queda vacío.
+- FUERA_DE_SERVICIO bloquea nuevas ocupaciones.
+- La capacidad del recipiente es obligatoria para recipientes productivos.
+- No se puede exceder su capacidad.
+- Un recipiente no puede contener dos batches independientes.
+- Introducir otro batch en un recipiente ocupado constituye mezcla/transformación y genera un nuevo batch.
+
+# 4. Transformation
+
+- Transformation es una operación de dominio.
+- Puede tener uno o varios batches de entrada.
+- Puede consumir cantidades parciales.
+- Puede generar uno o varios batches de salida.
+- Si cambia el Articulo, siempre nace un nuevo batch.
+- Si el producto no cambia, puede continuar el mismo batch.
+- Todo output reutilizable debe representarse mediante ProductionBatch.
+- No crear entidad Subproducto.
+- Una transformación puede generar múltiples outputs.
+- La pérdida debe registrarse explícitamente.
+- Nunca asumir automáticamente input - output = pérdida.
+- El sistema puede aceptar diferencias entre inputs, outputs y pérdidas siempre que los datos registrados representen cantidades reales y trazables.
+- Las transformaciones completas deben ser atómicas.
+
+# 5. ProductionLoss
+
+- Puede ser parcial o total.
+- Reduce la cantidad disponible cuando afecta a un batch conocido.
+- Toda pérdida pertenece a una Transformation o ProductionWork.
+- Puede vincularse opcionalmente a un ProductionBatch conocido.
+- Si no puede determinarse el batch exacto puede permanecer asociada únicamente al contexto productivo correspondiente.
+- Una pérdida en producto en proceso no genera InventoryMovement.
+- Si un insumo ya salió de Inventory hacia Production, una pérdida posterior de ese insumo no genera una segunda salida de Inventory.
+- Las pérdidas deben ser explícitas y auditadas.
+
+# 6. ProductionOrder
+
+Estados únicos:
+
+OPEN
+CLOSED
+
+- Representa el ciclo productivo principal.
+- Todo ProductionWork pertenece obligatoriamente a una ProductionOrder.
+- Puede cerrarse aunque existan ProductionBatch con saldo disponible.
+- No puede cerrarse si tiene TransformationOrders abiertas, trabajos pendientes o transformaciones incompletas.
+- CLOSED es irreversible.
+- No existe reapertura.
+- Los batches generados pueden utilizarse en ProductionOrders posteriores.
+
+# 7. TransformationOrder
+
+Estados únicos:
+
+OPEN
+CLOSED
+
+- Representa un periodo administrativo/productivo dentro de ProductionOrder.
+- Toda TransformationOrder pertenece obligatoriamente a una ProductionOrder.
+- ProductionWork puede tener TransformationOrder opcional.
+- No puede cerrarse si tiene trabajos, transformaciones u operaciones productivas incompletas.
+- CLOSED es irreversible.
+- No existe reapertura.
+
+# 8. ProductionWork
+
+Representa trabajo realmente ejecutado.
+
+Campos/conceptos mínimos:
+
+- productionOrderId obligatorio
+- transformationOrderId opcional
+- workTypeId
+- performedAt
+- createdAt
+- batches relacionados 0..N
+- containers relacionados 0..N
+- participantes 0..N
+- observaciones opcionales
+- actor del sistema obtenido del usuario autenticado
+
+Reglas:
+
+- No sustituye consumos.
+- No sustituye outputs.
+- No sustituye pérdidas.
+- No sustituye mediciones.
+- No sustituye InventoryMovement.
+- No todo ProductionWork genera Transformation.
+- Debe distinguirse fecha real del trabajo de fecha de registro.
+- No hay eliminación física.
+- Las correcciones son explícitas y auditables.
+- Los tipos de trabajo son configurables.
+
+# 9. ProductionParticipant
+
+Entidad operativa independiente de User.
+
+Núcleo mínimo:
+
+- id
+- codigo
+- nombre
+- activo
+- createdAt
+- updatedAt
+
+Reglas:
+
+- Puede opcionalmente relacionarse con User.
+- No requiere User.
+- ProductionWork puede tener múltiples participantes.
+- Cada participante puede tener un rol descriptivo configurable.
+- El actor de sistema siempre es independiente del participante operativo.
+
+# 10. Producer
+
+Núcleo mínimo:
+
+- id
+- codigo
+- nombre
+- activo
+- createdAt
+- updatedAt
+
+Reglas:
+
+- codigo único e inmutable.
+- nombre editable.
+- baja lógica.
+- sin borrado físico si existen referencias.
+- datos adicionales mediante campos configurables.
+
+# 11. GrapeVariety
+
+Núcleo mínimo:
+
+- id
+- codigo
+- nombre
+- activo
+- createdAt
+- updatedAt
+
+Reglas:
+
+- codigo único e inmutable.
+- nombre editable.
+- baja lógica.
+- sin borrado físico si existen referencias.
+- datos adicionales mediante campos configurables.
+
+# 12. GrapeReception
+
+- Toda recepción pertenece a una ProductionOrder.
+- Puede contener una o varias variedades.
+- Cada variedad/cantidad recibida genera su propio batch inicial.
+- Estados permitidos:
+  ACCEPTED
+  ACCEPTED_WITH_OBSERVATIONS
+- Una recepción rechazada no ingresa a Production.
+- Brix, Babo, estado sanitario y controles similares deben poder registrarse como mediciones/configuración, evitando columnas rígidas cuando corresponda.
+- Una recepción confirmada no se elimina.
+- Correcciones explícitas y auditables.
+
+# 13. Measurement
+
+- Puede asociarse a ProductionBatch, Container, ProductionWork o combinación válida.
+- Tiene MeasurementType configurable.
+- Tipos posibles incluyen Brix, Babo, temperatura, pH, densidad, grado alcohólico, etc.
+- Las unidades deben poder configurarse.
+- Debe guardar measuredAt y createdAt.
+- El actor se obtiene del usuario autenticado.
+- La persona que tomó físicamente la medición puede ser ProductionParticipant.
+- No se elimina físicamente.
+- Las correcciones conservan valor original y trazabilidad.
+- Puede tener observaciones.
+- Una medición no modifica automáticamente cantidades, estados ni Articulos.
+
+# 14. Custom Fields
+
+Winter debe permitir campos adicionales configurables por administración sin crear migraciones por cada nuevo campo.
+
+Separar:
+
+CORE_FIELDS
+CUSTOM_FIELDS
+
+Los CORE_FIELDS son contractuales y no pueden alterarse administrativamente.
+
+Los CUSTOM_FIELDS deben soportar inicialmente:
+
+TEXT
+INTEGER
+DECIMAL
+BOOLEAN
+DATE
+SELECT
+
+Conceptualmente:
+
+CustomFieldDefinition
+- entityType
+- code
+- label
+- dataType
+- required
+- active
+- options
+- displayOrder
+- createdBy
+- createdAt
+
+Reglas:
+
+- Solo usuario autorizado puede administrarlos.
+- No eliminar físicamente definiciones con valores históricos.
+- Desactivar conserva valores previos.
+- code es estable.
+- No permitir cambiar libremente dataType si existen valores.
+- Hacer obligatorio un campo no invalida registros históricos.
+- Todo cambio debe auditarse.
+- Un custom field no se convierte automáticamente en regla estructural del dominio.
+
+Inicialmente soportar al menos:
+Producer
+GrapeVariety
+GrapeReception
+
+# 15. Frontera Production -> Inventory
+
+Mientras el producto está en proceso:
+
+ProductionBatch es la fuente de verdad.
+
+El líquido/producto en proceso ubicado en tanques/barricas NO debe representarse simultáneamente como InventoryStock.
+
+Cuando sale del proceso productivo:
+
+ProductionBatch
+-> InventoryLot
+-> InventoryMovement
+-> InventoryStock
+
+Reglas:
+
+- El cruce debe ser atómico.
+- InventoryLot debe conservar originProductionBatchId.
+- Un batch puede transferirse parcialmente a Inventory.
+- Un batch puede originar varios InventoryLot.
+- Nunca duplicar cantidad entre Production e Inventory.
+
+La transacción debe incluir cuando corresponda:
+
+- reducción de ProductionBatch
+- creación/registro del output
+- creación/reutilización InventoryLot
+- originProductionBatchId
+- InventoryMovement
+- InventoryStock
+- auditoría Production
+- auditoría Inventory
+
+Rollback completo ante cualquier fallo.
+
+# 16. Integración con Artículos
+
+Production utiliza exclusivamente ArticulosApi.
+
+Production no modifica:
+
+- clasificacion
+- unidadMedida
+- activo
+
+Las etapas productivas se representan mediante Articulos.
+
+Debe existir posteriormente una matriz explícita:
+clasificacion de Articulo -> operación Production permitida.
+
+# 17. Actor y participantes
+
+El actor de cualquier comando viene exclusivamente del contexto autenticado.
+
+Nunca aceptar desde body como actor:
+
+performedByUserId
+responsibleUserId
+userId
+
+Si esos conceptos representan personas que participaron físicamente deben modelarse como ProductionParticipant.
+
+# 18. Correcciones
+
+- Sin edición destructiva de registros operativos históricos.
+- Sin DELETE físico.
+- Toda corrección exige reason.
+- Debe conservar:
+  - registro original
+  - actor
+  - fecha
+  - motivo
+  - valor anterior
+  - valor corregido
+
+# 19. Idempotencia
+
+Requieren idempotencia al menos:
+
+- recepción
+- transformación
+- consumos
+- outputs
+- pérdidas con efecto cuantitativo
+- movimientos de batch entre recipientes
+- salida Production -> Inventory
+
+Las claves deben ser estables por operación lógica.
+
+Nunca usar un UUID aleatorio nuevo por retry.
+
+Ejemplos conceptuales:
+
+production-reception:{receptionId}
+production-transformation:{transformationId}
+production-output:{transformationId}:{outputId}
+production-loss:{lossId}
+
+# 20. Atomicidad
+
+Usar SharedUnitOfWork.
+
+Toda operación crítica debe incluir en la misma transacción lógica:
+
+- entidades Production
+- cantidades
+- operaciones Inventory cuando correspondan
+- auditoría
+
+Si auditoría falla, la operación falla.
+
+# 21. Auditoría
+
+Auditar al menos:
+
+- creación/cierre ProductionOrder
+- creación/cierre TransformationOrder
+- GrapeReception
+- ProductionWork
+- Transformation
+- consumos
+- outputs
+- ProductionLoss
+- Measurement y correcciones
+- movimientos de recipientes
+- administración de catálogos
+- administración de custom fields
+
+# 22. Permisos
+
+Convención obligatoria:
+
+<module>:<action>
+
+Base aprobada:
+
+production:read
+production:order_create
+production:order_close
+production:transformation_order_create
+production:transformation_order_close
+production:work_create
+production:work_correct
+production:reception_create
+production:reception_correct
+production:transformation_create
+production:loss_create
+production:measurement_create
+production:measurement_correct
+production:container_manage
+production:producer_manage
+production:grape_variety_manage
+production:participant_manage
+production:custom_fields_manage
+
+No usar un permiso genérico único.
+
+# 23. API
+
+Base HTTP:
+
+/api/v1/production
+
+Separar Commands y Queries.
+
+No utilizar CRUD genérico para modificar operaciones históricas.
+
+Ejemplos de commands:
+
+POST /orders
+POST /orders/:id/close
+POST /transformation-orders
+POST /transformation-orders/:id/close
+POST /works
+POST /works/:id/corrections
+POST /receptions
+POST /receptions/:id/corrections
+POST /transformations
+POST /measurements
+POST /measurements/:id/corrections
+
+La definición exacta final de endpoints debe derivarse de este contrato durante diseño técnico.
+
+Listados deben usar paginación/filtros consistentes.
+
+Debe existir una consulta explícita de trazabilidad equivalente a:
+
+GET /api/v1/production/batches/:id/trace
+
+que permita reconstruir:
+
+- origen
+- batches padres
+- batches hijos
+- transformaciones
+- trabajos
+- pérdidas
+- InventoryLot resultante
+
+# 24. ProductionApi intermodular
+
+Otros módulos no llaman controllers HTTP.
+
+Production debe exponer únicamente APIs internas necesarias.
+
+Base conceptual:
+
+getProductionBatch
+getAvailableBatchQuantity
+validateProductionBatch
+traceProductionBatch
+
+Agregar nuevos métodos solo cuando exista una necesidad intermodular concreta.
+
+# 25. DTOs y tipado
+
+No utilizar Promise<unknown> como contrato público/intermodular.
+
+Los resultados entre Production e Inventory deben ser explícitamente tipados.
+
+# 26. Errores
+
+Usar errores de dominio explícitos.
+
+Ejemplos:
+
+PRODUCTION_ORDER_NOT_FOUND
+PRODUCTION_ORDER_CLOSED
+TRANSFORMATION_ORDER_CLOSED
+BATCH_NOT_FOUND
+INSUFFICIENT_BATCH_QUANTITY
+CONTAINER_NOT_AVAILABLE
+CONTAINER_CAPACITY_EXCEEDED
+CONTAINER_ALREADY_OCCUPIED
+INVALID_BATCH_TRANSFORMATION
+INVALID_ARTICULO_CLASSIFICATION
+MEASUREMENT_TYPE_INVALID
+IDEMPOTENCY_CONFLICT
+
+Nunca exponer errores Prisma/PostgreSQL/Firebase directamente.
+
+# 27. Validación
+
+Backend siempre valida:
+
+- cantidades
+- unidades
+- estado de órdenes
+- disponibilidad del batch
+- capacidad de recipiente
+- ocupación
+- Articulo activo
+- clasificación
+- permisos
+- idempotencia
+- relaciones y cardinalidades
+
+El frontend nunca es autoridad de reglas de negocio.
+
+# 28. Borrado y lifecycle
+
+No borrar físicamente registros operativos:
+
+- ProductionOrder
+- TransformationOrder
+- ProductionWork
+- ProductionBatch
+- GrapeReception
+- Transformation
+- ProductionLoss
+- Measurement
+- correcciones
+- relaciones históricas de trazabilidad
+
+Los catálogos administrativos usan baja lógica cuando corresponda.
+
+# 29. Objetivo funcional
+
+Winter debe permitir responder históricamente:
+
+- qué cantidad existía de cada producto en proceso;
+- en qué recipiente estaba;
+- de qué batch provenía;
+- qué transformación ocurrió;
+- en qué periodo ocurrió;
+- qué cantidades fueron consumidas;
+- qué outputs fueron generados;
+- qué pérdidas se registraron;
+- qué producto terminó ingresando a Inventory;
+- cuál es la trazabilidad completa desde la recepción hasta el producto final.
+
+No implementar nada todavía.
+
+Al finalizar:
+
+1. Reportar ruta creada.
+2. Resumir secciones incluidas.
+3. Reportar cualquier contradicción detectada contra los 8 contratos existentes.
+4. NO resolver contradicciones automáticamente.
+5. Reportar git diff.
+6. No hacer commit todavía.
