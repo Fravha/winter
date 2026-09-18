@@ -194,6 +194,9 @@ model ProductionBatch {
   productionOrder  ProductionOrder       @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
   ledger           ProductionBatchLedgerEntry[]
   balance          ProductionBatchBalance?
+  containerOccupancies ProductionContainerOccupancy[]
+  containerMovementsFrom ProductionBatchContainerMovement[] @relation("ContainerMovementSourceBatch")
+  containerMovementsTo ProductionBatchContainerMovement[] @relation("ContainerMovementDestinationBatch")
   parents          ProductionBatchLineage[] @relation("BatchLineageChild")
   children         ProductionBatchLineage[] @relation("BatchLineageParent")
 
@@ -268,6 +271,92 @@ model ProductionBatchOperation {
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@map("production_batch_operations")
+}
+
+enum ProductionContainerStatus {
+  DISPONIBLE
+  OCUPADO
+  FUERA_DE_SERVICIO
+}
+
+enum ProductionBatchContainerMovementType {
+  ASSIGNED
+  TRANSFERRED
+  PARTIAL_TRANSFERRED
+}
+
+model ProductionContainer {
+  id          String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String                   @unique
+  capacity    Decimal                  @db.Decimal(18, 3)
+  capacityUnit String                  @map("capacity_unit")
+  status      ProductionContainerStatus @default(DISPONIBLE)
+  observations String?
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  updatedAt   DateTime                 @updatedAt @map("updated_at")
+  version     Int                      @default(0)
+  occupancies ProductionContainerOccupancy[]
+  movementsFrom ProductionBatchContainerMovement[] @relation("ContainerMovementSource")
+  movementsTo   ProductionBatchContainerMovement[] @relation("ContainerMovementDestination")
+
+  @@index([status, code], map: "production_containers_status_code_idx")
+  @@map("production_containers")
+}
+
+model ProductionContainerOccupancy {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  containerId String   @map("container_id") @db.Uuid
+  batchId     String   @map("batch_id") @db.Uuid
+  quantity    Decimal  @db.Decimal(18, 3)
+  unit        String
+  openedAt    DateTime @map("opened_at")
+  closedAt    DateTime? @map("closed_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  version     Int      @default(0)
+  container   ProductionContainer @relation(fields: [containerId], references: [id], onDelete: Restrict, map: "production_container_occupancies_container_fkey")
+  batch       ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Restrict, map: "production_container_occupancies_batch_fkey")
+
+  @@index([containerId, closedAt, openedAt], map: "production_container_occupancies_container_idx")
+  @@index([batchId, closedAt, openedAt], map: "production_container_occupancies_batch_idx")
+  @@map("production_container_occupancies")
+}
+
+model ProductionBatchContainerMovement {
+  id                 String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  movementType       ProductionBatchContainerMovementType @map("movement_type")
+  sourceContainerId  String?                              @map("source_container_id") @db.Uuid
+  destinationContainerId String                           @map("destination_container_id") @db.Uuid
+  sourceBatchId      String                               @map("source_batch_id") @db.Uuid
+  destinationBatchId String?                              @map("destination_batch_id") @db.Uuid
+  quantity           Decimal                              @db.Decimal(18, 3)
+  unit               String
+  operationKey       String                               @map("operation_key")
+  requestHash        String                               @map("request_hash")
+  occurredAt         DateTime                             @map("occurred_at")
+  actorUserId        String                               @map("actor_user_id") @db.Uuid
+  metadata           Json?
+  createdAt          DateTime                             @default(now()) @map("created_at")
+  sourceContainer    ProductionContainer? @relation("ContainerMovementSource", fields: [sourceContainerId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_source_container_fkey")
+  destinationContainer ProductionContainer @relation("ContainerMovementDestination", fields: [destinationContainerId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_destination_container_fkey")
+  sourceBatch        ProductionBatch @relation("ContainerMovementSourceBatch", fields: [sourceBatchId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_source_batch_fkey")
+  destinationBatch   ProductionBatch? @relation("ContainerMovementDestinationBatch", fields: [destinationBatchId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_destination_batch_fkey")
+
+  @@unique([operationKey])
+  @@index([destinationContainerId, occurredAt], map: "production_batch_container_movements_destination_idx")
+  @@index([sourceBatchId, occurredAt], map: "production_batch_container_movements_source_batch_idx")
+  @@map("production_batch_container_movements")
+}
+
+model ProductionContainerOperation {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  operationKey String   @unique @map("operation_key")
+  operation    String
+  requestHash  String   @map("request_hash")
+  result       Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("production_container_operations")
 }
 
 model TransformationOrder {

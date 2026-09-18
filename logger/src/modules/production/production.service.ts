@@ -7,12 +7,15 @@ import { AppError } from "../../shared/errors/app-error.js";
 import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
 import { ProductionRepository } from "./production.repository.js";
 import { ProductionBatchService } from "./production.batch.js";
+import { ProductionContainerService } from "./production.container.js";
+import type { ContainerCreateInput, ContainerMoveInput, ContainerUpdateInput } from "./production.container.js";
 import type { BatchCreateInput, BatchConsumptionInput, BatchListFilters, BatchMergeInput, BatchSplitInput } from "./production.batch.js";
 import type { CatalogFilters, CatalogInput, CatalogKind, OrderFilters, ProductionOrderInput, TransformationOrderInput } from "./production.dto.js";
 const kindMap = { participants: "participants", producers: "producers", "grape-varieties": "grape-varieties", "work-types": "work-types", "measurement-types": "measurement-types" } as const;
 export class ProductionService {
   private readonly batches: ProductionBatchService;
-  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService) { this.batches = new ProductionBatchService(prisma, audit); }
+  private readonly containers: ProductionContainerService;
+  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); }
   private auditIn(tx: SharedTransactionContext): AuditService { return new AuditService(new PrismaAuditRepository(tx)); }
   list(kind: CatalogKind | "work-types" | "measurement-types", f: CatalogFilters) { return new ProductionRepository(this.prisma).list(kindMap[kind], f); }
   async create(kind: CatalogKind, data: CatalogInput, context: AuthenticatedAuditContext) {
@@ -102,6 +105,17 @@ export class ProductionService {
   getBatchBalance(id: string) { return this.batches.getAvailableBatchQuantity(id); }
   validateBatch(id: string) { return this.batches.validateProductionBatch(id); }
   getBatchLineage(id: string) { return this.batches.lineage(id); }
+  listContainers() { return this.containers.list(); }
+  getContainer(id: string) { return this.containers.get(id); }
+  getContainerOccupancies(id: string) { return this.containers.occupancies(id); }
+  getContainerMovements(id: string) { return this.containers.movements(id); }
+  createContainer(data: ContainerCreateInput, context: AuthenticatedAuditContext) { return this.containers.create(data, context); }
+  updateContainer(id: string, data: ContainerUpdateInput, context: AuthenticatedAuditContext) { return this.containers.update(id, data, context); }
+  activateContainer(id: string, context: AuthenticatedAuditContext) { return this.containers.setStatus(id, "DISPONIBLE", context); }
+  deactivateContainer(id: string, context: AuthenticatedAuditContext) { return this.containers.setStatus(id, "FUERA_DE_SERVICIO", context); }
+  assignBatchToContainer(data: ContainerMoveInput, context: AuthenticatedAuditContext) { return this.containers.assign(data, context); }
+  transferBatchBetweenContainers(data: ContainerMoveInput, context: AuthenticatedAuditContext) { return this.containers.transferTotal(data, context); }
+  transferBatchPartiallyBetweenContainers(data: ContainerMoveInput, context: AuthenticatedAuditContext) { return this.containers.transferPartial(data, context); }
   async createOrder(data: ProductionOrderInput, context: AuthenticatedAuditContext) {
     return new SharedUnitOfWork(this.prisma).execute(async tx => {
       const repo = new ProductionRepository(tx);

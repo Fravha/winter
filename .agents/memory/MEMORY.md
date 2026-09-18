@@ -1,1 +1,2 @@
 - [Decisiones de dominio de Winter](winter-domain-decisions.md) — Reglas obligatorias para trabajos, transformaciones, stock, atomicidad y módulos finales.
+- [Disciplina de migraciones de Production](production-migration-discipline.md) — Congelar cada migración antes de desarrollo; cambios posteriores siempre van en otra migración.

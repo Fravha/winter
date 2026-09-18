@@ -8,7 +8,7 @@
     "build": "rm -rf dist && prisma generate && tsc && node scripts/package-prisma-client.mjs",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test --test-concurrency=1 tests/**/*.test.ts",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "db:migrate": "prisma migrate dev",

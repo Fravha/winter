@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PrismaClient } from "../src/generated/prisma/client.js";
-import { SharedUnitOfWork } from "../src/core/database/shared-unit-of-work.js";
+import { SharedUnitOfWork, isSerializationConflict } from "../src/core/database/shared-unit-of-work.js";
 
 describe("SharedUnitOfWork", () => {
+  it("recognizes Prisma P2010 with nested PostgreSQL serialization SQLSTATE", () => {
+    assert.equal(isSerializationConflict({ code: "P2010", meta: { driverAdapterError: { cause: { originalCode: "40001" } } } }), true);
+    assert.equal(isSerializationConflict({ code: "P2010", meta: { driverAdapterError: { cause: { code: "40001" } } } }), true);
+    assert.equal(isSerializationConflict({ code: "P2010", meta: { driverAdapterError: { cause: { originalCode: "23505" } } } }), false);
+    assert.equal(isSerializationConflict({ code: "P2010", meta: { driverAdapterError: { cause: { originalMessage: "could not serialize access" } } } }), false);
+  });
   it("retries the complete workflow after P2034", async () => {
     let attempts = 0;
     let callbackRuns = 0;

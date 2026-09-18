@@ -174,7 +174,12 @@ export class BatchLedgerService {
     if (batch.unit !== unit) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Batch unit does not match operation unit", 409);
     if (entryType !== "GENERATED") {
       const availability = new BatchAvailabilityService(this.db, true);
-      await availability.assertAvailable(batchId, quantity, unit);
+      const { balance } = await availability.assertAvailable(batchId, quantity, unit);
+      const allocations = await this.db.productionContainerOccupancy.findMany({ where: { batchId, closedAt: null }, select: { quantity: true } });
+      const allocated = allocations.reduce((sum, row) => sum.plus(row.quantity), new Prisma.Decimal(0));
+      if (new Prisma.Decimal(balance.available).minus(quantity).lt(allocated)) {
+        throw new AppError("INSUFFICIENT_BATCH_QUANTITY", "Reduction would consume quantity allocated to a production container", 409);
+      }
     }
     try {
       return await this.db.productionBatchLedgerEntry.create({ data: { productionBatchId: batchId, entryType, quantity, unit, operationKey, actorUserId, occurredAt, ...(metadata ? { metadata: output(metadata) } : {}) } });
@@ -370,6 +375,36 @@ export class ProductionBatchService {
     const edges = await this.prisma.productionBatchLineage.findMany({ where: { OR: [{ parentBatchId: id }, { childBatchId: id }] }, orderBy: { createdAt: "asc" } });
     return edges.map(edge => ({ id: edge.id, parentBatchId: edge.parentBatchId, childBatchId: edge.childBatchId, quantity: edge.quantity ? quantityString(edge.quantity) : null, unit: edge.unit, operationKey: edge.operationKey, createdAt: dateString(edge.createdAt) }));
   }
+}
+
+export async function splitOneBatchInTransaction(
+  tx: SharedTransactionContext,
+  data: { parentBatchId: string; code: string; quantity: string; observations?: string; operationKey: string },
+  context: AuthenticatedAuditContext,
+  occurredAt = new Date(),
+): Promise<{ parent: BatchBalanceDto; child: BatchDetailDto }> {
+  requireUuid(data.parentBatchId, "Parent batch id");
+  requireText(data.code, "Child code");
+  requireText(data.operationKey, "Operation key");
+  const quantity = decimal(data.quantity);
+  await lockBatches(tx, [data.parentBatchId]);
+  const parent = await tx.productionBatch.findUnique({ where: { id: data.parentBatchId } });
+  if (!parent) throw new AppError("BATCH_NOT_FOUND", "Production batch not found", 404);
+  const availability = await new BatchAvailabilityService(tx, true).assertAvailable(data.parentBatchId, quantity, parent.unit);
+  void availability;
+  let child;
+  try {
+    child = await tx.productionBatch.create({ data: { code: data.code, productionOrderId: parent.productionOrderId, articuloId: parent.articuloId, unit: parent.unit, ...(data.observations !== undefined ? { observations: data.observations } : {}) } });
+  } catch (error) {
+    if (isPrismaCode(error, "P2002")) throw new AppError("PRODUCTION_CODE_ALREADY_EXISTS", "Production batch code already exists", 409);
+    throw error;
+  }
+  await new BatchLedgerService(tx, true).append(child.id, "GENERATED", quantity, parent.unit, `${data.operationKey}:generated`, context.actorUserId, occurredAt);
+  await new BatchLineageService(tx, true).create(parent.id, child.id, quantity, parent.unit, `${data.operationKey}:lineage`);
+  await new BatchLedgerService(tx, true).append(parent.id, "SEPARATED", quantity, parent.unit, `${data.operationKey}:separated`, context.actorUserId, occurredAt);
+  const childBalance = await new BatchAvailabilityService(tx, true).rebuild(child.id);
+  const parentBalance = await new BatchAvailabilityService(tx, true).rebuild(parent.id);
+  return { parent: parentBalance, child: { ...mapBatch(child), balance: childBalance } };
 }
 function isPrismaCode(error: unknown, code: string): boolean { return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code; }
 function isCodeUniqueConflict(error: unknown): boolean {

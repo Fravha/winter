@@ -64,6 +64,32 @@ same pair returns the stored result, while a changed request raises
 parent/child lineage, reject unit mismatches, self-edges, cycles and
 insufficient availability. There is no batch DELETE or editable balance.
 
+## Production containers (P4)
+
+Containers are managed with `production:container_manage`; reads require
+`production:read`:
+
+* `GET /containers`
+* `GET /containers/:id`
+* `GET /containers/:id/occupancies`
+* `GET /containers/:id/movements`
+* `POST /containers`
+* `PATCH /containers/:id`
+* `POST /containers/:id/activate`
+* `POST /containers/:id/deactivate`
+
+Creation requires a unique code, positive decimal `capacity` and exact
+`capacityUnit`. A container is `DISPONIBLE`, `OCUPADO` or
+`FUERA_DE_SERVICIO`; an occupied container cannot accept another batch and an
+out-of-service container cannot be occupied. Occupancies are temporal history
+records, while the P3 batch ledger remains the source of truth for quantity.
+
+Batch assignment and total/partial container transfers are typed internal
+commands, not HTTP mutation routes. They require an operation key and request
+hash, use exact decimal quantities and units, and audit atomically. Total
+transfer preserves the same batch; partial transfer creates exactly one child
+through the P3 split primitive and preserves lineage.
+
 ## Production orders
 
 `GET /orders` and `GET /orders/:id` require `production:read`.

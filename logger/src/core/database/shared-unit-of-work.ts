@@ -19,18 +19,30 @@ export const isSerializationConflict = (error: unknown): boolean => {
   const candidate = error as {
     code?: unknown;
     name?: unknown;
+    cause?: unknown;
+    kind?: unknown;
     message?: unknown;
-    cause?: { kind?: unknown; message?: unknown };
+    sqlState?: unknown;
+    sqlstate?: unknown;
+    postgresCode?: unknown;
+    originalCode?: unknown;
+    meta?: unknown;
   };
-  return candidate.code === "P2034"
-    || (
-      candidate.name === "DriverAdapterError"
-      && (
-        candidate.message === "TransactionWriteConflict"
-        || candidate.cause?.kind === "TransactionWriteConflict"
-        || candidate.cause?.message === "TransactionWriteConflict"
-      )
-    );
+  if (candidate.code === "P2034") return true;
+  if (candidate.code === "P2010") {
+    if (typeof candidate.meta !== "object" || candidate.meta === null) return false;
+    const adapter = (candidate.meta as { driverAdapterError?: unknown }).driverAdapterError;
+    if (typeof adapter !== "object" || adapter === null) return false;
+    const nestedCause = (adapter as { cause?: unknown }).cause;
+    if (typeof nestedCause !== "object" || nestedCause === null) return false;
+    const structuredCause = nestedCause as { originalCode?: unknown; code?: unknown; sqlState?: unknown; sqlstate?: unknown };
+    return [structuredCause.originalCode, structuredCause.code, structuredCause.sqlState, structuredCause.sqlstate].includes("40001");
+  }
+  if (candidate.name !== "DriverAdapterError" && candidate.name !== "PrismaClientKnownRequestError") return false;
+  if (candidate.kind === "TransactionWriteConflict" || candidate.message === "TransactionWriteConflict") return true;
+  if ([candidate.code, candidate.sqlState, candidate.sqlstate, candidate.postgresCode, candidate.originalCode].includes("40001")) return true;
+  if (typeof candidate.cause === "object" && candidate.cause !== null) return isSerializationConflict({ name: "DriverAdapterError", ...(candidate.cause as object) });
+  return false;
 };
 
 /**

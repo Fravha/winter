@@ -42,3 +42,7 @@ export const batchListSchema = z.object({
   articuloId: z.string().uuid().optional(),
   productionOrderId: z.string().uuid().optional(),
 }).strict();
+const quantity = z.string().regex(/^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/);
+export const containerCreateSchema = z.object({ code: code, capacity: quantity, capacityUnit: z.string().trim().min(1).max(30), observations: z.string().max(2000).optional() }).strict();
+export const containerUpdateSchema = z.object({ capacity: quantity.optional(), observations: z.string().max(2000).optional() }).strict();
+export const containerMoveSchema = z.object({ batchId: z.string().uuid(), sourceContainerId: z.string().uuid().optional(), destinationContainerId: z.string().uuid(), quantity: quantity.optional(), childCode: code.optional(), operationKey: code, requestHash: z.string().trim().min(1).max(500), occurredAt: z.coerce.date().optional() }).strict();
