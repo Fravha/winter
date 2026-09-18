@@ -166,11 +166,108 @@ model ProductionOrder {
   version        Int                   @default(0)
   works          ProductionWork[]
   transformationOrders TransformationOrder[]
+  batches        ProductionBatch[]
 
   @@index([status])
   @@index([startDate])
 
   @@map("production_orders")
+}
+
+enum ProductionBatchLedgerEntryType {
+  GENERATED
+  CONSUMED
+  SEPARATED
+  LOSS
+  TRANSFERRED_TO_INVENTORY
+}
+
+model ProductionBatch {
+  id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code             String                @unique
+  productionOrderId String               @map("production_order_id") @db.Uuid
+  articuloId       String                @map("articulo_id") @db.Uuid
+  unit             String
+  createdAt        DateTime              @default(now()) @map("created_at")
+  observations     String?
+  version          Int                   @default(0)
+  productionOrder  ProductionOrder       @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  ledger           ProductionBatchLedgerEntry[]
+  balance          ProductionBatchBalance?
+  parents          ProductionBatchLineage[] @relation("BatchLineageChild")
+  children         ProductionBatchLineage[] @relation("BatchLineageParent")
+
+  @@index([productionOrderId])
+  @@index([articuloId])
+  @@index([createdAt])
+  @@map("production_batches")
+}
+
+model ProductionBatchLedgerEntry {
+  id               String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productionBatchId String                        @map("production_batch_id") @db.Uuid
+  entryType        ProductionBatchLedgerEntryType @map("entry_type")
+  quantity         Decimal                        @db.Decimal(18, 3)
+  unit             String
+  transformationId String?                        @map("transformation_id") @db.Uuid
+  productionWorkId String?                        @map("production_work_id") @db.Uuid
+  productionLossId String?                        @map("production_loss_id") @db.Uuid
+  operationKey     String                         @map("operation_key")
+  createdAt        DateTime                       @default(now()) @map("created_at")
+  occurredAt       DateTime                       @map("occurred_at")
+  actorUserId      String                         @map("actor_user_id") @db.Uuid
+  metadata         Json?
+  productionBatch  ProductionBatch               @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
+
+  @@unique([operationKey])
+  @@index([productionBatchId, occurredAt, id], map: "production_batch_ledger_entries_batch_occurred_idx")
+  @@index([entryType, occurredAt], map: "production_batch_ledger_entries_type_occurred_idx")
+  @@index([transformationId], map: "production_batch_ledger_entries_transformation_idx")
+  @@index([productionWorkId], map: "production_batch_ledger_entries_work_idx")
+  @@map("production_batch_ledger_entries")
+}
+
+model ProductionBatchBalance {
+  productionBatchId      String         @id @map("production_batch_id") @db.Uuid
+  generated              Decimal        @db.Decimal(18, 3)
+  consumed              Decimal        @db.Decimal(18, 3)
+  separated             Decimal        @db.Decimal(18, 3)
+  lost                  Decimal        @db.Decimal(18, 3)
+  transferredToInventory Decimal        @map("transferred_to_inventory") @db.Decimal(18, 3)
+  available              Decimal        @db.Decimal(18, 3)
+  ledgerVersion          Int            @map("ledger_version")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+  productionBatch        ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
+
+  @@map("production_batch_balances")
+}
+
+model ProductionBatchLineage {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parentBatchId  String         @map("parent_batch_id") @db.Uuid
+  childBatchId   String         @map("child_batch_id") @db.Uuid
+  quantity       Decimal?       @db.Decimal(18, 3)
+  unit           String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  operationKey   String         @map("operation_key")
+  parentBatch    ProductionBatch @relation("BatchLineageParent", fields: [parentBatchId], references: [id], onDelete: Restrict)
+  childBatch     ProductionBatch @relation("BatchLineageChild", fields: [childBatchId], references: [id], onDelete: Restrict)
+
+  @@unique([parentBatchId, childBatchId, operationKey], map: "production_batch_lineage_parent_child_operation_key")
+  @@index([parentBatchId], map: "production_batch_lineage_parent_idx")
+  @@index([childBatchId], map: "production_batch_lineage_child_idx")
+  @@map("production_batch_lineage")
+}
+
+model ProductionBatchOperation {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  operationKey String   @unique @map("operation_key")
+  operation    String
+  requestHash  String   @map("request_hash")
+  result       Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("production_batch_operations")
 }
 
 model TransformationOrder {

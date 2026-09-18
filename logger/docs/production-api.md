@@ -1,4 +1,4 @@
-# Production P2 API
+# Production P2/P3 API
 
 Base URL: `/api/v1/production`. All endpoints require authentication. List
 queries use `page`, `pageSize`, `search` and `active`.
@@ -36,6 +36,33 @@ and records an audit event atomically with the catalog change.
 P2 exposes only the order aggregates below. Batches, works, receptions,
 transformations, containers and operational measurements remain outside this
 phase.
+
+## Production batches (P3)
+
+Batch commands are internal typed services only; there are no HTTP mutation
+routes. `ProductionBatchService`, `BatchLedgerService`, `BatchLineageService`
+and `BatchAvailabilityService` validate authenticated actors and execute
+ledger, balance, lineage, operation-key and audit writes atomically.
+
+The read-only endpoints require `production:read`:
+
+* `GET /batches?page=1&pageSize=20&productionOrderId=...&articuloId=...`
+* `GET /batches/:id`
+* `GET /batches/:id/balance`
+
+All quantities are decimal strings with exactly three supported fractional
+places and all units must match exactly. Batches have no status and remain
+historically queryable at zero availability. The append-only ledger derives
+`available` as generated minus consumed, separated, loss and transferred
+quantities. P3 creates only generated, consumed and separated facts; loss,
+transformations and Inventory transfers remain future phases.
+
+Internal commands support initial generation, partial consumption, split and
+merge. They require stable `operationKey` and `requestHash`; a retry with the
+same pair returns the stored result, while a changed request raises
+`IDEMPOTENCY_CONFLICT`. Split and merge conserve quantities exactly, preserve
+parent/child lineage, reject unit mismatches, self-edges, cycles and
+insufficient availability. There is no batch DELETE or editable balance.
 
 ## Production orders
 

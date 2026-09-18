@@ -36,3 +36,9 @@ export const transformationOrderCreateSchema = z.object({
   code, productionOrderId: z.string().uuid(), periodStart: z.coerce.date(),
   periodEnd: z.coerce.date().optional(), observations: z.string().max(2000).optional(),
 }).strict();
+export const batchListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  articuloId: z.string().uuid().optional(),
+  productionOrderId: z.string().uuid().optional(),
+}).strict();

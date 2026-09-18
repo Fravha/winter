@@ -6,10 +6,13 @@ import type { SharedTransactionContext } from "../../core/database/shared-unit-o
 import { AppError } from "../../shared/errors/app-error.js";
 import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
 import { ProductionRepository } from "./production.repository.js";
+import { ProductionBatchService } from "./production.batch.js";
+import type { BatchCreateInput, BatchConsumptionInput, BatchListFilters, BatchMergeInput, BatchSplitInput } from "./production.batch.js";
 import type { CatalogFilters, CatalogInput, CatalogKind, OrderFilters, ProductionOrderInput, TransformationOrderInput } from "./production.dto.js";
 const kindMap = { participants: "participants", producers: "producers", "grape-varieties": "grape-varieties", "work-types": "work-types", "measurement-types": "measurement-types" } as const;
 export class ProductionService {
-  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService) {}
+  private readonly batches: ProductionBatchService;
+  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService) { this.batches = new ProductionBatchService(prisma, audit); }
   private auditIn(tx: SharedTransactionContext): AuditService { return new AuditService(new PrismaAuditRepository(tx)); }
   list(kind: CatalogKind | "work-types" | "measurement-types", f: CatalogFilters) { return new ProductionRepository(this.prisma).list(kindMap[kind], f); }
   async create(kind: CatalogKind, data: CatalogInput, context: AuthenticatedAuditContext) {
@@ -90,6 +93,15 @@ export class ProductionService {
   getOrder(id: string) { return new ProductionRepository(this.prisma).findOrder(id); }
   listTransformationOrders(filters: OrderFilters) { return new ProductionRepository(this.prisma).listTransformationOrders(filters); }
   getTransformationOrder(id: string) { return new ProductionRepository(this.prisma).findTransformationOrder(id); }
+  createBatch(data: BatchCreateInput, context: AuthenticatedAuditContext) { return this.batches.createBatch(data, context); }
+  consumeBatch(data: BatchConsumptionInput, context: AuthenticatedAuditContext) { return this.batches.consumeBatch(data, context); }
+  splitBatch(data: BatchSplitInput, context: AuthenticatedAuditContext) { return this.batches.splitBatch(data, context); }
+  mergeBatches(data: BatchMergeInput, context: AuthenticatedAuditContext) { return this.batches.mergeBatches(data, context); }
+  listBatches(filters: BatchListFilters) { return this.batches.listBatches(filters); }
+  getBatch(id: string) { return this.batches.getBatch(id); }
+  getBatchBalance(id: string) { return this.batches.getAvailableBatchQuantity(id); }
+  validateBatch(id: string) { return this.batches.validateProductionBatch(id); }
+  getBatchLineage(id: string) { return this.batches.lineage(id); }
   async createOrder(data: ProductionOrderInput, context: AuthenticatedAuditContext) {
     return new SharedUnitOfWork(this.prisma).execute(async tx => {
       const repo = new ProductionRepository(tx);

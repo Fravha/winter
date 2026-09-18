@@ -35,6 +35,9 @@ async function request(method: string, path: string, permissions = allPermission
     getTransformationOrder: record("getTransformationOrder", { id }),
     createTransformationOrder: record("createTransformationOrder", { id }),
     closeTransformationOrder: record("closeTransformationOrder", { id }),
+    listBatches: record("listBatches", { items: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }),
+    getBatch: record("getBatch", { id, balance: { productionBatchId: id, available: "0.000" } }),
+    getBatchBalance: record("getBatchBalance", { productionBatchId: id, unit: "KG", available: "0.000" }),
   } as unknown as ProductionService;
   const user: AuthenticatedUser = { id: "user-id", firebaseUid: "p2-firebase", email: "p2@example.com", displayName: "P2", status: "ACTIVE", lastLoginAt: null, roles: [], permissions };
   const users: UserRepository = { async findByFirebaseUid() { return user; }, async updateLastLoginAt() {} };
@@ -59,6 +62,7 @@ describe("Production P2 HTTP contracts and RBAC", () => {
     ["POST", "/orders", "production:order_create"], ["POST", `/orders/${id}/close`, "production:order_close"],
     ["GET", "/transformation-orders", "production:read"], ["GET", `/transformation-orders/${id}`, "production:read"],
     ["POST", "/transformation-orders", "production:transformation_order_create"], ["POST", `/transformation-orders/${id}/close`, "production:transformation_order_close"],
+    ["GET", "/batches", "production:read"], ["GET", `/batches/${id}`, "production:read"], ["GET", `/batches/${id}/balance`, "production:read"],
   ] as const;
   for (const [method, path, permission] of endpoints) {
     it(`denies ${method} ${path} without ${permission}`, async () => {
@@ -67,7 +71,7 @@ describe("Production P2 HTTP contracts and RBAC", () => {
       assert.equal((result.json as any).error.code, "AUTH_FORBIDDEN");
     });
   }
-  it("exposes all eight endpoints and propagates actor/request context", async () => {
+  it("exposes all eleven endpoints and propagates actor/request context", async () => {
     for (const [method, path] of endpoints) {
       const body = method === "POST" && path === "/orders" ? { code: "PO", startDate: "2026-01-01T00:00:00.000Z" } : method === "POST" && path === "/transformation-orders" ? { code: "TO", productionOrderId: id, periodStart: "2026-01-01T00:00:00.000Z" } : undefined;
       const result = await request(method, path, allPermissions, body);
