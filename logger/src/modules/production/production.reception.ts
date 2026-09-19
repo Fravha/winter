@@ -99,7 +99,7 @@ export class ProductionReceptionService {
       for (const field of data.customFields ?? []) {
         await persistCustomFieldValue(tx, { definitionId: field.definitionId, entityType: "GRAPE_RECEPTION", entityId: reception.id, value: field.value });
       }
-      const result: ReceptionResult = { reception: { ...reception, receivedAt: reception.receivedAt.toISOString(), createdAt: reception.createdAt.toISOString() }, items, batchIds };
+      const result: ReceptionResult = { reception: { ...reception, receivedAt: reception.receivedAt.toISOString(), createdAt: reception.createdAt.toISOString(), updatedAt: reception.updatedAt.toISOString() }, items, batchIds };
       await tx.grapeReceptionOperation.create({ data: { operationKey: data.operationKey, requestHash: payloadDigest, receptionId: reception.id, result: json(result) } });
       await this.recordAudit(tx, context, reception.id, batchIds);
       return result;
@@ -112,8 +112,16 @@ export class ProductionReceptionService {
     ]);
     return { items: rows.map(mapReception), pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
   }
-  async get(id: string) { const row = await this.prisma.grapeReception.findUnique({ where: { id }, include: { items: true } }); return row ? mapReception(row) : null; }
+  async get(id: string) {
+    const row = await this.prisma.grapeReception.findUnique({ where: { id }, include: { items: true, corrections: { orderBy: { toVersion: "asc" } } } });
+    if (!row) return null;
+    const result = mapReception(row);
+    return row.corrections.length === 0 ? result : {
+      ...result,
+      corrections: row.corrections.map(correction => ({ id: correction.id, field: correction.field, previousValue: correction.previousValue, newValue: correction.newValue, reason: correction.reason, correctedAt: correction.correctedAt.toISOString(), actorUserId: correction.actorUserId, fromVersion: correction.fromVersion, toVersion: correction.toVersion })),
+    };
+  }
 }
 function mapReception(row: any) {
-  return { id: row.id, productionOrderId: row.productionOrderId, producerId: row.producerId, receivedAt: row.receivedAt.toISOString(), status: row.status, observations: row.observations, actorUserId: row.actorUserId, createdAt: row.createdAt.toISOString(), items: row.items.map((item: any) => ({ id: item.id, grapeVarietyId: item.grapeVarietyId, articuloId: item.articuloId, quantity: new Prisma.Decimal(item.quantity).toFixed(3), unit: item.unit, productionBatchId: item.productionBatchId })) };
+  return { id: row.id, productionOrderId: row.productionOrderId, producerId: row.producerId, receivedAt: row.receivedAt.toISOString(), status: row.status, observations: row.observations, actorUserId: row.actorUserId, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), version: row.version, items: row.items.map((item: any) => ({ id: item.id, grapeVarietyId: item.grapeVarietyId, articuloId: item.articuloId, quantity: new Prisma.Decimal(item.quantity).toFixed(3), unit: item.unit, productionBatchId: item.productionBatchId })) };
 }

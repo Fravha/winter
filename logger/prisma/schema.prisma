@@ -22,6 +22,8 @@ model User {
   grapeReceptionsCreated GrapeReception[] @relation("GrapeReceptionActor")
   productionMeasurementsCreated ProductionMeasurement[] @relation("ProductionMeasurementActor")
   productionWorkCorrections ProductionWorkCorrection[] @relation("ProductionWorkCorrectionActor")
+  productionMeasurementCorrections ProductionMeasurementCorrection[] @relation("ProductionMeasurementCorrectionActor")
+  grapeReceptionCorrections GrapeReceptionCorrection[] @relation("GrapeReceptionCorrectionActor")
   transformations Transformation[]
   productionLosses ProductionLoss[]
   managedWarehouses Warehouse[] @relation("WarehouseManager")
@@ -628,17 +630,41 @@ model ProductionMeasurement {
   observations String?
   actorUserId String @map("actor_user_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  version Int @default(0)
   measurementType MeasurementType @relation(fields: [measurementTypeId], references: [id], onDelete: Restrict)
   productionBatch ProductionBatch? @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
   productionContainer ProductionContainer? @relation(fields: [productionContainerId], references: [id], onDelete: Restrict)
   productionWork ProductionWork? @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
   participant ProductionParticipant? @relation(fields: [participantId], references: [id], onDelete: Restrict)
   actor User @relation("ProductionMeasurementActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  corrections ProductionMeasurementCorrection[]
   @@index([measurementTypeId, measuredAt, id])
   @@index([productionBatchId, measuredAt])
   @@index([productionContainerId, measuredAt])
   @@index([productionWorkId, measuredAt])
   @@map("production_measurements")
+}
+
+model ProductionMeasurementCorrection {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productionMeasurementId String @map("production_measurement_id") @db.Uuid
+  field String
+  previousValue Json @map("previous_value")
+  newValue Json @map("new_value")
+  reason String
+  correctedAt DateTime @map("corrected_at")
+  actorUserId String @map("actor_user_id") @db.Uuid
+  fromVersion Int @map("from_version")
+  toVersion Int @map("to_version")
+  operationKey String @unique @map("operation_key")
+  requestHash String @map("request_hash")
+  result Json
+  productionMeasurement ProductionMeasurement @relation(fields: [productionMeasurementId], references: [id], onDelete: Restrict)
+  actor User @relation("ProductionMeasurementCorrectionActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  @@unique([productionMeasurementId, toVersion], map: "production_measurement_corrections_measurement_to_version_key")
+  @@index([productionMeasurementId, correctedAt])
+  @@map("production_measurement_corrections")
 }
 
 model Producer {
@@ -679,13 +705,37 @@ model GrapeReception {
   observations     String?
   actorUserId      String              @map("actor_user_id") @db.Uuid
   createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at")
+  version          Int                 @default(0)
   productionOrder  ProductionOrder     @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
   producer         Producer?           @relation(fields: [producerId], references: [id], onDelete: Restrict)
   actor            User                @relation("GrapeReceptionActor", fields: [actorUserId], references: [id], onDelete: Restrict)
   items            GrapeReceptionItem[]
   operation        GrapeReceptionOperation?
+  corrections      GrapeReceptionCorrection[]
   @@index([productionOrderId, receivedAt])
   @@map("grape_receptions")
+}
+
+model GrapeReceptionCorrection {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  grapeReceptionId String @map("grape_reception_id") @db.Uuid
+  field String
+  previousValue Json @map("previous_value")
+  newValue Json @map("new_value")
+  reason String
+  correctedAt DateTime @map("corrected_at")
+  actorUserId String @map("actor_user_id") @db.Uuid
+  fromVersion Int @map("from_version")
+  toVersion Int @map("to_version")
+  operationKey String @unique @map("operation_key")
+  requestHash String @map("request_hash")
+  result Json
+  grapeReception GrapeReception @relation(fields: [grapeReceptionId], references: [id], onDelete: Restrict)
+  actor User @relation("GrapeReceptionCorrectionActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  @@unique([grapeReceptionId, toVersion], map: "grape_reception_corrections_reception_to_version_key")
+  @@index([grapeReceptionId, correctedAt])
+  @@map("grape_reception_corrections")
 }
 
 model GrapeReceptionItem {

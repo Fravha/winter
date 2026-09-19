@@ -50,5 +50,14 @@ export class ProductionMeasurementService {
     const [rows, total] = await Promise.all([this.prisma.productionMeasurement.findMany({ where, orderBy: [{ measuredAt: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize }), this.prisma.productionMeasurement.count({ where })]);
     return { items: rows.map(map), pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
   }
-  async get(id: string) { uuid(id, "Measurement id"); const row = await this.prisma.productionMeasurement.findUnique({ where: { id } }); return row ? map(row) : null; }
+  async get(id: string) {
+    uuid(id, "Measurement id");
+    const row = await this.prisma.productionMeasurement.findUnique({ where: { id }, include: { corrections: { orderBy: { toVersion: "asc" } } } });
+    if (!row) return null;
+    const result = map(row);
+    return row.corrections.length === 0 ? result : {
+      ...result,
+      corrections: row.corrections.map(correction => ({ id: correction.id, field: correction.field, previousValue: correction.previousValue, newValue: correction.newValue, reason: correction.reason, correctedAt: correction.correctedAt.toISOString(), actorUserId: correction.actorUserId, fromVersion: correction.fromVersion, toVersion: correction.toVersion })),
+    };
+  }
 }

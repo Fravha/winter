@@ -67,6 +67,14 @@ export const workCorrectionSchema = z.object({
   newValue: z.string().nullable(),
   reason: z.string().trim().min(1).max(2000),
 }).strict();
+export const correctionSchema = z.object({
+  field: z.string().trim().min(1).max(40),
+  newValue: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  reason: z.string().trim().min(1).max(2000),
+  operationKey: code,
+}).strict();
+export const measurementCorrectionSchema = correctionSchema.extend({ field: z.enum(["value", "unit", "measuredAt", "participantId", "observations"]) }).strict();
+export const receptionCorrectionSchema = correctionSchema.extend({ field: z.enum(["receivedAt", "producerId", "observations", "status"]) }).strict();
 export const grapeReceptionSchema = z.object({
   productionOrderId: z.string().uuid(), producerId: z.string().uuid().optional(),
   receivedAt: z.coerce.date(), status: z.enum(["ACCEPTED", "ACCEPTED_WITH_OBSERVATIONS"]),

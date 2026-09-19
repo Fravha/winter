@@ -1,3 +1,13 @@
+## P10 trace and historical corrections
+
+`GET /api/v1/production/batches/:id/trace` reconstructs bounded batch lineage and related reception, work, transformation, loss, container, measurement and Inventory facts with `production:read`.
+
+Historical corrections are append-only commands:
+
+- `POST /api/v1/production/measurements/:id/corrections` (`production:measurement_correct`)
+- `POST /api/v1/production/grape-receptions/:id/corrections` (`production:reception_correct`)
+
+Each command requires `field`, `newValue`, `reason`, and stable `operationKey`. Original facts, actors, batches, ledger and inventory movements remain immutable. Reception corrections are limited to `receivedAt`, `producerId`, `observations`, and `status`; quantities, articles, varieties, units and generated batches are not correctable.
 # Production P2/P3/P6 API
 
 Base URL: `/api/v1/production`. All endpoints require authentication. List

@@ -19,6 +19,8 @@ import type { InventoryApi } from "../inventory/inventory.api.js";
 import { ProductionReleaseService, type ReleaseBatchInput } from "./production.release.js";
 import { persistCustomFieldValue } from "./custom-fields.js";
 import { ProductionMeasurementService, type MeasurementInput, type MeasurementFilters } from "./production.measurement.js";
+import { ProductionCorrectionService } from "./production.corrections.js";
+import { ProductionTraceService } from "./production.trace.js";
 import { ProductionTransformationService, type TransformationCreateInput } from "./production.transformation.js";
 import type { CatalogFilters, CatalogInput, CatalogKind, OrderFilters, ProductionOrderInput, TransformationOrderInput } from "./production.dto.js";
 const kindMap = { participants: "participants", producers: "producers", "grape-varieties": "grape-varieties", "work-types": "work-types", "measurement-types": "measurement-types" } as const;
@@ -30,7 +32,9 @@ export class ProductionService {
   private readonly measurements: ProductionMeasurementService;
   private readonly transformations: ProductionTransformationService;
   private readonly releaseService: ProductionReleaseService | undefined;
-  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, articulos?: ArticulosApi, inventory?: InventoryApi) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); this.measurements = new ProductionMeasurementService(prisma, tx => this.auditIn(tx)); this.releaseService = inventory ? new ProductionReleaseService(prisma, inventory, tx => this.auditIn(tx)) : undefined; if (articulos) { this.receptions = new ProductionReceptionService(prisma, articulos); this.transformations = new ProductionTransformationService(prisma, articulos); } else { this.receptions = undefined as unknown as ProductionReceptionService; this.transformations = undefined as unknown as ProductionTransformationService; } }
+  private readonly corrections: ProductionCorrectionService;
+  private readonly trace: ProductionTraceService;
+  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, articulos?: ArticulosApi, inventory?: InventoryApi) { this.trace = new ProductionTraceService(prisma); this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); this.measurements = new ProductionMeasurementService(prisma, tx => this.auditIn(tx)); this.corrections = new ProductionCorrectionService(prisma, tx => this.auditIn(tx)); this.releaseService = inventory ? new ProductionReleaseService(prisma, inventory, tx => this.auditIn(tx)) : undefined; if (articulos) { this.receptions = new ProductionReceptionService(prisma, articulos); this.transformations = new ProductionTransformationService(prisma, articulos); } else { this.receptions = undefined as unknown as ProductionReceptionService; this.transformations = undefined as unknown as ProductionTransformationService; } }
   private auditIn(tx: SharedTransactionContext): AuditService { return new AuditService(new PrismaAuditRepository(tx)); }
   list(kind: CatalogKind | "work-types" | "measurement-types", f: CatalogFilters) { return new ProductionRepository(this.prisma).list(kindMap[kind], f); }
   async create(kind: CatalogKind, data: CatalogInput, context: AuthenticatedAuditContext) {
@@ -130,6 +134,9 @@ export class ProductionService {
   createMeasurement(data: MeasurementInput, context: AuthenticatedAuditContext) { return this.measurements.create(data, context); }
   listMeasurements(filters: MeasurementFilters) { return this.measurements.list(filters); }
   getMeasurement(id: string) { return this.measurements.get(id); }
+  correctMeasurement(id: string, data: any, context: AuthenticatedAuditContext) { return this.corrections.correctMeasurement(id, data, context); }
+  correctReception(id: string, data: any, context: AuthenticatedAuditContext) { return this.corrections.correctReception(id, data, context); }
+  getBatchTrace(id: string) { return this.trace.get(id); }
   createTransformation(data: TransformationCreateInput, context: AuthenticatedAuditContext) { if (!this.transformations) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for transformations", 500); return this.transformations.create(data, context); }
   listTransformations(filters: { page?: number | undefined; pageSize?: number | undefined; productionOrderId?: string | undefined } = {}) { if (!this.transformations) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for transformations", 500); return this.transformations.list(filters); }
   getTransformation(id: string) { if (!this.transformations) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for transformations", 500); return this.transformations.get(id); }
