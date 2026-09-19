@@ -239,9 +239,9 @@ Permiso `production:custom_fields_manage`; request:
 `{"data":{"id":"33333333-3333-4333-8333-333333333333","definitionId":"11111111-1111-4111-8111-111111111111","entityType":"PRODUCER","entityId":"22222222-2222-4222-8222-222222222222","textValue":"Mendoza","integerValue":null,"decimalValue":null,"booleanValue":null,"dateValue":null,"selectValue":null}}`.
 Es upsert por `definitionId+entityId`. Tipo: TEXT string, INTEGER int32,
 DECIMAL string con hasta seis decimales, BOOLEAN boolean, DATE string parseable,
-SELECT string en `options`. Aunque el enum acepta `GRAPE_RECEPTION`, el
-servicio la rechaza con `CUSTOM_FIELD_ENTITY_NOT_AVAILABLE` (409). Otros
-errores: `CUSTOM_FIELD_DEFINITION_NOT_FOUND`,
+SELECT string en `options`. `GRAPE_RECEPTION` usa la recepción existente
+identificada por `entityId`; las recepciones no tienen un estado `active`, pero
+deben existir. Otros errores: `CUSTOM_FIELD_DEFINITION_NOT_FOUND`,
 `CUSTOM_FIELD_DEFINITION_INACTIVE`, `CUSTOM_FIELD_ENTITY_NOT_FOUND`,
 `CUSTOM_FIELD_ENTITY_INACTIVE`, `CUSTOM_FIELD_VALUE_INVALID`.
 

@@ -8,6 +8,7 @@ export interface MovementInput {
 export interface TransferInput extends Omit<MovementInput, "warehouseId"> { sourceWarehouseId: string; destinationWarehouseId: string; }
 export interface LotInput { articuloId: string; lotCode: string; classification: InventoryLotClassification; fechaIngreso: Date; observations?: string; }
 export interface WarehouseInput { codigo: string; nombre: string; ubicacion?: string; encargadoUserId?: string; observaciones?: string; }
+export interface WarehouseUpdateInput { nombre: string; ubicacion?: string; encargadoUserId?: string; observaciones?: string; }
 export interface AdjustmentInput extends MovementInput { direction: "INCREASE" | "DECREASE"; }
 
 export interface RegisterInboundInput {

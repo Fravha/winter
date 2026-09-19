@@ -4,16 +4,16 @@ import { requirePermission } from "../../core/access-control/authorization.middl
 import type { TokenVerifier } from "../../core/auth/auth.types.js";
 import type { UserRepository } from "../../core/users/user.repository.js";
 import { InventoryController } from "./inventory.controller.js";
-import { movementSchema, transferSchema, warehouseSchema, adjustmentSchema, classificationSchema } from "./inventory.schema.js";
+import { movementSchema, transferSchema, warehouseSchema, warehouseUpdateSchema, adjustmentSchema, classificationSchema } from "./inventory.schema.js";
 import { validateRequest } from "../../shared/http/validate-request.js";
 import type { InventoryService } from "./inventory.service.js";
-import type { MovementInput, TransferInput, AdjustmentInput, WarehouseInput } from "./inventory.dto.js";
+import type { MovementInput, TransferInput, AdjustmentInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
 export function createInventoryRouter(verifier: TokenVerifier, users: UserRepository, service: InventoryService) {
     const router = Router(), auth = [authenticate(verifier), resolveCurrentUser(users)] as const, c = new InventoryController(service);
     router.get("/warehouses", ...auth, requirePermission("inventory:read"), c.get((p) => service.listWarehouses(p)));
     router.get("/warehouses/:warehouseId", ...auth, requirePermission("inventory:read"), c.get((p) => service.getWarehouse(p as { warehouseId: string })));
     router.post("/warehouses", ...auth, requirePermission("inventory:warehouse_create"), validateRequest({ body: warehouseSchema }), c.command((b, x) => service.createWarehouse(b as unknown as WarehouseInput, x)));
-    router.patch("/warehouses/:id", ...auth, requirePermission("inventory:warehouse_update"), validateRequest({ body: warehouseSchema }), c.command((b, x) => service.updateWarehouse(String(b.id), b as unknown as WarehouseInput, x)));
+    router.patch("/warehouses/:id", ...auth, requirePermission("inventory:warehouse_update"), validateRequest({ body: warehouseUpdateSchema }), c.command((b, x) => service.updateWarehouse(String(b.id), b as unknown as WarehouseUpdateInput, x)));
     router.post("/warehouses/:id/deactivate", ...auth, requirePermission("inventory:warehouse_deactivate"), c.command((b, x) => service.setWarehouseActive(String(b.id), false, x)));
     router.post("/warehouses/:id/activate", ...auth, requirePermission("inventory:warehouse_activate"), c.command((b, x) => service.setWarehouseActive(String(b.id), true, x)));
     router.get("/stock", ...auth, requirePermission("inventory:read"), c.get((p) => service.getStock(p as { warehouseId: string; articuloId: string; inventoryLotId?: string })));

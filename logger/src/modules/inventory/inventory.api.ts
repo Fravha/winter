@@ -1,5 +1,5 @@
 import type { ExecutionContext, StockPosition, TrustedIntermoduleContext, InventoryLotClassification } from "./inventory.model.js";
-import type { AdjustmentInput, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput } from "./inventory.dto.js";
+import type { AdjustmentInput, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
 import type { SharedTransactionContext } from "../../core/database/shared-unit-of-work.js";
 export interface InventoryApi {
  getWarehouse(input: { warehouseId: string }, context?: ExecutionContext): Promise<unknown>;
@@ -17,6 +17,6 @@ export interface InventoryApi {
   releaseProductionOutput(input: { warehouseId: string; articuloId: string; unit: string; quantity: string; lotCode: string; classification: "PRODUCTO_ENVASADO"; fechaIngreso: Date; observations?: string; originProductionBatchId: string; idempotencyKey: string }, context: TrustedIntermoduleContext, transaction: SharedTransactionContext): Promise<{ inventoryLotId: string; inventoryMovementId: string; warehouseId: string }>;
  transitionInventoryLotClassification(input: { inventoryLotId: string; classification: LotInput["classification"]; idempotencyKey: string }, context: ExecutionContext): Promise<unknown>;
  createWarehouse(input: WarehouseInput, context: ExecutionContext): Promise<unknown>;
- updateWarehouse(warehouseId: string, input: WarehouseInput, context: ExecutionContext): Promise<unknown>;
+  updateWarehouse(warehouseId: string, input: WarehouseUpdateInput, context: ExecutionContext): Promise<unknown>;
  setWarehouseActive(warehouseId: string, active: boolean, context: ExecutionContext): Promise<unknown>;
 }

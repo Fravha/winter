@@ -12,11 +12,13 @@ export async function persistCustomFieldValue(tx: SharedTransactionContext, data
   const definition = await tx.customFieldDefinition.findUnique({ where: { id: data.definitionId } });
   if (!definition || definition.entityType !== data.entityType) throw new AppError("CUSTOM_FIELD_DEFINITION_NOT_FOUND", "Custom field definition not found", 404);
   if (!definition.active) throw new AppError("CUSTOM_FIELD_DEFINITION_INACTIVE", "Custom field definition is inactive", 409);
-  if (data.entityType !== "GRAPE_RECEPTION") {
-    const owner = data.entityType === "PRODUCER" ? await tx.producer.findUnique({ where: { id: data.entityId } }) : await tx.grapeVariety.findUnique({ where: { id: data.entityId } });
-    if (!owner) throw new AppError("CUSTOM_FIELD_ENTITY_NOT_FOUND", "Custom field entity not found", 404);
-    if (!owner.active) throw new AppError("CUSTOM_FIELD_ENTITY_INACTIVE", "Custom field entity is inactive", 409);
-  }
+  const owner = data.entityType === "PRODUCER"
+    ? await tx.producer.findUnique({ where: { id: data.entityId } })
+    : data.entityType === "GRAPE_VARIETY"
+      ? await tx.grapeVariety.findUnique({ where: { id: data.entityId } })
+      : await tx.grapeReception.findUnique({ where: { id: data.entityId } });
+  if (!owner) throw new AppError("CUSTOM_FIELD_ENTITY_NOT_FOUND", "Custom field entity not found", 404);
+  if ("active" in owner && !owner.active) throw new AppError("CUSTOM_FIELD_ENTITY_INACTIVE", "Custom field entity is inactive", 409);
   const valid = (definition.dataType === "TEXT" && typeof data.value === "string") ||
     (definition.dataType === "INTEGER" && typeof data.value === "number" && Number.isInteger(data.value) && data.value >= -2147483648 && data.value <= 2147483647) ||
     (definition.dataType === "DECIMAL" && typeof data.value === "string" && /^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(data.value)) ||

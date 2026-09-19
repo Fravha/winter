@@ -176,16 +176,33 @@ Authorization: Bearer <Firebase-ID-token>
 - **Headers:** `Authorization`, `Content-Type: application/json`,
   `x-request-id` opcional. No `Idempotency-Key`.
 - **Path params:** `id` requerido; el router no valida UUID.
-- **Body requerido por schema:** `codigo` y `nombre`; `ubicacion`,
-  `encargadoUserId` y `observaciones` son opcionales. `warehouseSchema` no es
-  strict: Zod elimina las propiedades desconocidas antes de llegar al servicio.
+- **Body requerido por schema:** `nombre`, string no vacío después de trim.
+  `ubicacion`, `encargadoUserId` (UUID) y `observaciones` son opcionales.
+  El PATCH utiliza un schema dedicado y estricto: no acepta `codigo` ni otras
+  propiedades desconocidas.
 - **Éxito:** `201` (comportamiento real del controlador de comandos), con
   `data` del almacén actualizado.
 - **Errores:** `400 VALIDATION_ERROR`, `403`; ID inexistente o conflicto no
   mapeado puede llegar como `500`.
-- **Reglas:** aunque `codigo` es requerido por el schema compartido, el
-  servicio lo descarta en el update; no se cambia el código mediante esta
-  ruta. Se audita al actor.
+- **Reglas:** `codigo` es identidad estable y no forma parte del payload de
+  actualización; intentar enviarlo produce `400 VALIDATION_ERROR`. Solo se
+  actualizan `nombre`, `ubicacion`, `encargadoUserId` y `observaciones`. Se
+  audita al actor.
+
+```http
+PATCH /api/v1/inventory/warehouses/11111111-1111-4111-8111-111111111111
+Authorization: Bearer <Firebase-ID-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "nombre": "Bodega principal actualizada",
+  "ubicacion": "Nave 2",
+  "encargadoUserId": "22222222-2222-4222-8222-222222222222",
+  "observaciones": "Conteo anual"
+}
+```
 
 ### 5. Activar un almacén
 

@@ -7,20 +7,30 @@ import { AppError } from "../src/shared/errors/app-error.js";
 
 function productionFake(definition: Record<string, unknown>, owner: Record<string, unknown> | null = { id: "owner", active: true }) {
   let stored: Record<string, unknown> | undefined;
+  let currentDefinition = definition;
+  const audits: Record<string, unknown>[] = [];
+  const lookups = { producer: [] as string[], grapeVariety: [] as string[], grapeReception: [] as string[] };
   const tx = {
-    customFieldDefinition: { findUnique: async () => definition },
-    producer: { findUnique: async () => owner },
-    grapeVariety: { findUnique: async () => owner },
+    customFieldDefinition: {
+      findUnique: async () => currentDefinition,
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        currentDefinition = { id: "created-definition", ...data };
+        return currentDefinition;
+      },
+    },
+    producer: { findUnique: async ({ where }: { where: { id: string } }) => { lookups.producer.push(where.id); return owner; } },
+    grapeVariety: { findUnique: async ({ where }: { where: { id: string } }) => { lookups.grapeVariety.push(where.id); return owner; } },
+    grapeReception: { findUnique: async ({ where }: { where: { id: string } }) => { lookups.grapeReception.push(where.id); return owner; } },
     customFieldValue: {
       upsert: async (args: { create: Record<string, unknown> }) => {
         stored = args.create;
         return { id: "value-id", ...args.create };
       },
     },
-    auditLog: { create: async () => undefined },
+    auditLog: { create: async ({ data }: { data: Record<string, unknown> }) => { audits.push(data); } },
   };
   const prisma = { $transaction: async (work: (transaction: typeof tx) => Promise<unknown>) => work(tx) } as unknown as PrismaClient;
-  return { prisma, read: () => stored };
+  return { prisma, read: () => stored, audits, lookups };
 }
 
 test("Production P1 schemas are strict and preserve custom value primitives", () => {
@@ -61,7 +71,7 @@ test("Production P1 service validates typed values and audits in its transaction
   assert.ok(fake.read()?.dateValue instanceof Date);
 });
 
-test("Production P1 service preserves decimal strings and rejects reception values", async () => {
+test("Production P1 service preserves decimal strings and accepts reception values", async () => {
   const fake = productionFake({
     id: "definition-id", entityType: "PRODUCER", active: true, dataType: "DECIMAL", options: null,
   });
@@ -72,11 +82,109 @@ test("Production P1 service preserves decimal strings and rejects reception valu
     value: "123456789012.123456",
   }, { actorUserId: "actor-id" });
   assert.equal(fake.read()?.decimalValue, "123456789012.123456");
-  await assert.rejects(() => service.setValue({
+  const receptionFake = productionFake({
+    id: "reception-definition-id", entityType: "GRAPE_RECEPTION", active: true, dataType: "DECIMAL", options: null,
+  });
+  await new ProductionService(receptionFake.prisma, {} as never).setValue({
     definitionId: "00000000-0000-4000-8000-000000000001",
     entityType: "GRAPE_RECEPTION", entityId: "00000000-0000-4000-8000-000000000002",
-    value: "x",
-  }, { actorUserId: "actor-id" }), /GrapeReception/);
+    value: "123456789012.123456",
+  }, { actorUserId: "actor-id" });
+  assert.equal(receptionFake.read()?.decimalValue, "123456789012.123456");
+});
+
+test("Production custom fields support GRAPE_RECEPTION definitions, assignment, reads and audit", async () => {
+  const fake = productionFake({});
+  const service = new ProductionService(fake.prisma, {} as never);
+  const context = { actorUserId: "actor-id", requestId: "custom-field-request" };
+  const definition = await service.createDefinition({
+    entityType: "GRAPE_RECEPTION", code: "ARRIVAL_NOTE", label: "Arrival note",
+    dataType: "TEXT", required: true, active: true, displayOrder: 2,
+  }, context);
+  assert.equal((definition as { entityType: string }).entityType, "GRAPE_RECEPTION");
+  assert.equal((definition as { required: boolean }).required, true);
+  assert.equal(fake.audits[0]?.action, "PRODUCTION_CUSTOM_FIELD_DEFINITION_CREATED");
+  const value = await service.setValue({
+    definitionId: (definition as { id: string }).id,
+    entityType: "GRAPE_RECEPTION",
+    entityId: "reception-id",
+    value: "dock-a",
+  }, context);
+  assert.equal(value.textValue, "dock-a");
+  assert.deepEqual(fake.read(), {
+    definitionId: (definition as { id: string }).id,
+    entityType: "GRAPE_RECEPTION",
+    entityId: "reception-id",
+    textValue: "dock-a",
+  });
+  assert.deepEqual(fake.lookups.grapeReception, ["reception-id"]);
+  assert.equal(fake.audits[1]?.action, "PRODUCTION_CUSTOM_FIELD_VALUE_SET");
+  assert.equal(fake.audits[1]?.actorUserId, "actor-id");
+  assert.equal(fake.audits[1]?.resourceId, "value-id");
+});
+
+test("Production custom fields reject missing/inactive reception definitions and invalid typed values", async () => {
+  const context = { actorUserId: "actor-id" };
+  const missing = productionFake({
+    id: "definition-id", entityType: "GRAPE_RECEPTION", active: true, dataType: "TEXT", options: null,
+  }, null);
+  await assert.rejects(() => new ProductionService(missing.prisma, {} as never).setValue({
+    definitionId: "definition-id", entityType: "GRAPE_RECEPTION", entityId: "missing-reception", value: "x",
+  }, context), (error: unknown) => error instanceof AppError && error.code === "CUSTOM_FIELD_ENTITY_NOT_FOUND");
+  assert.deepEqual(missing.lookups.grapeReception, ["missing-reception"]);
+
+  const inactive = productionFake({
+    id: "definition-id", entityType: "GRAPE_RECEPTION", active: false, dataType: "TEXT", options: null,
+  });
+  await assert.rejects(() => new ProductionService(inactive.prisma, {} as never).setValue({
+    definitionId: "definition-id", entityType: "GRAPE_RECEPTION", entityId: "reception-id", value: "x",
+  }, context), (error: unknown) => error instanceof AppError && error.code === "CUSTOM_FIELD_DEFINITION_INACTIVE");
+
+  const select = productionFake({
+    id: "definition-id", entityType: "GRAPE_RECEPTION", active: true, dataType: "SELECT", options: ["red"],
+  });
+  const selectService = new ProductionService(select.prisma, {} as never);
+  await assert.rejects(() => selectService.setValue({
+    definitionId: "definition-id", entityType: "GRAPE_RECEPTION", entityId: "reception-id", value: "blue",
+  }, context), (error: unknown) => error instanceof AppError && error.code === "CUSTOM_FIELD_VALUE_INVALID");
+  const integer = productionFake({
+    id: "definition-id", entityType: "GRAPE_RECEPTION", active: true, dataType: "INTEGER", options: null,
+  });
+  await assert.rejects(() => new ProductionService(integer.prisma, {} as never).setValue({
+    definitionId: "definition-id", entityType: "GRAPE_RECEPTION", entityId: "reception-id", value: 1.5,
+  }, context), (error: unknown) => error instanceof AppError && error.code === "CUSTOM_FIELD_VALUE_INVALID");
+});
+
+test("Production custom field definition validation preserves SELECT options contract", async () => {
+  const fake = productionFake({});
+  const service = new ProductionService(fake.prisma, {} as never);
+  const context = { actorUserId: "actor-id" };
+  await assert.rejects(() => service.createDefinition({
+    entityType: "GRAPE_RECEPTION", code: "SELECT_EMPTY", label: "Empty select",
+    dataType: "SELECT", required: false, active: true, displayOrder: 0,
+  }, context), (error: unknown) => error instanceof AppError && error.code === "CUSTOM_FIELD_OPTIONS_REQUIRED");
+  await assert.rejects(() => service.createDefinition({
+    entityType: "GRAPE_RECEPTION", code: "TEXT_OPTIONS", label: "Text with options",
+    dataType: "TEXT", required: false, active: true, options: ["unexpected"], displayOrder: 0,
+  }, context), (error: unknown) => error instanceof AppError && error.code === "CUSTOM_FIELD_OPTIONS_INVALID");
+  const created = await service.createDefinition({
+    entityType: "GRAPE_RECEPTION", code: "SELECT_VALID", label: "Valid select",
+    dataType: "SELECT", required: false, active: true, options: ["red", "white"], displayOrder: 0,
+  }, context);
+  assert.deepEqual((created as { options: string[] }).options, ["red", "white"]);
+});
+
+test("Production custom fields retain Producer and GrapeVariety assignment regressions", async () => {
+  for (const entityType of ["PRODUCER", "GRAPE_VARIETY"] as const) {
+    const fake = productionFake({
+      id: "definition-id", entityType, active: true, dataType: "TEXT", options: null,
+    });
+    const value = await new ProductionService(fake.prisma, {} as never).setValue({
+      definitionId: "definition-id", entityType, entityId: `${entityType.toLowerCase()}-id`, value: "value",
+    }, { actorUserId: "actor-id" });
+    assert.equal(value.textValue, "value");
+    assert.deepEqual(entityType === "PRODUCER" ? fake.lookups.producer : fake.lookups.grapeVariety, [`${entityType.toLowerCase()}-id`]);
+  }
 });
 
 test("Production custom values accept TEXT, INTEGER, BOOLEAN and SELECT values", async () => {

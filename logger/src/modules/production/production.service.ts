@@ -93,7 +93,6 @@ export class ProductionService {
     });
   }
   async setValue(data: ValueInput, context: AuthenticatedAuditContext) {
-    if (data.entityType === "GRAPE_RECEPTION") throw new AppError("CUSTOM_FIELD_ENTITY_NOT_AVAILABLE", "GrapeReception custom values are unavailable until P6", 409);
     const item = await new SharedUnitOfWork(this.prisma).execute(async tx => {
        return persistCustomFieldValue(tx, data, context);
     });
