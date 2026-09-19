@@ -22,7 +22,7 @@ const envSchema = z.object({
   TRUST_PROXY: booleanFromString.default(false),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   SUPABASE_URL: z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional()),
-  SUPABASE_SERVICE_ROLE_KEY: optionalBlank,
+  SUPABASE_SECRET_KEY: optionalBlank,
   ATTACHMENTS_BUCKET: z.string().min(1).default("winter-attachments"),
   ATTACHMENTS_SIGNED_URL_SECONDS: z.coerce.number().int().positive().default(300),
 });

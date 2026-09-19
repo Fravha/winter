@@ -10,18 +10,18 @@ export interface AttachmentStorageProvider {
 export class SupabaseAttachmentStorageProvider implements AttachmentStorageProvider {
   constructor(
     private readonly url: string | undefined,
-    private readonly serviceRole: string | undefined,
+    private readonly secretKey: string | undefined,
     private readonly bucket = "winter-attachments",
   ) {}
 
-  private configured(): { url: string; serviceRole: string } {
-    if (!this.url || !this.serviceRole) {
+  private configured(): { url: string; secretKey: string } {
+    if (!this.url || !this.secretKey) {
       throw new AppError("ATTACHMENTS_STORAGE_NOT_CONFIGURED", "Supabase attachment storage is not configured", 503);
     }
-    return { url: this.url, serviceRole: this.serviceRole };
+    return { url: this.url, secretKey: this.secretKey };
   }
   private endpoint(path: string) { return `${this.configured().url}/storage/v1${path}`; }
-  private headers() { const { serviceRole } = this.configured(); return { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole }; }
+  private headers() { const { secretKey } = this.configured(); return { Authorization: `Bearer ${secretKey}`, apikey: secretKey }; }
   private async request(path: string, init: RequestInit = {}) {
     try {
       return await fetch(this.endpoint(path), { ...init, signal: AbortSignal.timeout(10_000) });

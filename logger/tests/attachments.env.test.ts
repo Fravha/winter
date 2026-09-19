@@ -7,9 +7,9 @@ test("blank Supabase values are treated as absent without blocking app configura
     NODE_ENV: "test", WINTER_DATABASE_URL: "postgresql://localhost/test",
     FIREBASE_WEB_API_KEY: "test", FIREBASE_PROJECT_ID: "test",
     FIREBASE_CLIENT_EMAIL: "firebase@example.test", FIREBASE_PRIVATE_KEY: "private",
-    SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "",
+    SUPABASE_URL: "", SUPABASE_SECRET_KEY: "",
   });
   assert.equal(config.SUPABASE_URL, undefined);
-  assert.equal(config.SUPABASE_SERVICE_ROLE_KEY, undefined);
+  assert.equal(config.SUPABASE_SECRET_KEY, undefined);
   assert.equal(config.ATTACHMENTS_BUCKET, "winter-attachments");
 });

@@ -11,7 +11,7 @@ export const attachmentDocType: DocType = {
     { code: "attachments:create", name: "Create attachments" },
   ],
   register(dependencies) {
-    const storage = new SupabaseAttachmentStorageProvider(dependencies.config.SUPABASE_URL, dependencies.config.SUPABASE_SERVICE_ROLE_KEY, dependencies.config.ATTACHMENTS_BUCKET);
+    const storage = new SupabaseAttachmentStorageProvider(dependencies.config.SUPABASE_URL, dependencies.config.SUPABASE_SECRET_KEY, dependencies.config.ATTACHMENTS_BUCKET);
     const service = new AttachmentService(dependencies.prisma, storage);
     return { api: service, router: createAttachmentRouter(dependencies.tokenVerifier, dependencies.userRepository, service, dependencies.config.ATTACHMENTS_SIGNED_URL_SECONDS) };
   },
