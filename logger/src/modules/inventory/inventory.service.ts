@@ -8,6 +8,7 @@ import { InventoryUnitOfWork } from "./inventory.unit-of-work.js";
 import type { ArticulosApi } from "../articulos/articulos.api.js";
 import { createHash } from "node:crypto";
 import type { SharedTransactionContext } from "../../core/database/shared-unit-of-work.js";
+const prismaCode = (error: unknown, code: string) => typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code;
 
 export const parseInventoryQuantity = (value: string | number): bigint => {
   const text = String(value).trim();
@@ -33,6 +34,7 @@ const required = (ctx: ExecutionContext, permission: string) => {
   if (!ctx?.actorUserId || !ctx.permissions.includes(permission)) throw new AppError("AUTH_FORBIDDEN", `Missing permission ${permission}`, 403);
 };
 const canonical = (value: unknown): string => {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   const record = value as Record<string, unknown>;
@@ -320,6 +322,50 @@ export class InventoryService implements InventoryApi {
     if (input.lot.classification !== "PRODUCTO_ENVASADO") throw new AppError("INVALID_LOT_CLASSIFICATION", "Production output lots must start as PRODUCTO_ENVASADO", 400);
     await this.validateArticle(input);
     return this.movement({ ...input, source: input.source || "PRODUCTION_OUTPUT" }, c, "INBOUND", "inventory:inbound", input.lot, "PRODUCTION_OUTPUT");
+  }
+  async releaseProductionOutput(input: { warehouseId: string; articuloId: string; unit: string; quantity: string; lotCode: string; classification: "PRODUCTO_ENVASADO"; fechaIngreso: Date; observations?: string; originProductionBatchId: string; idempotencyKey: string }, c: TrustedIntermoduleContext, tx: SharedTransactionContext) {
+    if (!isTrustedIntermoduleContext(c)) throw new AppError("AUTH_FORBIDDEN", "Inventory context is not trusted", 403);
+    if (input.classification !== "PRODUCTO_ENVASADO") throw new AppError("INVALID_LOT_CLASSIFICATION", "Production output lots must start as PRODUCTO_ENVASADO", 400);
+    const fingerprint = inventoryRequestFingerprint(input);
+    await tx.$queryRaw`SELECT 1::int FROM pg_advisory_xact_lock(hashtext(${input.idempotencyKey}))`;
+    return this.idempotent(tx, input.idempotencyKey, "PRODUCTION_OUTPUT_RELEASE", fingerprint, async () => {
+      const warehouse = await tx.warehouse.findUnique({ where: { id: input.warehouseId } });
+      if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found", 404);
+      if (!warehouse.activo) throw new AppError("WAREHOUSE_INACTIVE", "Warehouse is inactive", 409);
+      await this.validateArticle({ articuloId: input.articuloId, warehouseId: input.warehouseId, quantity: input.quantity, unit: input.unit, source: "PRODUCTION_OUTPUT", idempotencyKey: input.idempotencyKey }, tx);
+      const canonicalLotCode = input.lotCode.toLocaleLowerCase("en-US");
+      await tx.$queryRaw`SELECT 1::int FROM pg_advisory_xact_lock(hashtext(${"inventory-lot:" + input.articuloId + ":" + canonicalLotCode}))`;
+      const existingLot = await tx.inventoryLot.findFirst({
+        where: { articuloId: input.articuloId, lotCode: { equals: input.lotCode, mode: "insensitive" } },
+      });
+      if (existingLot && existingLot.originProductionBatchId !== input.originProductionBatchId) {
+        throw new AppError("LOT_ORIGIN_CONFLICT", "Inventory lot belongs to another origin", 409);
+      }
+      if (existingLot && (existingLot.classification !== input.classification || existingLot.fechaIngreso.getTime() !== input.fechaIngreso.getTime() || (existingLot.observations ?? null) !== (input.observations ?? null))) {
+        throw new AppError("LOT_METADATA_CONFLICT", "Inventory lot metadata conflicts with the requested production output", 409);
+      }
+      // The production primitive supplies originProductionBatchId without exposing inventory tables to Production.
+      let lot = existingLot;
+      if (!lot) {
+        await tx.inventoryLot.createMany({
+          data: [{ articuloId: input.articuloId, lotCode: input.lotCode, classification: input.classification, fechaIngreso: input.fechaIngreso, observations: input.observations ?? null, originProductionBatchId: input.originProductionBatchId }],
+          skipDuplicates: true,
+        });
+        lot = await tx.inventoryLot.findFirst({
+          where: { articuloId: input.articuloId, lotCode: { equals: input.lotCode, mode: "insensitive" } },
+        });
+        if (!lot) throw new AppError("LOT_ORIGIN_CONFLICT", "Inventory lot could not be claimed", 409);
+      }
+      if (lot.originProductionBatchId !== input.originProductionBatchId) throw new AppError("LOT_ORIGIN_CONFLICT", "Inventory lot belongs to another origin", 409);
+      const amount = parsePositiveInventoryQuantity(input.quantity, input.unit as InventoryUnit);
+      await tx.$queryRaw`SELECT 1::int FROM pg_advisory_xact_lock(hashtext(${"inventory-stock:" + input.warehouseId + ":" + input.articuloId + ":" + lot.id}))`;
+      const stock = await tx.inventoryStock.findFirst({ where: { warehouseId: input.warehouseId, articuloId: input.articuloId, inventoryLotId: lot.id } });
+      const before = parseInventoryQuantity(stock?.quantity.toString() ?? "0");
+      const resulting = before + amount;
+      const row = stock ? await tx.inventoryStock.update({ where: { id: stock.id }, data: { quantity: formatInventoryQuantity(resulting) } }) : await tx.inventoryStock.create({ data: { warehouseId: input.warehouseId, articuloId: input.articuloId, inventoryLotId: lot.id, quantity: formatInventoryQuantity(resulting), unit: input.unit as InventoryUnit } });
+      const movement = await tx.inventoryMovement.create({ data: { type: "INBOUND", source: "PRODUCTION_OUTPUT", reason: null, articuloId: input.articuloId, warehouseId: input.warehouseId, inventoryLotId: lot.id, quantity: formatInventoryQuantity(amount), unit: input.unit as InventoryUnit, stockBefore: formatInventoryQuantity(before), resultingStock: formatInventoryQuantity(resulting), actorUserId: c.actorUserId, negativeStockAuthorized: false } });
+      return { inventoryLotId: lot.id, inventoryMovementId: movement.id, warehouseId: input.warehouseId, resultingStock: row.quantity.toString() };
+    });
   }
   async transitionInventoryLotClassification(input: { inventoryLotId: string; classification: InventoryLotClassification; idempotencyKey: string }, c: ExecutionContext) {
     required(c, "inventory:lot_classify");

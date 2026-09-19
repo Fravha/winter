@@ -43,6 +43,13 @@ export const batchListSchema = z.object({
   productionOrderId: z.string().uuid().optional(),
 }).strict();
 const quantity = z.string().regex(/^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/);
+const positiveQuantity = quantity.refine(value => Number(value) > 0, "Quantity must be positive");
+export const releaseBatchSchema = z.object({
+  quantity: positiveQuantity, warehouseId: z.string().uuid(), operationKey: code,
+  lotCode: code, classification: z.enum(["PRODUCTO_ENVASADO", "PRODUCTO_TERMINADO", "PRODUCTO_TERMINADO_EXPORTACION"]),
+  fechaIngreso: z.coerce.date(), observations: z.string().max(2000).optional(),
+  requestHash: z.string().optional(),
+}).strict();
 const measurementValue = z.string().trim().regex(/^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/);
 export const containerCreateSchema = z.object({ code: code, capacity: quantity, capacityUnit: z.string().trim().min(1).max(30), observations: z.string().max(2000).optional() }).strict();
 export const containerUpdateSchema = z.object({ capacity: quantity.optional(), observations: z.string().max(2000).optional() }).strict();
@@ -83,7 +90,6 @@ export const measurementListSchema = z.object({
   productionContainerId: z.string().uuid().optional(), productionWorkId: z.string().uuid().optional(),
   measuredAtFrom: z.coerce.date().optional(), measuredAtTo: z.coerce.date().optional(),
 }).strict();
-const positiveQuantity = quantity.refine(value => Number(value) > 0, "Quantity must be positive");
 const transformationInputSchema = z.object({ productionBatchId: z.string().uuid(), quantity: positiveQuantity }).strict();
 const transformationOutputSchema = z.object({ articuloId: z.string().uuid(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), observations: z.string().max(2000).optional() }).strict();
 const transformationLossSchema = z.object({ productionBatchId: z.string().uuid().optional(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), operationKey: z.string().trim().min(1).max(200).optional(), requestHash: z.string().trim().min(1).max(500).optional(), observations: z.string().max(2000).optional() }).strict();

@@ -163,3 +163,16 @@ PATCH or DELETE endpoint. They do not alter batch balances, containers,
 Inventory, Articles or other production state. The approved contract does not
 define unit catalogs/conversions or batch-container temporal coherence without
 work, so those checks remain explicit gaps.
+
+## Release production to Inventory (P9)
+
+`POST /batches/:id/release-to-inventory` requires `production:inventory_release`.
+The body contains `quantity`, `warehouseId`, `operationKey`, `lotCode`,
+`classification`, `fechaIngreso` and optional `observations`. Releases are
+allowed for OPEN and CLOSED orders, while the order and batch are locked.
+Only `PRODUCTO_ENVASADO` output is accepted; open container allocations cannot
+be consumed. Lot reuse requires the same article and origin batch and unchanged
+classification, date and observations. Inventory writes, transfer ledger,
+balance, idempotency result and audit are one Serializable transaction and
+rollback together. The response returns the batch, quantity, remaining
+quantity, lot, movement and warehouse identifiers. No PATCH or DELETE exists.

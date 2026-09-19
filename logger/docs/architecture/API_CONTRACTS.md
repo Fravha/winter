@@ -2219,3 +2219,16 @@ implementar
 
 El contrato público es una frontera arquitectónica y no debe romperse
 para simplificar la implementación interna.
+
+### P9 production inventory release
+
+Production exposes only `POST /api/v1/production/batches/:id/release-to-inventory`
+for this command, protected by `production:inventory_release`. Its command
+contains the positive decimal quantity, warehouse, operation key and existing
+Inventory lot fields. It is allowed for OPEN and CLOSED orders. Production
+coordinates a single Serializable transaction with the trusted Inventory API;
+Production never writes Inventory tables directly. The output lot must be
+`PRODUCTO_ENVASADO`, and lot reuse requires the same article, origin batch and
+unchanged lot metadata. The operation rejects consumption of open container
+allocations, persists a canonical idempotent result, appends the explicit
+transfer ledger fact, rebuilds balance and records the release audit atomically.

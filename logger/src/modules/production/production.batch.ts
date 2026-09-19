@@ -9,7 +9,7 @@ import { AppError } from "../../shared/errors/app-error.js";
 import { z } from "zod";
 
 type Db = PrismaClient | SharedTransactionContext;
-type EntryType = "GENERATED" | "CONSUMED" | "SEPARATED" | "LOSS";
+type EntryType = "GENERATED" | "CONSUMED" | "SEPARATED" | "LOSS" | "TRANSFERRED_TO_INVENTORY";
 const quantityPattern = /^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const requireUuid = (value: string, name: string): void => { if (!uuidPattern.test(value)) throw new AppError("INVALID_BATCH_TRANSFORMATION", `${name} must be a UUID`, 400); };
@@ -163,10 +163,10 @@ export class BatchLedgerService {
     requireText(operationKey, "Operation key");
     requireText(unit, "Unit");
     requireUuid(actorUserId, "Actor user id");
-    if (!["GENERATED", "CONSUMED", "SEPARATED", "LOSS"].includes(entryType)) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Unsupported production ledger fact", 400);
+    if (!["GENERATED", "CONSUMED", "SEPARATED", "LOSS", "TRANSFERRED_TO_INVENTORY"].includes(entryType)) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Unsupported production ledger fact", 400);
     if (quantity.lte(0) || quantity.decimalPlaces() > 3) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Ledger quantity must be positive with at most three decimal places", 400);
     if (!this.transactional) {
-      return new SharedUnitOfWork(this.db as PrismaClient).execute(async tx => new BatchLedgerService(tx, true).append(batchId, entryType, quantity, unit, operationKey, actorUserId, occurredAt, metadata));
+      return new SharedUnitOfWork(this.db as PrismaClient).execute(async tx => new BatchLedgerService(tx, true).append(batchId, entryType, quantity, unit, operationKey, actorUserId, occurredAt, metadata, refs));
     }
     await lockBatches(this.db, [batchId]);
     const batch = await this.db.productionBatch.findUnique({ where: { id: batchId } });
