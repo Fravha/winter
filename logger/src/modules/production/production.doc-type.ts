@@ -23,6 +23,8 @@ export const productionDocType: DocType = {
     { code: "production:work_correct", name: "Correct production work" },
     { code: "production:reception_create", name: "Create grape receptions" },
     { code: "production:measurement_create", name: "Create production measurements" },
+    { code: "production:transformation_create", name: "Create production transformations" },
+    { code: "production:loss_create", name: "Create production losses" },
   ],
   register(dependencies) {
     const articulos = new ArticuloService(new PrismaArticuloRepository(dependencies.prisma), new PrismaArticuloUnitOfWork(dependencies.prisma));

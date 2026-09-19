@@ -9,7 +9,7 @@ import { AppError } from "../../shared/errors/app-error.js";
 import { z } from "zod";
 
 type Db = PrismaClient | SharedTransactionContext;
-type EntryType = "GENERATED" | "CONSUMED" | "SEPARATED";
+type EntryType = "GENERATED" | "CONSUMED" | "SEPARATED" | "LOSS";
 const quantityPattern = /^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const requireUuid = (value: string, name: string): void => { if (!uuidPattern.test(value)) throw new AppError("INVALID_BATCH_TRANSFORMATION", `${name} must be a UUID`, 400); };
@@ -158,12 +158,12 @@ export class BatchAvailabilityService {
 
 export class BatchLedgerService {
   constructor(private readonly db: Db, private readonly transactional = false) {}
-  async append(batchId: string, entryType: EntryType, quantity: Prisma.Decimal, unit: string, operationKey: string, actorUserId: string, occurredAt: Date, metadata?: object): Promise<unknown> {
+  async append(batchId: string, entryType: EntryType, quantity: Prisma.Decimal, unit: string, operationKey: string, actorUserId: string, occurredAt: Date, metadata?: object, refs?: { transformationId?: string; productionLossId?: string }): Promise<unknown> {
     requireUuid(batchId, "Batch id");
     requireText(operationKey, "Operation key");
     requireText(unit, "Unit");
     requireUuid(actorUserId, "Actor user id");
-    if (!["GENERATED", "CONSUMED", "SEPARATED"].includes(entryType)) throw new AppError("INVALID_BATCH_TRANSFORMATION", "P3 only supports generated, consumed and separated ledger facts", 400);
+    if (!["GENERATED", "CONSUMED", "SEPARATED", "LOSS"].includes(entryType)) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Unsupported production ledger fact", 400);
     if (quantity.lte(0) || quantity.decimalPlaces() > 3) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Ledger quantity must be positive with at most three decimal places", 400);
     if (!this.transactional) {
       return new SharedUnitOfWork(this.db as PrismaClient).execute(async tx => new BatchLedgerService(tx, true).append(batchId, entryType, quantity, unit, operationKey, actorUserId, occurredAt, metadata));
@@ -182,7 +182,7 @@ export class BatchLedgerService {
       }
     }
     try {
-      return await this.db.productionBatchLedgerEntry.create({ data: { productionBatchId: batchId, entryType, quantity, unit, operationKey, actorUserId, occurredAt, ...(metadata ? { metadata: output(metadata) } : {}) } });
+        return await this.db.productionBatchLedgerEntry.create({ data: { productionBatchId: batchId, entryType, quantity, unit, operationKey, actorUserId, occurredAt, ...(metadata ? { metadata: output(metadata) } : {}), ...(refs?.transformationId ? { transformationId: refs.transformationId } : {}), ...(refs?.productionLossId ? { productionLossId: refs.productionLossId } : {}) } });
     } catch (error) {
       if (isPrismaCode(error, "P2002")) throw new AppError("IDEMPOTENCY_CONFLICT", "Ledger operation key already exists", 409);
       throw error;
@@ -408,7 +408,7 @@ export async function splitOneBatchInTransaction(
 /** P6 primitive: generation plus the P3 ledger/balance services in the caller's transaction. */
 export async function createInitialBatchInTransaction(
   tx: SharedTransactionContext,
-  data: { code: string; productionOrderId: string; articuloId: string; unit: string; quantity: string; operationKey: string; requestHash: string },
+  data: { code: string; productionOrderId: string; articuloId: string; unit: string; quantity: string; operationKey: string; requestHash: string; transformationId?: string },
   context: AuthenticatedAuditContext,
   occurredAt: Date,
 ): Promise<BatchDetailDto> {
@@ -418,12 +418,12 @@ export async function createInitialBatchInTransaction(
 }
 async function createInitialBatchPrimitive(
   tx: SharedTransactionContext,
-  data: { code: string; productionOrderId: string; articuloId: string; unit: string; quantity: string; operationKey: string; requestHash: string; observations?: string },
+  data: { code: string; productionOrderId: string; articuloId: string; unit: string; quantity: string; operationKey: string; requestHash: string; observations?: string; transformationId?: string },
   context: AuthenticatedAuditContext,
   occurredAt: Date,
 ): Promise<BatchDetailDto> {
   const batch = await tx.productionBatch.create({ data: { code: data.code, productionOrderId: data.productionOrderId, articuloId: data.articuloId, unit: data.unit, ...(data.observations !== undefined ? { observations: data.observations } : {}) } });
-  await new BatchLedgerService(tx, true).append(batch.id, "GENERATED", decimal(data.quantity), data.unit, `${data.operationKey}:generated`, context.actorUserId, occurredAt, { requestHash: data.requestHash });
+  await new BatchLedgerService(tx, true).append(batch.id, "GENERATED", decimal(data.quantity), data.unit, `${data.operationKey}:generated`, context.actorUserId, occurredAt, { requestHash: data.requestHash }, data.transformationId ? { transformationId: data.transformationId } : undefined);
   return { ...mapBatch(batch), balance: await new BatchAvailabilityService(tx, true).rebuild(batch.id) };
 }
 function isPrismaCode(error: unknown, code: string): boolean { return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code; }

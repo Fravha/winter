@@ -2067,6 +2067,29 @@ Antes de agregar un endpoint, debe preguntarse:
 Si es solamente CRUD de persistencia y no representa una capacidad útil
 del dominio, debe evaluarse si realmente necesita ser pública.
 
+## P8 — Transformaciones y pérdidas
+
+La API de producción expone únicamente el command atómico de transformación:
+
+- `GET /api/v1/production/transformations` (`production:read`)
+- `GET /api/v1/production/transformations/:id` (`production:read`)
+- `POST /api/v1/production/transformations` (`production:transformation_create`)
+
+El POST exige `productionOrderId`, `operationKey`, `requestHash`, uno o más
+inputs por `productionBatchId` y cantidad, y uno o más outputs por
+`articuloId`, cantidad y unidad exacta. `transformationOrderId` y
+`productionWorkId` son contextos opcionales y deben pertenecer a la misma
+ProductionOrder; no se exponen PATCH ni DELETE.
+
+Cada output crea un nuevo `ProductionBatch`, con ledger GENERATED y lineage
+hacia todos sus inputs. Las pérdidas son explícitas dentro del command; una
+pérdida con batch conocido registra ledger LOSS y una pérdida sin batch no
+inventa distribución. Todo el command, incluidos ledger, balances, lineage,
+idempotencia y auditoría, confirma o revierte en una única transacción.
+
+P8 no crea `InventoryMovement` ni implementa integración Production →
+Inventory; esa capacidad pertenece a P9.
+
 Los commands de negocio tienen prioridad sobre endpoints CRUD cuando
 existe una regla/invariante relevante.
 

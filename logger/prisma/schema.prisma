@@ -22,6 +22,8 @@ model User {
   grapeReceptionsCreated GrapeReception[] @relation("GrapeReceptionActor")
   productionMeasurementsCreated ProductionMeasurement[] @relation("ProductionMeasurementActor")
   productionWorkCorrections ProductionWorkCorrection[] @relation("ProductionWorkCorrectionActor")
+  transformations Transformation[]
+  productionLosses ProductionLoss[]
   managedWarehouses Warehouse[] @relation("WarehouseManager")
   inventoryMovementsAsActor InventoryMovement[] @relation("InventoryMovementActor")
   inventoryMovementsAsNegativeStockAuthorizer InventoryMovement[] @relation("InventoryMovementAuthorizer")
@@ -173,6 +175,8 @@ model ProductionOrder {
   transformationOrders TransformationOrder[]
   batches        ProductionBatch[]
   grapeReceptions GrapeReception[]
+  transformations Transformation[]
+  productionLosses ProductionLoss[]
 
   @@index([status])
   @@index([startDate])
@@ -208,6 +212,9 @@ model ProductionBatch {
   workLinks         ProductionWorkBatch[]
   receptionItem     GrapeReceptionItem?
   measurements      ProductionMeasurement[]
+  transformationInputs TransformationInput[]
+  transformationOutputs TransformationOutput[]
+  productionLosses ProductionLoss[]
 
   @@index([productionOrderId])
   @@index([articuloId])
@@ -230,6 +237,8 @@ model ProductionBatchLedgerEntry {
   actorUserId      String                         @map("actor_user_id") @db.Uuid
   metadata         Json?
   productionBatch  ProductionBatch               @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
+  transformation   Transformation?              @relation(fields: [transformationId], references: [id], onDelete: Restrict)
+  productionLoss   ProductionLoss?              @relation(fields: [productionLossId], references: [id], onDelete: Restrict)
 
   @@unique([operationKey])
   @@index([productionBatchId, occurredAt, id], map: "production_batch_ledger_entries_batch_occurred_idx")
@@ -385,6 +394,8 @@ model TransformationOrder {
   version          Int                   @default(0)
   productionOrder  ProductionOrder      @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
   works ProductionWork[]
+  transformations Transformation[]
+  productionLosses ProductionLoss[]
 
   @@unique([productionOrderId, code])
   @@index([productionOrderId, status])
@@ -413,6 +424,8 @@ model ProductionWork {
   participants      ProductionWorkParticipant[]
   corrections       ProductionWorkCorrection[]
   measurements      ProductionMeasurement[]
+  transformations Transformation[]
+  productionLosses ProductionLoss[]
 
   @@index([productionOrderId])
   @@map("production_works")
@@ -426,6 +439,87 @@ model ProductionWorkBatch {
   @@id([productionWorkId, productionBatchId])
   @@index([productionBatchId])
   @@map("production_work_batches")
+}
+
+model Transformation {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productionOrderId String @map("production_order_id") @db.Uuid
+  transformationOrderId String? @map("transformation_order_id") @db.Uuid
+  productionWorkId String? @map("production_work_id") @db.Uuid
+  performedAt DateTime @map("performed_at")
+  actorUserId String @map("actor_user_id") @db.Uuid
+  observations String?
+  operationKey String @unique @map("operation_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  productionOrder ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  transformationOrder TransformationOrder? @relation(fields: [transformationOrderId], references: [id], onDelete: Restrict)
+  productionWork ProductionWork? @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  inputs TransformationInput[]
+  outputs TransformationOutput[]
+  losses ProductionLoss[]
+  ledgerEntries ProductionBatchLedgerEntry[]
+  @@index([productionOrderId, performedAt])
+  @@index([transformationOrderId])
+  @@index([productionWorkId])
+  @@map("transformations")
+}
+
+model TransformationInput {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transformationId String @map("transformation_id") @db.Uuid
+  productionBatchId String @map("production_batch_id") @db.Uuid
+  quantity Decimal @db.Decimal(18,3)
+  unit String
+  createdAt DateTime @default(now()) @map("created_at")
+  transformation Transformation @relation(fields: [transformationId], references: [id], onDelete: Restrict)
+  productionBatch ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
+  @@index([transformationId])
+  @@index([productionBatchId])
+  @@map("transformation_inputs")
+}
+
+model TransformationOutput {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transformationId String @map("transformation_id") @db.Uuid
+  productionBatchId String @map("production_batch_id") @db.Uuid
+  quantity Decimal @db.Decimal(18,3)
+  unit String
+  createdAt DateTime @default(now()) @map("created_at")
+  transformation Transformation @relation(fields: [transformationId], references: [id], onDelete: Restrict)
+  productionBatch ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
+  @@index([transformationId])
+  @@index([productionBatchId])
+  @@map("transformation_outputs")
+}
+
+model ProductionLoss {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productionOrderId String @map("production_order_id") @db.Uuid
+  transformationOrderId String? @map("transformation_order_id") @db.Uuid
+  transformationId String? @map("transformation_id") @db.Uuid
+  productionWorkId String? @map("production_work_id") @db.Uuid
+  productionBatchId String? @map("production_batch_id") @db.Uuid
+  quantity Decimal @db.Decimal(18,3)
+  unit String
+  occurredAt DateTime @map("occurred_at")
+  actorUserId String @map("actor_user_id") @db.Uuid
+  observations String?
+  operationKey String @unique @map("operation_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  productionOrder ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  transformationOrder TransformationOrder? @relation(fields: [transformationOrderId], references: [id], onDelete: Restrict)
+  transformation Transformation? @relation(fields: [transformationId], references: [id], onDelete: Restrict)
+  productionWork ProductionWork? @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
+  productionBatch ProductionBatch? @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  ledgerEntries ProductionBatchLedgerEntry[]
+  @@index([productionOrderId, occurredAt])
+  @@index([transformationId])
+  @@index([productionBatchId])
+  @@map("production_losses")
 }
 
 model ProductionWorkContainer {

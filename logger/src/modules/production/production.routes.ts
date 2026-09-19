@@ -1,13 +1,21 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { requirePermission } from "../../core/access-control/authorization.middleware.js";
 import { authenticate, resolveCurrentUser } from "../../core/auth/auth.middleware.js";
 import type { TokenVerifier } from "../../core/auth/auth.types.js";
 import type { UserRepository } from "../../core/users/user.repository.js";
 import { validateRequest } from "../../shared/http/validate-request.js";
 import { ProductionController } from "./production.controller.js";
-import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema, grapeReceptionSchema, measurementCreateSchema, measurementListSchema } from "./production.schema.js";
+import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema, grapeReceptionSchema, measurementCreateSchema, measurementListSchema, transformationCreateSchema, transformationListSchema } from "./production.schema.js";
 import type { ProductionService } from "./production.service.js";
 const manage: Record<string, string> = { participants: "production:participant_manage", producers: "production:producer_manage", "grape-varieties": "production:grape_variety_manage", "work-types": "production:work_type_manage", "measurement-types": "production:measurement_type_manage" };
+const transformationPermissions: RequestHandler = (req, res, next) => {
+  const requireTransform = requirePermission("production:transformation_create");
+  requireTransform(req, res, error => {
+    if (error) return next(error);
+    if (Array.isArray(req.body?.losses) && req.body.losses.length > 0) return requirePermission("production:loss_create")(req, res, next);
+    next();
+  });
+};
 export function createProductionRouter(verifier: TokenVerifier, users: UserRepository, service: ProductionService) {
   const router = Router(); const auth = [authenticate(verifier), resolveCurrentUser(users)] as const;
   for (const kind of ["participants", "producers", "grape-varieties", "work-types", "measurement-types"] as const) {
@@ -28,6 +36,9 @@ export function createProductionRouter(verifier: TokenVerifier, users: UserRepos
   router.get("/transformation-orders/:id", ...auth, requirePermission("production:read"), validateRequest({ params: idParamsSchema }), controller.getTransformationOrder);
   router.post("/transformation-orders", ...auth, requirePermission("production:transformation_order_create"), validateRequest({ body: transformationOrderCreateSchema }), controller.createTransformationOrder);
   router.post("/transformation-orders/:id/close", ...auth, requirePermission("production:transformation_order_close"), validateRequest({ params: idParamsSchema }), controller.closeTransformationOrder);
+  router.get("/transformations", ...auth, requirePermission("production:read"), validateRequest({ query: transformationListSchema }), controller.listTransformations);
+  router.get("/transformations/:id", ...auth, requirePermission("production:read"), validateRequest({ params: idParamsSchema }), controller.getTransformation);
+  router.post("/transformations", ...auth, validateRequest({ body: transformationCreateSchema }), transformationPermissions, controller.createTransformation);
   router.get("/batches", ...auth, requirePermission("production:read"), validateRequest({ query: batchListSchema }), controller.listBatches);
   router.get("/batches/:id", ...auth, requirePermission("production:read"), validateRequest({ params: idParamsSchema }), controller.getBatch);
   router.get("/batches/:id/balance", ...auth, requirePermission("production:read"), validateRequest({ params: idParamsSchema }), controller.getBatchBalance);

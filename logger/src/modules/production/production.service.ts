@@ -17,6 +17,7 @@ import type { ReceptionInput } from "./production.reception.js";
 import type { ArticulosApi } from "../articulos/articulos.api.js";
 import { persistCustomFieldValue } from "./custom-fields.js";
 import { ProductionMeasurementService, type MeasurementInput, type MeasurementFilters } from "./production.measurement.js";
+import { ProductionTransformationService, type TransformationCreateInput } from "./production.transformation.js";
 import type { CatalogFilters, CatalogInput, CatalogKind, OrderFilters, ProductionOrderInput, TransformationOrderInput } from "./production.dto.js";
 const kindMap = { participants: "participants", producers: "producers", "grape-varieties": "grape-varieties", "work-types": "work-types", "measurement-types": "measurement-types" } as const;
 export class ProductionService {
@@ -25,7 +26,8 @@ export class ProductionService {
   private readonly works: ProductionWorkService;
   private readonly receptions: ProductionReceptionService;
   private readonly measurements: ProductionMeasurementService;
-  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, articulos?: ArticulosApi) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); this.measurements = new ProductionMeasurementService(prisma, tx => this.auditIn(tx)); if (articulos) this.receptions = new ProductionReceptionService(prisma, articulos); else this.receptions = undefined as unknown as ProductionReceptionService; }
+  private readonly transformations: ProductionTransformationService;
+  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, articulos?: ArticulosApi) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); this.measurements = new ProductionMeasurementService(prisma, tx => this.auditIn(tx)); if (articulos) { this.receptions = new ProductionReceptionService(prisma, articulos); this.transformations = new ProductionTransformationService(prisma, articulos); } else { this.receptions = undefined as unknown as ProductionReceptionService; this.transformations = undefined as unknown as ProductionTransformationService; } }
   private auditIn(tx: SharedTransactionContext): AuditService { return new AuditService(new PrismaAuditRepository(tx)); }
   list(kind: CatalogKind | "work-types" | "measurement-types", f: CatalogFilters) { return new ProductionRepository(this.prisma).list(kindMap[kind], f); }
   async create(kind: CatalogKind, data: CatalogInput, context: AuthenticatedAuditContext) {
@@ -124,6 +126,9 @@ export class ProductionService {
   createMeasurement(data: MeasurementInput, context: AuthenticatedAuditContext) { return this.measurements.create(data, context); }
   listMeasurements(filters: MeasurementFilters) { return this.measurements.list(filters); }
   getMeasurement(id: string) { return this.measurements.get(id); }
+  createTransformation(data: TransformationCreateInput, context: AuthenticatedAuditContext) { if (!this.transformations) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for transformations", 500); return this.transformations.create(data, context); }
+  listTransformations(filters: { page?: number | undefined; pageSize?: number | undefined; productionOrderId?: string | undefined } = {}) { if (!this.transformations) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for transformations", 500); return this.transformations.list(filters); }
+  getTransformation(id: string) { if (!this.transformations) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for transformations", 500); return this.transformations.get(id); }
   async createOrder(data: ProductionOrderInput, context: AuthenticatedAuditContext) {
     return new SharedUnitOfWork(this.prisma).execute(async tx => {
       const repo = new ProductionRepository(tx);
@@ -138,6 +143,7 @@ export class ProductionService {
   async closeOrder(id: string, context: AuthenticatedAuditContext) {
     try {
       return await new SharedUnitOfWork(this.prisma).execute(async tx => {
+        await lockProductionContext(tx, "production_orders", id);
         const order = await tx.productionOrder.findUnique({ where: { id } });
         if (!order) throw new AppError("PRODUCTION_ORDER_NOT_FOUND", "Production order not found", 404);
         if (order.status === "CLOSED") throw new AppError("PRODUCTION_ORDER_CLOSED", "Production order is already closed", 409);
@@ -179,6 +185,9 @@ export class ProductionService {
   async closeTransformationOrder(id: string, context: AuthenticatedAuditContext) {
     try {
       return await new SharedUnitOfWork(this.prisma).execute(async tx => {
+        const existing = await tx.transformationOrder.findUnique({ where: { id } });
+        if (existing) await lockProductionContext(tx, "production_orders", existing.productionOrderId);
+        await lockProductionContext(tx, "transformation_orders", id);
         const item = await tx.transformationOrder.findUnique({ where: { id } });
         if (!item) throw new AppError("TRANSFORMATION_ORDER_NOT_FOUND", "Transformation order not found", 404);
         if (item.status === "CLOSED") throw new AppError("TRANSFORMATION_ORDER_CLOSED", "Transformation order is already closed", 409);
@@ -198,6 +207,10 @@ export class ProductionService {
     }
   }
   private async transformationOrderHasIncompleteOperations(_tx: SharedTransactionContext, _id: string) { return false; }
+}
+async function lockProductionContext(tx: SharedTransactionContext, table: "production_orders" | "transformation_orders", id: string): Promise<void> {
+  if (typeof tx.$queryRawUnsafe !== "function") return;
+  await tx.$queryRawUnsafe(`SELECT id FROM "${table}" WHERE id = $1::uuid FOR UPDATE`, id);
 }
 type DefinitionInput = { entityType: "PRODUCER" | "GRAPE_VARIETY" | "GRAPE_RECEPTION"; code: string; label: string; dataType: "TEXT" | "INTEGER" | "DECIMAL" | "BOOLEAN" | "DATE" | "SELECT"; required: boolean; active: boolean; options?: string[] | undefined; displayOrder: number };
 type ValueInput = { definitionId: string; entityType: "PRODUCER" | "GRAPE_VARIETY" | "GRAPE_RECEPTION"; entityId: string; value: string | number | boolean };
