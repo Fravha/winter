@@ -5,7 +5,7 @@ import type { TokenVerifier } from "../../core/auth/auth.types.js";
 import type { UserRepository } from "../../core/users/user.repository.js";
 import { validateRequest } from "../../shared/http/validate-request.js";
 import { ProductionController } from "./production.controller.js";
-import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema, grapeReceptionSchema } from "./production.schema.js";
+import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema, grapeReceptionSchema, measurementCreateSchema, measurementListSchema } from "./production.schema.js";
 import type { ProductionService } from "./production.service.js";
 const manage: Record<string, string> = { participants: "production:participant_manage", producers: "production:producer_manage", "grape-varieties": "production:grape_variety_manage", "work-types": "production:work_type_manage", "measurement-types": "production:measurement_type_manage" };
 export function createProductionRouter(verifier: TokenVerifier, users: UserRepository, service: ProductionService) {
@@ -46,6 +46,9 @@ export function createProductionRouter(verifier: TokenVerifier, users: UserRepos
   router.get("/grape-receptions", ...auth, requirePermission("production:read"), validateRequest({ query: listSchema }), controller.listReceptions);
   router.get("/grape-receptions/:id", ...auth, requirePermission("production:read"), validateRequest({ params: idParamsSchema }), controller.getReception);
   router.post("/grape-receptions", ...auth, requirePermission("production:reception_create"), validateRequest({ body: grapeReceptionSchema }), controller.createReception);
+  router.get("/measurements", ...auth, requirePermission("production:read"), validateRequest({ query: measurementListSchema }), controller.listMeasurements);
+  router.get("/measurements/:id", ...auth, requirePermission("production:read"), validateRequest({ params: idParamsSchema }), controller.getMeasurement);
+  router.post("/measurements", ...auth, requirePermission("production:measurement_create"), validateRequest({ body: measurementCreateSchema }), controller.createMeasurement);
   router.post("/works/:id/corrections", ...auth, requirePermission("production:work_correct"), validateRequest({ params: idParamsSchema, body: workCorrectionSchema }), controller.correctWork);
   router.post("/custom-fields/definitions", ...auth, requirePermission("production:custom_fields_manage"), validateRequest({ body: customDefinitionSchema }), controller.createDefinition);
   router.patch("/custom-fields/definitions/:id", ...auth, requirePermission("production:custom_fields_manage"), validateRequest({ params: idParamsSchema, body: customDefinitionUpdateSchema }), controller.updateDefinition);

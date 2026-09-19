@@ -43,6 +43,7 @@ export const batchListSchema = z.object({
   productionOrderId: z.string().uuid().optional(),
 }).strict();
 const quantity = z.string().regex(/^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/);
+const measurementValue = z.string().trim().regex(/^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/);
 export const containerCreateSchema = z.object({ code: code, capacity: quantity, capacityUnit: z.string().trim().min(1).max(30), observations: z.string().max(2000).optional() }).strict();
 export const containerUpdateSchema = z.object({ capacity: quantity.optional(), observations: z.string().max(2000).optional() }).strict();
 export const containerMoveSchema = z.object({ batchId: z.string().uuid(), sourceContainerId: z.string().uuid().optional(), destinationContainerId: z.string().uuid(), quantity: quantity.optional(), childCode: code.optional(), operationKey: code, requestHash: z.string().trim().min(1).max(500), occurredAt: z.coerce.date().optional() }).strict();
@@ -66,4 +67,19 @@ export const grapeReceptionSchema = z.object({
   items: z.array(z.object({ grapeVarietyId: z.string().uuid(), articuloId: z.string().uuid(), quantity, unit: z.enum(["KG","G","L","M","UNIDAD"]) }).strict()).min(1),
   customFields: z.array(z.object({ definitionId: z.string().uuid(), value: z.union([z.string(), z.number(), z.boolean()]) }).strict()).optional(),
   operationKey: z.string().trim().min(1).max(200), requestHash: z.string().trim().min(1).max(500),
+}).strict();
+export const measurementCreateSchema = z.object({
+  measurementTypeId: z.string().uuid(), productionBatchId: z.string().uuid().optional(),
+  productionContainerId: z.string().uuid().optional(), productionWorkId: z.string().uuid().optional(),
+  participantId: z.string().uuid().optional(), value: measurementValue,
+  unit: z.string().trim().min(1).max(100), measuredAt: z.coerce.date(), observations: z.string().max(2000).optional(),
+}).strict().refine(
+  value => Boolean(value.productionBatchId || value.productionContainerId || value.productionWorkId),
+  { message: "At least one production context is required" },
+);
+export const measurementListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  measurementTypeId: z.string().uuid().optional(), productionBatchId: z.string().uuid().optional(),
+  productionContainerId: z.string().uuid().optional(), productionWorkId: z.string().uuid().optional(),
+  measuredAtFrom: z.coerce.date().optional(), measuredAtTo: z.coerce.date().optional(),
 }).strict();

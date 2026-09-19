@@ -19,6 +19,12 @@ describe("Production history test database guard", () => {
       }),
       /temporary PostgreSQL database on 127\.0\.0\.1/,
     );
+    assert.throws(
+      () => getTemporaryProductionDatabaseUrl("P7_DATABASE_URL", {
+        P7_DATABASE_URL: "postgresql://user:pass@development.example.com/winter",
+      }),
+      /temporary PostgreSQL database on 127\.0\.0\.1/,
+    );
   });
 
   it("rejects a remote host even when the database name looks temporary", () => {

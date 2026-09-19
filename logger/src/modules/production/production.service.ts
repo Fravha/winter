@@ -16,6 +16,7 @@ import { ProductionReceptionService } from "./production.reception.js";
 import type { ReceptionInput } from "./production.reception.js";
 import type { ArticulosApi } from "../articulos/articulos.api.js";
 import { persistCustomFieldValue } from "./custom-fields.js";
+import { ProductionMeasurementService, type MeasurementInput, type MeasurementFilters } from "./production.measurement.js";
 import type { CatalogFilters, CatalogInput, CatalogKind, OrderFilters, ProductionOrderInput, TransformationOrderInput } from "./production.dto.js";
 const kindMap = { participants: "participants", producers: "producers", "grape-varieties": "grape-varieties", "work-types": "work-types", "measurement-types": "measurement-types" } as const;
 export class ProductionService {
@@ -23,7 +24,8 @@ export class ProductionService {
   private readonly containers: ProductionContainerService;
   private readonly works: ProductionWorkService;
   private readonly receptions: ProductionReceptionService;
-  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, articulos?: ArticulosApi) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); if (articulos) this.receptions = new ProductionReceptionService(prisma, articulos); else this.receptions = undefined as unknown as ProductionReceptionService; }
+  private readonly measurements: ProductionMeasurementService;
+  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, articulos?: ArticulosApi) { this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); this.measurements = new ProductionMeasurementService(prisma, tx => this.auditIn(tx)); if (articulos) this.receptions = new ProductionReceptionService(prisma, articulos); else this.receptions = undefined as unknown as ProductionReceptionService; }
   private auditIn(tx: SharedTransactionContext): AuditService { return new AuditService(new PrismaAuditRepository(tx)); }
   list(kind: CatalogKind | "work-types" | "measurement-types", f: CatalogFilters) { return new ProductionRepository(this.prisma).list(kindMap[kind], f); }
   async create(kind: CatalogKind, data: CatalogInput, context: AuthenticatedAuditContext) {
@@ -119,6 +121,9 @@ export class ProductionService {
   getWork(id: string) { return this.works.get(id); }
   createWork(data: WorkCreateInput, context: AuthenticatedAuditContext) { return this.works.create(data, context); }
   correctWork(id: string, data: WorkCorrectionInput, context: AuthenticatedAuditContext) { return this.works.correct(id, data, context); }
+  createMeasurement(data: MeasurementInput, context: AuthenticatedAuditContext) { return this.measurements.create(data, context); }
+  listMeasurements(filters: MeasurementFilters) { return this.measurements.list(filters); }
+  getMeasurement(id: string) { return this.measurements.get(id); }
   async createOrder(data: ProductionOrderInput, context: AuthenticatedAuditContext) {
     return new SharedUnitOfWork(this.prisma).execute(async tx => {
       const repo = new ProductionRepository(tx);

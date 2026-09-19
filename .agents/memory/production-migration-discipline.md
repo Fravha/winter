@@ -14,3 +14,9 @@ Las suites que escriben entidades históricas o append-only deben ejecutarse sol
 **Why:** Una ejecución P5 heredó la URL de desarrollo, creó un `ProductionWork` de prueba y no pudo limpiarlo porque el contrato prohíbe su borrado físico.
 
 **How to apply:** Sobrescribir todas las variables de base relevantes en el mismo comando de test; exigir host `127.0.0.1`, nombre terminado en `_test` o `_temp`, URL sin parámetros de query, y comprobar que no sea la misma base identificada por `WINTER_DATABASE_URL`. Las pruebas de entidades inmutables deben usar una base efímera, no cleanup destructivo sobre desarrollo.
+
+En este workspace, la conexión DEV de Winter puede llegar al shell con caracteres reservados de credenciales sin escapar, aunque host, puerto y base sean correctos.
+
+**Why:** Prisma y el parser PostgreSQL rechazaron la variable con un error de puerto, mientras una normalización en memoria de usuario/contraseña identificó correctamente la DEV con las migraciones esperadas.
+
+**How to apply:** Antes de un deploy, exigir que `migrate status` identifique exactamente la historia esperada. Si la URL falla por formato, normalizar únicamente sus credenciales en memoria; nunca imprimir, persistir ni sustituirla por `DATABASE_URL` sin verificar la historia.

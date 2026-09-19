@@ -147,3 +147,19 @@ participants may be linked without changing their quantities or state.
 Work creation records the authenticated actor and preserves `performedAt`
 separately from `createdAt`. Corrections are explicit, require a reason, and
 retain previous and new values. There is no DELETE or generic PATCH endpoint.
+
+## Production measurements (P7)
+
+`GET /measurements` and `GET /measurements/:id` require `production:read`;
+`POST /measurements` requires `production:measurement_create`. A measurement
+requires an active `measurementTypeId`, a decimal string `value` (persisted as
+`DECIMAL(18,6)`), and a trimmed nonblank `unit`. At least one of
+`productionBatchId`, `productionContainerId` or `productionWorkId` is required;
+all references must exist. Participants are optional but must be active.
+When a work is supplied, any supplied batch and container must be linked to it
+through the P5 relations. Measurements preserve `measuredAt` separately from
+`createdAt`, record the authenticated actor, are append-only, and have no
+PATCH or DELETE endpoint. They do not alter batch balances, containers,
+Inventory, Articles or other production state. The approved contract does not
+define unit catalogs/conversions or batch-container temporal coherence without
+work, so those checks remain explicit gaps.

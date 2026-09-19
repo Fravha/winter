@@ -20,6 +20,7 @@ model User {
   roles       UserRole?
   productionWorksCreated ProductionWork[] @relation("ProductionWorkCreator")
   grapeReceptionsCreated GrapeReception[] @relation("GrapeReceptionActor")
+  productionMeasurementsCreated ProductionMeasurement[] @relation("ProductionMeasurementActor")
   productionWorkCorrections ProductionWorkCorrection[] @relation("ProductionWorkCorrectionActor")
   managedWarehouses Warehouse[] @relation("WarehouseManager")
   inventoryMovementsAsActor InventoryMovement[] @relation("InventoryMovementActor")
@@ -206,6 +207,7 @@ model ProductionBatch {
   children         ProductionBatchLineage[] @relation("BatchLineageParent")
   workLinks         ProductionWorkBatch[]
   receptionItem     GrapeReceptionItem?
+  measurements      ProductionMeasurement[]
 
   @@index([productionOrderId])
   @@index([articuloId])
@@ -306,6 +308,7 @@ model ProductionContainer {
   movementsFrom ProductionBatchContainerMovement[] @relation("ContainerMovementSource")
   movementsTo   ProductionBatchContainerMovement[] @relation("ContainerMovementDestination")
   workLinks ProductionWorkContainer[]
+  measurements ProductionMeasurement[]
 
   @@index([status, code], map: "production_containers_status_code_idx")
   @@map("production_containers")
@@ -409,6 +412,7 @@ model ProductionWork {
   containers        ProductionWorkContainer[]
   participants      ProductionWorkParticipant[]
   corrections       ProductionWorkCorrection[]
+  measurements      ProductionMeasurement[]
 
   @@index([productionOrderId])
   @@map("production_works")
@@ -497,6 +501,7 @@ model MeasurementType {
   active Boolean @default(true)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  measurements ProductionMeasurement[]
   @@index([active], map: "production_measurement_types_active_idx")
   @@map("production_measurement_types")
 }
@@ -508,11 +513,38 @@ model ProductionParticipant {
   active Boolean @default(true)
   userId String? @map("user_id") @db.Uuid
   works ProductionWorkParticipant[]
+  measurements ProductionMeasurement[]
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   @@index([active], map: "production_participants_active_idx")
   @@index([userId], map: "production_participants_user_id_idx")
   @@map("production_participants")
+}
+
+model ProductionMeasurement {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  measurementTypeId String @map("measurement_type_id") @db.Uuid
+  productionBatchId String? @map("production_batch_id") @db.Uuid
+  productionContainerId String? @map("production_container_id") @db.Uuid
+  productionWorkId String? @map("production_work_id") @db.Uuid
+  participantId String? @map("participant_id") @db.Uuid
+  value Decimal @db.Decimal(18, 6)
+  unit String
+  measuredAt DateTime @map("measured_at")
+  observations String?
+  actorUserId String @map("actor_user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  measurementType MeasurementType @relation(fields: [measurementTypeId], references: [id], onDelete: Restrict)
+  productionBatch ProductionBatch? @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
+  productionContainer ProductionContainer? @relation(fields: [productionContainerId], references: [id], onDelete: Restrict)
+  productionWork ProductionWork? @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
+  participant ProductionParticipant? @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  actor User @relation("ProductionMeasurementActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  @@index([measurementTypeId, measuredAt, id])
+  @@index([productionBatchId, measuredAt])
+  @@index([productionContainerId, measuredAt])
+  @@index([productionWorkId, measuredAt])
+  @@map("production_measurements")
 }
 
 model Producer {
