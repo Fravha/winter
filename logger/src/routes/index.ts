@@ -62,6 +62,7 @@ export function createRoutes(dependencies: RouteDependencies) {
   );
 
   const docTypes = new DocTypeRegistry({
+    config: dependencies.config,
     prisma: dependencies.prisma,
     tokenVerifier: dependencies.tokenVerifier,
     userRepository: dependencies.userRepository,

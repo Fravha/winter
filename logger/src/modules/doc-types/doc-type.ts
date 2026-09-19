@@ -4,8 +4,10 @@ import type { AuditService } from "../../core/audit/audit.service.js";
 import type { TokenVerifier } from "../../core/auth/auth.types.js";
 import type { UserRepository } from "../../core/users/user.repository.js";
 import type { PrismaClient } from "../../generated/prisma/client.js";
+import type { AppConfig } from "../../config/env.js";
 
 export interface DocTypeDependencies {
+  config: AppConfig;
   prisma: PrismaClient;
   tokenVerifier: TokenVerifier;
   userRepository: UserRepository;

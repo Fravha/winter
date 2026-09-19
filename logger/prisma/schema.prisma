@@ -29,6 +29,7 @@ model User {
   managedWarehouses Warehouse[] @relation("WarehouseManager")
   inventoryMovementsAsActor InventoryMovement[] @relation("InventoryMovementActor")
   inventoryMovementsAsNegativeStockAuthorizer InventoryMovement[] @relation("InventoryMovementAuthorizer")
+  attachments Attachment[] @relation("AttachmentUploader")
 
   @@map("users")
 }
@@ -96,6 +97,38 @@ model AuditLog {
   @@index([actorUserId, createdAt])
   @@index([resourceType, resourceId])
   @@map("audit_logs")
+}
+
+enum AttachmentEntityType {
+  GRAPE_RECEPTION
+  PRODUCTION_WORK
+  MEASUREMENT
+  TRANSFORMATION
+  PRODUCTION_LOSS
+}
+
+enum StorageProvider {
+  SUPABASE
+}
+
+model Attachment {
+  id              String              @id @default(uuid()) @db.Uuid
+  entityType      AttachmentEntityType @map("entity_type")
+  entityId        String              @map("entity_id") @db.Uuid
+  fileName        String              @map("file_name")
+  mimeType        String              @map("mime_type")
+  fileSize        Int                 @map("file_size")
+  storageProvider StorageProvider     @map("storage_provider")
+  storageKey      String              @map("storage_key")
+  uploadedByUserId String              @map("uploaded_by_user_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at")
+  observations    String?
+  uploadedBy      User                @relation("AttachmentUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId])
+  @@index([uploadedByUserId])
+  @@index([createdAt])
+  @@map("attachments")
 }
 
 model Articulo {
