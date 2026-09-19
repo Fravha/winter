@@ -133,10 +133,9 @@ production
 inventory
 ```
 
-`products` y `purchases` pertenecen al proyecto previo Logger y se conservan
-como módulos de prueba/referencia estructural. No representan los módulos
-finales de negocio de Winter y no deben reutilizarse como ownership de
-`Articulo` o `Compra` salvo decisión explícita de migración.
+Products y Purchases pertenecieron al proyecto Logger y fueron retirados del
+runtime de Winter una vez implementados Articulos y Compras. No representan
+módulos disponibles ni ownership de negocio de Winter.
 
 Cada módulo:
 
@@ -484,9 +483,9 @@ acoplarse a tablas internas de módulos de negocio.
 
 ## 17. Referencia arquitectónica
 
-`src/modules/products` es una implementación de referencia estructural de
-Logger. `src/modules/purchases` también puede utilizarse como referencia de
-patrones ya validados cuando corresponda.
+Los módulos actuales de Winter son la referencia estructural vigente. Products
+y Purchases fueron retirados del runtime y no deben utilizarse como módulos de
+referencia activa.
 
 Debe utilizarse para comprender:
 
@@ -499,9 +498,8 @@ Debe utilizarse para comprender:
 -   DocTypes;
 -   contratos HTTP.
 
-No debe copiarse ciegamente su comportamiento de negocio ni asumirse que
-`products`/`purchases` son módulos finales de Winter. Los módulos `Articulos`
-y `Compras` de Winter deben crearse como módulos propios respetando los
+No debe asumirse que esos módulos legacy exponen APIs disponibles. Los módulos
+`Articulos` y `Compras` de Winter deben respetar los
 contratos aquí definidos.
 
 ## 18. Estado arquitectónico
@@ -514,8 +512,7 @@ Actualmente Logger ya valida como funcionales:
 -   administración de usuarios;
 -   validación de módulos;
 -   estructura de DocTypes;
--   Products como módulo de referencia;
--   Purchases como módulo de referencia.
+-   Articulos y Compras como módulos oficiales de Winter.
 
 A partir de este punto, Winter debe construir sus módulos de negocio propios
 sobre esta base, respetando el contrato arquitectónico y evitando degradar

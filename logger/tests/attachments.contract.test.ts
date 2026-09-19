@@ -90,7 +90,7 @@ test("unsupported target, malformed UUID, spoof and provider failure never write
   const storage = new FakeAttachmentStorageProvider();
   const { client, attachments } = fakePrisma();
   const service = new AttachmentService(client, storage);
-  await assert.rejects(service.create({ entityType: "Purchase", entityId: target, file: { originalname: "x.pdf", mimetype: "application/pdf", size: 8, buffer: Buffer.from("%PDF-1.7") }, actorUserId: actor }), /Unsupported/);
+  await assert.rejects(service.create({ entityType: "LegacyPurchase", entityId: target, file: { originalname: "x.pdf", mimetype: "application/pdf", size: 8, buffer: Buffer.from("%PDF-1.7") }, actorUserId: actor }), /Unsupported/);
   await assert.rejects(service.create({ entityType: "PRODUCTION_WORK", entityId: "not-uuid", file: { originalname: "x.pdf", mimetype: "application/pdf", size: 8, buffer: Buffer.from("%PDF-1.7") }, actorUserId: actor }), /UUID/);
   await assert.rejects(service.create({ entityType: "PRODUCTION_WORK", entityId: target, file: { originalname: "x.pdf", mimetype: "application/pdf", size: 5, buffer: Buffer.from("hello") }, actorUserId: actor }));
   storage.failUpload = true;

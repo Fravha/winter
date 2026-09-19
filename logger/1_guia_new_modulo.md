@@ -5,7 +5,9 @@ Esta guía explica cómo integrar módulos de negocio —ventas, compras, invent
 - `src/core`: autenticación, usuario local, autorización RBAC y auditoría.
 - `src/modules/access-management`: administración de usuarios, roles, permisos y asignaciones.
 
-`src/modules/products` es la implementación de referencia.
+Los ejemplos de esta guía utilizan un módulo neutral de ventas; no dependen de
+los módulos legacy `products` o `purchases`, que fueron retirados del runtime de
+Winter.
 
 ## Qué es un docType en Logger
 
@@ -342,7 +344,7 @@ Finalmente agrégalo al catálogo:
 ```ts
 // src/modules/doc-types/index.ts
 export const businessDocTypes: readonly DocType[] = [
-  productDocType,
+  catalogDocType,
   saleDocType,
 ];
 ```
@@ -355,23 +357,23 @@ npm run db:seed
 
 ## 11. Consumir otro módulo
 
-Si Ventas necesita consultar Products, declara la dependencia:
+Si Ventas necesita consultar un catálogo, declara la dependencia:
 
 ```ts
 export const saleDocType: DocType<SaleApi> = {
   name: "sales",
   route: "/sales",
-  dependencies: ["products"],
+  dependencies: ["catalog"],
   permissions: [/* ... */],
   register(dependencies, resolve) {
-    const products = resolve<ProductApi>("products");
-    const service = new SaleService(/* repositories */, products);
+    const catalog = resolve<CatalogApi>("catalog");
+    const service = new SaleService(/* repositories */, catalog);
     return { api: service, router: createSaleRouter(/* ... */, service) };
   },
 };
 ```
 
-El módulo dependiente importa solamente `ProductApi` y los tipos públicos necesarios. `DocTypeRegistry` registra primero Products aunque el orden del catálogo sea diferente. El arranque falla de forma explícita si encuentra:
+El módulo dependiente importa solamente `CatalogApi` y los tipos públicos necesarios. `DocTypeRegistry` registra primero el catálogo aunque el orden del catálogo sea diferente. El arranque falla de forma explícita si encuentra:
 
 - un nombre o ruta duplicados;
 - permisos duplicados entre docTypes;
@@ -421,7 +423,7 @@ npm run build
 
 ## Archivos de referencia
 
-- `src/modules/products/`: módulo completo de ejemplo.
+- Un módulo de ventas o catálogo que implemente el patrón descrito.
 - `src/modules/doc-types/doc-type.ts`: contrato del descriptor.
 - `src/modules/doc-types/doc-type.registry.ts`: registro y resolución.
 - `src/modules/doc-types/index.ts`: catálogo de módulos activos.

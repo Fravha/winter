@@ -29,35 +29,35 @@ describe("DocTypeRegistry", () => {
   it("registers dependencies before dependants and exposes their public API", () => {
     const registry = new DocTypeRegistry(dependencies);
     registry.registerAll([
-      definition("orders", "/orders", "orders", ["products"]),
-      definition("products", "/products", "products"),
+      definition("sales", "/sales", "sales", ["catalog"]),
+      definition("catalog", "/catalog", "catalog"),
     ]);
 
-    assert.equal(registry.resolve<string>("products"), "products");
-    assert.equal(registry.resolve<string>("orders"), "products:orders");
-    assert.deepEqual(registry.list().map(({ name }) => name), ["products", "orders"]);
+    assert.equal(registry.resolve<string>("catalog"), "catalog");
+    assert.equal(registry.resolve<string>("sales"), "catalog:sales");
+    assert.deepEqual(registry.list().map(({ name }) => name), ["catalog", "sales"]);
   });
 
   it("rejects duplicate routes", () => {
     const registry = new DocTypeRegistry(dependencies);
     assert.throws(
       () => registry.registerAll([
-        definition("products", "/catalog", "products"),
-        definition("orders", "/catalog", "orders"),
+        definition("catalog", "/catalog", "catalog"),
+        definition("sales", "/catalog", "sales"),
       ]),
       /already registered/,
     );
   });
 
   it("rejects permissions duplicated across docTypes", () => {
-    const products = definition("products", "/products", "products");
-    const orders = definition("orders", "/orders", "orders");
-    orders.permissions = [{ code: "products:read", name: "Read products" }];
+    const catalog = definition("catalog", "/catalog", "catalog");
+    const sales = definition("sales", "/sales", "sales");
+    sales.permissions = [{ code: "catalog:read", name: "Read catalog" }];
 
     const registry = new DocTypeRegistry(dependencies);
     assert.throws(
-      () => registry.registerAll([products, orders]),
-      /permission 'products:read' is already registered/,
+      () => registry.registerAll([catalog, sales]),
+      /permission 'catalog:read' is already registered/,
     );
   });
 
@@ -65,7 +65,7 @@ describe("DocTypeRegistry", () => {
     const registry = new DocTypeRegistry(dependencies);
     assert.throws(
       () => registry.registerAll([
-        definition("orders", "/orders", "orders", ["products"]),
+        definition("sales", "/sales", "sales", ["catalog"]),
       ]),
       /Unresolved docType dependencies/,
     );

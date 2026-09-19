@@ -31,9 +31,9 @@ Este documento complementa:
 Los módulos se organizan por **responsabilidad de negocio**, no por
 tablas ni por los módulos utilizados como prototipos.
 
-`Products` y `Purchases` fueron módulos de prueba/referencia durante la
-construcción de Logger y no constituyen la estructura final de Winter.
-Winter define módulos propios `Articulos` y `Compras`.
+Products y Purchases pertenecieron al proyecto Logger y fueron retirados del
+runtime de Winter una vez implementados Articulos y Compras. Winter define
+únicamente los módulos oficiales `Articulos` y `Compras`.
 
 La estructura conceptual final para este dominio será:
 
@@ -281,8 +281,8 @@ físicamente al inventario.
 La estructura exacta podrá evolucionar, pero conceptualmente incluye:
 
 ``` text
-Purchase
-PurchaseLine
+ Compra
+ CompraItem
 ```
 
 o sus equivalentes definitivos en español.
@@ -290,7 +290,7 @@ o sus equivalentes definitivos en español.
 ## Aggregate Root
 
 ``` text
-Purchase
+ Compra
 ```
 
 ## Flujo principal
@@ -1523,7 +1523,8 @@ InventoryMovement
 InventoryLot / Stock
 ```
 
-Esto reemplaza la idea anterior de que `Purchases` sea un módulo aislado
+Esto reemplaza la idea anterior de que el módulo legacy de compras fuera un
+módulo aislado
 sin conexión real con Inventory.
 
 ------------------------------------------------------------------------
@@ -1628,7 +1629,7 @@ Logger
 │   └── Articulo
 │
 ├── Compras
-│   └── Purchase
+│   └── Compra
 │
 ├── Production
 │   ├── Vendimia
@@ -1654,10 +1655,9 @@ Logger
     └── Movimientos
 ```
 
-Esta estructura sustituye el mapa provisional donde `Products` y
-`Purchases` aparecían como módulos finales. `Products` pasa
-conceptualmente a `Articulos`, mientras que `Compras` queda como módulo
-de adquisición integrado con Inventory.
+Esta estructura sustituye el mapa provisional donde Products y Purchases
+aparecían como módulos finales. El maestro oficial es `Articulos`, mientras
+que `Compras` queda como módulo de adquisición integrado con Inventory.
 
 ---
 

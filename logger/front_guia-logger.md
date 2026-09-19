@@ -1,6 +1,9 @@
 # Guía oficial de Logger para frontend
 
-Esta guía documenta los endpoints que una aplicación frontend puede consumir para autenticación, recuperación de contraseña, administración de usuarios, roles y permisos, y el CRUD de Products. Los contratos corresponden a Logger API v1.
+Esta guía documenta los endpoints que una aplicación frontend puede consumir
+para autenticación, recuperación de contraseña, administración de usuarios,
+roles y permisos. Los módulos legacy Products y Purchases fueron retirados del
+runtime de Winter y no tienen endpoints disponibles.
 
 ## 1. Configuración y autenticación
 
@@ -160,16 +163,6 @@ Formato de error:
 | `GET` | `/api/v1/permissions/:id` | `rbac:read` |
 | `PUT` | `/api/v1/users/:id/roles` | `rbac:manage` |
 | `PUT` | `/api/v1/roles/:id/permissions` | `rbac:manage` |
-
-### Products
-
-| Método | Endpoint | Permiso |
-| --- | --- | --- |
-| `GET` | `/api/v1/products` | `products:read` |
-| `GET` | `/api/v1/products/:id` | `products:read` |
-| `POST` | `/api/v1/products` | `products:create` |
-| `PATCH` | `/api/v1/products/:id` | `products:update` |
-| `DELETE` | `/api/v1/products/:id` | `products:delete` |
 
 ## 4. Sesión actual
 
@@ -412,77 +405,6 @@ El rol `admin` debe conservar `users:read`, `users:manage`, `rbac:read` y `rbac:
 
 Para las pantallas de asignación: carga el recurso actual y el catálogo, inicializa todos los IDs seleccionados, envía el conjunto final completo y recarga después del `204`.
 
-## 9. Products
-
-```ts
-interface Product {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  price: string;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-```
-
-### Listar y consultar
-
-```http
-GET /api/v1/products
-GET /api/v1/products/:id
-```
-
-Lista: `200 { "data": Product[] }`, ordenada por creación descendente y sin paginación. Detalle: `200 { "data": Product }`. ID inválido: `400 VALIDATION_ERROR`; inexistente: `404 PRODUCT_NOT_FOUND`.
-
-### Crear
-
-```http
-POST /api/v1/products
-```
-
-```json
-{
-  "code": "PROD-001",
-  "name": "Example product",
-  "description": "Product description",
-  "price": "100.50"
-}
-```
-
-- `code`: requerido, 1 a 50.
-- `name`: requerido, 1 a 150.
-- `description`: opcional, máximo 500.
-- `price`: string con máximo dos decimales.
-
-No envíes `price` como número JSON. Respuesta `201 { "data": Product }`; duplicado: `409 PRODUCT_CODE_ALREADY_EXISTS`.
-
-### Actualizar
-
-```http
-PATCH /api/v1/products/:id
-```
-
-```json
-{
-  "name": "Updated product",
-  "description": null,
-  "price": "120.00",
-  "active": false
-}
-```
-
-Todos los campos son opcionales, pero debe existir al menos uno. `description: null` elimina la descripción. Respuesta `200 { "data": Product }`.
-
-### Eliminar
-
-```http
-DELETE /api/v1/products/:id
-```
-
-Respuesta `204`. Si debe conservarse historial, prefiere `PATCH { "active": false }` según la política funcional.
-
 ## 10. Health checks
 
 No requieren autenticación y están orientados a diagnóstico:
@@ -522,10 +444,6 @@ GET /api/v1/auth/me
 | Crear/editar/activar/suspender usuario | `users:manage` |
 | Menú Roles y Permisos | `rbac:read` |
 | Modificar roles y asignaciones | `rbac:manage` |
-| Menú Products | `products:read` |
-| Crear producto | `products:create` |
-| Editar producto | `products:update` |
-| Eliminar producto | `products:delete` |
 
 Vuelve a consultar `/auth/me` al iniciar la aplicación, después del login y cuando cambien los roles del usuario actual.
 
@@ -548,15 +466,6 @@ Vuelve a consultar `/auth/me` al iniciar la aplicación, después del login y cu
 - Reemplazar asignaciones sin perder selecciones.
 - Conservar permisos obligatorios de `admin`.
 
-### Products
-
-- Listar, consultar, crear, actualizar y eliminar.
-- UUID inválido, código duplicado y producto inexistente.
-- Precio como string con cero, uno y dos decimales.
-- Rechazar más de dos decimales y `PATCH {}`.
-- Eliminar descripción con `null` y cambiar `active`.
-- Verificar cada permiso por separado.
-
 ### Cliente HTTP
 
 - No parsear JSON después de `204`.
@@ -577,4 +486,4 @@ Vuelve a consultar `/auth/me` al iniciar la aplicación, después del login y cu
 - [ ] Formularios no dependen de `error.details`.
 - [ ] UX definida para `401`, `403`, `404`, `409`, `429` y `5xx`.
 - [ ] Tokens y secretos no se guardan ni imprimen en logs.
-- [ ] Pruebas de sesión, RBAC, usuarios y Products aprobadas.
+- [ ] Pruebas de sesión y RBAC aprobadas.

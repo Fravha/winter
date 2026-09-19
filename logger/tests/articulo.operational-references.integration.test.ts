@@ -65,7 +65,7 @@ describeWithDatabase("Articulo operational references integration", () => {
       }, context);
 
       let warehouseId: string | undefined;
-      let purchaseId: string | undefined;
+      let compraId: string | undefined;
       let productionOrderId: string | undefined;
       let productionWorkId: string | undefined;
 
@@ -88,21 +88,18 @@ describeWithDatabase("Articulo operational references integration", () => {
             },
           });
         } else if (consumer === "compras") {
-          const purchase = await prisma.purchase.create({
+          const compra = await prisma.compra.create({
             data: {
-              id: randomUUID(),
-              reference: `PUR-${suffix}`,
               supplierName: "Integration supplier",
-              total: "1",
-              purchasedAt: new Date(),
+              createdByUserId: actorUserId,
             },
           });
-          purchaseId = purchase.id;
-          await prisma.purchaseLine.create({
+          compraId = compra.id;
+          await prisma.compraItem.create({
             data: {
-              purchaseId,
+              compraId,
               articuloId: articulo.id,
-              quantity: "1",
+              requestedQuantity: "1",
               unit: "KG",
             },
           });
@@ -155,15 +152,15 @@ describeWithDatabase("Articulo operational references integration", () => {
         await prisma.inventoryMovement.deleteMany({
           where: { articuloId: articulo.id },
         });
-        await prisma.purchaseLine.deleteMany({
+        await prisma.compraItem.deleteMany({
           where: { articuloId: articulo.id },
         });
         await prisma.productionWorkInput.deleteMany({
           where: { articuloId: articulo.id },
         });
         // ProductionWork and its parent order are immutable historical records.
-        if (purchaseId) {
-          await prisma.purchase.delete({ where: { id: purchaseId } });
+        if (compraId) {
+          await prisma.compra.delete({ where: { id: compraId } });
         }
         if (warehouseId) {
           await prisma.warehouse.delete({ where: { id: warehouseId } });

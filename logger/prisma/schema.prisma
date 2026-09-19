@@ -144,7 +144,6 @@ model Articulo {
   inventoryLots        InventoryLot[]
   inventoryStocks      InventoryStock[]
   inventoryMovements   InventoryMovement[]
-  purchaseLines        PurchaseLine[]
   compraItems          CompraItem[]
   productionWorkInputs ProductionWorkInput[]
   grapeReceptionItems GrapeReceptionItem[]
@@ -153,46 +152,6 @@ model Articulo {
   @@index([codigoExterno])
   @@index([clasificacion, activo])
   @@map("articulos")
-}
-
-model Product {
-  id          String   @id @default(uuid())
-  code        String   @unique
-  name        String
-  description String?
-  price       Decimal  @db.Decimal(12, 2)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("products")
-}
-
-model Purchase {
-  id           String         @id
-  reference    String         @unique
-  supplierName String         @map("supplier_name")
-  total        Decimal        @db.Decimal(12, 2)
-  purchasedAt  DateTime       @map("purchased_at")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
-  lines        PurchaseLine[]
-
-  @@map("purchases")
-}
-
-model PurchaseLine {
-  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  purchaseId String       @map("purchase_id")
-  articuloId String       @map("articulo_id") @db.Uuid
-  quantity   Decimal      @db.Decimal(18, 3)
-  unit       ArticuloUnit
-  createdAt  DateTime     @default(now()) @map("created_at")
-  purchase   Purchase     @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
-  articulo   Articulo     @relation(fields: [articuloId], references: [id], onDelete: Restrict)
-
-  @@index([articuloId])
-  @@map("purchase_lines")
 }
 
 model ProductionOrder {

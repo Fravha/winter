@@ -19,9 +19,12 @@ Inventory continúa siendo el único propietario del stock físico, sus saldos,
 movimientos y lotes. Compras no puede acceder directamente a tablas, modelos
 Prisma, repositories ni servicios internos de Inventory.
 
-El módulo existente `purchases` es únicamente una referencia técnica. Winter
-debe implementar un módulo nuevo llamado `compras`, sin obligación de migrar o
-mantener compatibilidad con `purchases`.
+Los módulos legacy `products` y `purchases` pertenecieron al proyecto Logger y
+fueron retirados del runtime de Winter. Winter implementa el módulo `compras`
+sin obligación de migrar ni mantener compatibilidad con ellos. Las entidades
+`Purchase` y `PurchaseItem` que aparecen en este documento son nombres
+conceptuales del dominio oficial de Compras, no referencias a esos módulos
+legacy.
 
 ## 2. Entidades
 

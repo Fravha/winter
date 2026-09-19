@@ -5,8 +5,8 @@
 Este documento define el contrato que todo módulo de negocio de Logger
 debe cumplir.
 
-El objetivo es que módulos como Products, Purchases, Inventory, Recipes,
-Production y Sales puedan evolucionar independientemente manteniendo una
+El objetivo es que módulos como Sales, Compras, Inventory, Recipes,
+Production y Articulos puedan evolucionar independientemente manteniendo una
 arquitectura coherente.
 
 Un módulo no se considera simplemente un conjunto de endpoints CRUD. Es
@@ -61,8 +61,8 @@ route:
 Ejemplo:
 
 ``` text
-name: products
-route: /products
+name: sales
+route: /sales
 ```
 
 El nombre debe ser único.
@@ -107,7 +107,7 @@ El modelo de dominio no debe depender de Prisma.
 Ejemplo:
 
 ``` ts
-export interface Product {
+export interface Sale {
   id: string;
   code: string;
   name: string;
@@ -169,12 +169,12 @@ El repository define persistencia sin conocer HTTP.
 Ejemplo:
 
 ``` ts
-export interface ProductRepository {
-  findAll(): Promise<Product[]>;
-  findById(id: string): Promise<Product | null>;
-  findByCode(code: string): Promise<Product | null>;
-  create(data: CreateProductDto): Promise<Product>;
-  update(id: string, data: UpdateProductDto): Promise<Product>;
+export interface SaleRepository {
+  findAll(): Promise<Sale[]>;
+  findById(id: string): Promise<Sale | null>;
+  findByCode(code: string): Promise<Sale | null>;
+  create(data: CreateSaleDto): Promise<Sale>;
+  update(id: string, data: UpdateSaleDto): Promise<Sale>;
   delete(id: string): Promise<void>;
 }
 ```
@@ -386,25 +386,25 @@ es el contrato oficial entre módulos.
 Ejemplo:
 
 ``` ts
-export interface ProductApi {
-  list(): Promise<Product[]>;
-  getById(id: string): Promise<Product>;
+export interface SaleApi {
+  list(): Promise<Sale[]>;
+  getById(id: string): Promise<Sale>;
 }
 ```
 
 Otro módulo puede importar:
 
 ``` ts
-import type { ProductApi } from "../products/product.api";
+import type { SaleApi } from "../sales/sale.api";
 ```
 
 No puede importar:
 
 ``` text
-PrismaProductRepository
-ProductService
-ProductController
-ProductRoutes
+PrismaSaleRepository
+SaleService
+SaleController
+SaleRoutes
 ```
 
 ------------------------------------------------------------------------
@@ -416,7 +416,7 @@ No exponer más operaciones de las necesarias.
 Si Production solamente necesita:
 
 ``` text
-ProductApi.getById()
+SaleApi.getById()
 ```
 
 no exponer operaciones administrativas innecesarias dentro del contrato
@@ -435,7 +435,7 @@ Ejemplo:
 
 ``` ts
 dependencies: [
-  "products",
+  "sales",
   "recipes",
   "inventory"
 ]
@@ -444,7 +444,7 @@ dependencies: [
 La dependencia debe utilizarse mediante:
 
 ``` ts
-resolve<ProductApi>("products")
+resolve<SaleApi>("sales")
 ```
 
 Las dependencias circulares están prohibidas.
@@ -725,15 +725,15 @@ API pública de Inventory.
 
 ## 27. Productos y compras
 
-Products representa el maestro de productos.
+Articulos representa el maestro de artículos.
 
-Purchases representa operaciones de compra.
+Compras representa operaciones de compra.
 
 Una compra no debe convertirse automáticamente en inventario simplemente
-porque exista una entidad `Purchase`.
+porque exista una entidad de adquisición.
 
 Si el dominio requiere recepción de mercadería o ingreso a stock, debe
-existir un command/proceso explícito que coordine Purchases e Inventory.
+existir un command/proceso explícito que coordine Compras e Inventory.
 
 ------------------------------------------------------------------------
 

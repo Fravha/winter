@@ -1348,8 +1348,9 @@ Access Management / Core
     -> Audit
 ```
 
-`products` y `purchases` del proyecto Logger se utilizan solamente como módulos
-de referencia técnica y no son propietarios del dominio final de Winter.
+Products y Purchases pertenecieron al proyecto Logger y fueron retirados del
+runtime de Winter una vez implementados Articulos y Compras. No son propietarios
+del dominio final de Winter.
 
 ---
 

@@ -84,7 +84,7 @@ src/
 ├── modules/
 │   ├── access-management/             # Administración de usuarios, roles y permisos
 │   ├── doc-types/                     # Registro de módulos de negocio
-│   ├── products/                      # Módulo/docType de referencia
+│   ├── articulos/                     # Módulo Winter de artículos
 │   └── health/                        # Liveness y readiness
 ├── routes/index.ts                    # Composición de rutas
 ├── shared/
@@ -532,7 +532,8 @@ La imagen no ejecuta migraciones automáticamente al arrancar, evitando carreras
 
 Esta guía describe cómo añadir una entidad y su CRUD a un proyecto construido sobre Logger. Parte de que la autenticación ya está configurada: Firebase valida la identidad, `resolveCurrentUser` carga al usuario local y PostgreSQL conserva sus roles y permisos. El módulo solo debe implementar su dominio y conectarse a esos mecanismos existentes.
 
-El módulo `products` incluido en el repositorio es la referencia ejecutable. Sustituye `product` y `products` por el nombre singular y plural de tu entidad.
+La guía utiliza un módulo CRUD genérico como ejemplo. Sustituye `sale` y
+`sales` por el nombre singular y plural de tu entidad.
 
 ### Resultado esperado
 
@@ -540,11 +541,11 @@ Un CRUD completo expone un contrato similar al siguiente:
 
 | Método | Endpoint | Permiso | Resultado |
 | --- | --- | --- | --- |
-| `GET` | `/api/v1/products` | `products:read` | Lista de entidades |
-| `GET` | `/api/v1/products/:id` | `products:read` | Una entidad |
-| `POST` | `/api/v1/products` | `products:create` | Entidad creada |
-| `PATCH` | `/api/v1/products/:id` | `products:update` | Entidad actualizada |
-| `DELETE` | `/api/v1/products/:id` | `products:delete` | Respuesta `204` |
+| `GET` | `/api/v1/sales` | `sales:read` | Lista de entidades |
+| `GET` | `/api/v1/sales/:id` | `sales:read` | Una entidad |
+| `POST` | `/api/v1/sales` | `sales:create` | Entidad creada |
+| `PATCH` | `/api/v1/sales/:id` | `sales:update` | Entidad actualizada |
+| `DELETE` | `/api/v1/sales/:id` | `sales:delete` | Respuesta `204` |
 
 La dependencia entre capas debe mantenerse en una sola dirección:
 
@@ -570,14 +571,14 @@ Antes de escribir código, define:
 - operaciones permitidas y permisos necesarios;
 - respuestas HTTP y errores esperados.
 
-Para `Product`, por ejemplo, `code` es único, `price` conserva dos decimales y `active` permite desactivar sin eliminar. Se utiliza `PATCH`, por lo que un campo ausente significa “no modificar”; `null` solo se acepta cuando el dominio permite borrar el valor.
+Para `Sale`, por ejemplo, `code` es único, `price` conserva dos decimales y `active` permite desactivar sin eliminar. Se utiliza `PATCH`, por lo que un campo ausente significa “no modificar”; `null` solo se acepta cuando el dominio permite borrar el valor.
 
 ### 2. Añadir el modelo Prisma y la migración
 
 Agrega el modelo en `prisma/schema.prisma`:
 
 ```prisma
-model Product {
+model Sale {
   id          String   @id @default(uuid())
   code        String   @unique
   name        String
@@ -587,7 +588,7 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@map("products")
+  @@map("sales")
 }
 ```
 
@@ -595,7 +596,7 @@ Valida el esquema, crea una migración descriptiva y regenera el cliente:
 
 ```bash
 npm run db:validate
-npm run db:migrate -- --name add_products
+npm run db:migrate -- --name add_sales
 npm run db:generate
 ```
 
@@ -607,10 +608,10 @@ Declara permisos estables y específicos de la capacidad dentro del docType del 
 
 ```ts
 permissions: [
-  { code: "products:read", name: "Read products" },
-  { code: "products:create", name: "Create products" },
-  { code: "products:update", name: "Update products" },
-  { code: "products:delete", name: "Delete products" },
+  { code: "sales:read", name: "Read sales" },
+  { code: "sales:create", name: "Create sales" },
+  { code: "sales:update", name: "Update sales" },
+  { code: "sales:delete", name: "Delete sales" },
 ],
 ```
 
@@ -627,19 +628,19 @@ En otros proyectos, decide explícitamente qué roles reciben cada permiso. Ocul
 Organiza el código por dominio:
 
 ```text
-src/modules/products/
-├── product.model.ts
-├── product.dto.ts
-├── product.api.ts
-├── product.schema.ts
-├── product.repository.ts
-├── prisma-product.repository.ts
-├── product.unit-of-work.ts
-├── prisma-product.unit-of-work.ts
-├── product.service.ts
-├── product.controller.ts
-├── product.routes.ts
-└── product.doc-type.ts
+src/modules/sales/
+├── sale.model.ts
+├── sale.dto.ts
+├── sale.api.ts
+├── sale.schema.ts
+├── sale.repository.ts
+├── prisma-sale.repository.ts
+├── sale.unit-of-work.ts
+├── prisma-sale.unit-of-work.ts
+├── sale.service.ts
+├── sale.controller.ts
+├── sale.routes.ts
+└── sale.doc-type.ts
 ```
 
 No crees conexiones nuevas a PostgreSQL o Firebase dentro del módulo. Reutiliza el cliente Prisma y las dependencias de autenticación que Logger compone en `src/app.ts` y `src/routes/index.ts`.
@@ -649,8 +650,8 @@ No crees conexiones nuevas a PostgreSQL o Firebase dentro del módulo. Reutiliza
 El modelo representa lo que devuelve el módulo, sin filtrar tipos de Prisma hacia las demás capas:
 
 ```ts
-// product.model.ts
-export interface Product {
+// sale.model.ts
+export interface Sale {
   id: string;
   code: string;
   name: string;
@@ -665,15 +666,15 @@ export interface Product {
 Los DTO describen los datos aceptados por los casos de uso:
 
 ```ts
-// product.dto.ts
-export interface CreateProductDto {
+// sale.dto.ts
+export interface CreateSaleDto {
   code: string;
   name: string;
   description?: string;
   price: string;
 }
 
-export interface UpdateProductDto {
+export interface UpdateSaleDto {
   code?: string;
   name?: string;
   description?: string | null;
@@ -689,21 +690,21 @@ export interface UpdateProductDto {
 El service debe depender de una abstracción, no de Prisma:
 
 ```ts
-// product.repository.ts
-import type { CreateProductDto, UpdateProductDto } from "./product.dto.js";
-import type { Product } from "./product.model.js";
+// sale.repository.ts
+import type { CreateSaleDto, UpdateSaleDto } from "./sale.dto.js";
+import type { Sale } from "./sale.model.js";
 
-export interface ProductRepository {
-  findAll(): Promise<Product[]>;
-  findById(id: string): Promise<Product | null>;
-  findByCode(code: string): Promise<Product | null>;
-  create(data: CreateProductDto): Promise<Product>;
-  update(id: string, data: UpdateProductDto): Promise<Product>;
+export interface SaleRepository {
+  findAll(): Promise<Sale[]>;
+  findById(id: string): Promise<Sale | null>;
+  findByCode(code: string): Promise<Sale | null>;
+  create(data: CreateSaleDto): Promise<Sale>;
+  update(id: string, data: UpdateSaleDto): Promise<Sale>;
   delete(id: string): Promise<void>;
 }
 ```
 
-La implementación `prisma-product.repository.ts` recibe un cliente compatible mediante el constructor, ejecuta `client.product.*` y mapea el resultado al modelo de dominio. No importes la instancia global: la inyección permite pruebas aisladas y permite usar el mismo repository dentro de una transacción Prisma.
+La implementación `prisma-sale.repository.ts` recibe un cliente compatible mediante el constructor, ejecuta `client.sale.*` y mapea el resultado al modelo de dominio. No importes la instancia global: la inyección permite pruebas aisladas y permite usar el mismo repository dentro de una transacción Prisma.
 
 Con `exactOptionalPropertyTypes: true`, no envíes propiedades con `undefined` a Prisma. Inclúyelas condicionalmente:
 
@@ -723,63 +724,63 @@ Esto distingue “no modificar” de “asignar `null`”. También captura y tr
 El service coordina el repository y devuelve errores de aplicación consistentes:
 
 ```ts
-// fragmento de product.service.ts
+// fragmento de sale.service.ts
 async getById(id: string) {
-  const product = await this.productRepository.findById(id);
+  const sale = await this.saleRepository.findById(id);
 
-  if (!product) {
-    throw new AppError("PRODUCT_NOT_FOUND", "Product not found", 404);
+  if (!sale) {
+    throw new AppError("SALE_NOT_FOUND", "Sale not found", 404);
   }
 
-  return product;
+  return sale;
 }
 
-async create(data: CreateProductDto, context: AuthenticatedAuditContext) {
-  return this.unitOfWork.execute(async ({ products, audit }) => {
-    if (await products.findByCode(data.code)) {
+async create(data: CreateSaleDto, context: AuthenticatedAuditContext) {
+  return this.unitOfWork.execute(async ({ sales, audit }) => {
+    if (await sales.findByCode(data.code)) {
       throw new AppError(
-        "PRODUCT_CODE_ALREADY_EXISTS",
-        "A product with this code already exists",
+        "SALE_CODE_ALREADY_EXISTS",
+        "A sale with this code already exists",
         409,
       );
     }
 
-    const product = await products.create(data);
+    const sale = await sales.create(data);
     await audit.record(context, {
-      action: "PRODUCT_CREATED",
-      resourceType: "product",
-      resourceId: product.id,
-      metadata: { code: product.code, name: product.name },
+      action: "SALE_CREATED",
+      resourceType: "sale",
+      resourceId: sale.id,
+      metadata: { code: sale.code, name: sale.name },
     });
-    return product;
+    return sale;
   });
 }
 ```
 
-Usa nombres de error prefijados por el dominio (`PRODUCT_*`, `ORDER_*`) y códigos HTTP previsibles: `404` para inexistencia, `409` para conflicto y `400` para entrada inválida. No devuelvas detalles internos de Prisma al cliente.
+Usa nombres de error prefijados por el dominio (`SALE_*`, `ORDER_*`) y códigos HTTP previsibles: `404` para inexistencia, `409` para conflicto y `400` para entrada inválida. No devuelvas detalles internos de Prisma al cliente.
 
-Las escrituras relevantes integran `AuditService`: el controller construye el contexto mediante `buildAuthenticatedAuditContext(req, res)` y el service guarda la mutación y su evento dentro de `ProductUnitOfWork`. No almacenes tokens, secretos ni payloads personales completos en auditoría.
+Las escrituras relevantes integran `AuditService`: el controller construye el contexto mediante `buildAuthenticatedAuditContext(req, res)` y el service guarda la mutación y su evento dentro de `SaleUnitOfWork`. No almacenes tokens, secretos ni payloads personales completos en auditoría.
 
 ### 8. Validar params y body con Zod
 
 Define schemas independientes para params, creación y actualización:
 
 ```ts
-// product.schema.ts
+// sale.schema.ts
 import { z } from "zod";
 
-export const productIdParamsSchema = z.object({
+export const saleIdParamsSchema = z.object({
   id: z.string().uuid(),
 });
 
-export const createProductSchema = z.object({
+export const createSaleSchema = z.object({
   code: z.string().trim().min(1).max(50),
   name: z.string().trim().min(1).max(150),
   description: z.string().trim().max(500).optional(),
   price: z.string().regex(/^\d+(\.\d{1,2})?$/),
 });
 
-export const updateProductSchema = createProductSchema
+export const updateSaleSchema = createSaleSchema
   .partial()
   .extend({
     description: z.string().trim().max(500).nullable().optional(),
@@ -800,8 +801,8 @@ El controller solo recibe la solicitud, llama al service y construye la respuest
 create = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const context = buildAuthenticatedAuditContext(req, res);
-    const product = await this.productService.create(req.body, context);
-    res.status(201).json({ data: product });
+    const sale = await this.saleService.create(req.body, context);
+    res.status(201).json({ data: sale });
   } catch (error) {
     next(error);
   }
@@ -814,7 +815,7 @@ delete = async (
 ) => {
   try {
     const context = buildAuthenticatedAuditContext(req, res);
-    await this.productService.delete(req.params.id, context);
+    await this.saleService.delete(req.params.id, context);
     res.status(204).send();
   } catch (error) {
     next(error);
@@ -829,45 +830,45 @@ Mantén estable el formato de éxito (`{ "data": ... }`) y no respondas con cuer
 El router recibe el service ya construido por el docType y se limita a seguridad, validación y HTTP:
 
 ```ts
-export function createProductRouter(
+export function createSaleRouter(
   tokenVerifier: TokenVerifier,
   userRepository: UserRepository,
-  productService: ProductService,
+  saleService: SaleService,
 ) {
-  const controller = new ProductController(productService);
+  const controller = new SaleController(saleService);
   const router = Router();
   const auth = [
     authenticate(tokenVerifier),
     resolveCurrentUser(userRepository),
   ] as const;
 
-  router.get("/", ...auth, requirePermission("products:read"), controller.list);
+  router.get("/", ...auth, requirePermission("sales:read"), controller.list);
   router.get(
     "/:id",
     ...auth,
-    requirePermission("products:read"),
-    validateRequest({ params: productIdParamsSchema }),
+    requirePermission("sales:read"),
+    validateRequest({ params: saleIdParamsSchema }),
     controller.getById,
   );
   router.post(
     "/",
     ...auth,
-    requirePermission("products:create"),
-    validateRequest({ body: createProductSchema }),
+    requirePermission("sales:create"),
+    validateRequest({ body: createSaleSchema }),
     controller.create,
   );
   router.patch(
     "/:id",
     ...auth,
-    requirePermission("products:update"),
-    validateRequest({ params: productIdParamsSchema, body: updateProductSchema }),
+    requirePermission("sales:update"),
+    validateRequest({ params: saleIdParamsSchema, body: updateSaleSchema }),
     controller.update,
   );
   router.delete(
     "/:id",
     ...auth,
-    requirePermission("products:delete"),
-    validateRequest({ params: productIdParamsSchema }),
+    requirePermission("sales:delete"),
+    validateRequest({ params: saleIdParamsSchema }),
     controller.delete,
   );
 
@@ -882,23 +883,23 @@ El orden esperado es autenticación, resolución del usuario local, autorizació
 Cada módulo de negocio exporta un docType con su identidad, ruta, permisos y API pública:
 
 ```ts
-export const productDocType: DocType<ProductApi> = {
-  name: "products",
-  route: "/products",
+export const saleDocType: DocType<SaleApi> = {
+  name: "sales",
+  route: "/sales",
   permissions: [
-    { code: "products:read", name: "Read products" },
-    { code: "products:create", name: "Create products" },
-    { code: "products:update", name: "Update products" },
-    { code: "products:delete", name: "Delete products" },
+    { code: "sales:read", name: "Read sales" },
+    { code: "sales:create", name: "Create sales" },
+    { code: "sales:update", name: "Update sales" },
+    { code: "sales:delete", name: "Delete sales" },
   ],
   register(dependencies) {
-    const service = new ProductService(
-      new PrismaProductRepository(dependencies.prisma),
-      new PrismaProductUnitOfWork(dependencies.prisma),
+    const service = new SaleService(
+      new PrismaSaleRepository(dependencies.prisma),
+      new PrismaSaleUnitOfWork(dependencies.prisma),
     );
     return {
       api: service,
-      router: createProductRouter(
+      router: createSaleRouter(
         dependencies.tokenVerifier,
         dependencies.userRepository,
         service,
@@ -910,16 +911,19 @@ export const productDocType: DocType<ProductApi> = {
 
 Agrégalo únicamente a `businessDocTypes` en `src/modules/doc-types/index.ts`. `DocTypeRegistry` se encarga de montarlo bajo `/api/v1`; no es necesario modificar `src/core`, `src/modules/access-management` ni añadir una ruta manual en `src/routes/index.ts`.
 
-Si otro módulo depende de Products, declara `dependencies: ["products"]` y resuelve su contrato público durante el registro:
+Si otro módulo depende de Sales, declara `dependencies: ["sales"]` y resuelve su contrato público durante el registro:
 
 ```ts
 register(dependencies, resolve) {
-  const products = resolve<ProductApi>("products");
-  // Inyectar products en el service del módulo dependiente.
+  const sales = resolve<SaleApi>("sales");
+  // Inyectar sales en el service del módulo dependiente.
 }
 ```
 
-Importa únicamente `product.api.ts` y sus tipos públicos. No importes controllers, repositories Prisma ni detalles internos de Products. El registro ordena dependencias, rechaza nombres o rutas duplicadas y falla al arrancar ante dependencias ausentes o circulares.
+Importa únicamente `sale.api.ts` y sus tipos públicos. No importes controllers,
+repositories Prisma ni detalles internos de Sales. El registro ordena
+dependencias, rechaza nombres o rutas duplicadas y falla al arrancar ante
+dependencias ausentes o circulares.
 
 ### 12. Probar el módulo
 

@@ -41,8 +41,8 @@ Antes de implementar:
 7.  leer `WORKFLOWS.md`;
 8.  leer `API_CONTRACTS.md`;
 9.  leer la especificación concreta del módulo solicitado;
-10. inspeccionar `src/modules/products` y, cuando corresponda,
-    `src/modules/purchases` únicamente como referencias estructurales;
+10. inspeccionar los módulos Winter vigentes (por ejemplo
+    `src/modules/articulos` y `src/modules/compras`);
 11. inspeccionar las APIs públicas de sus dependencias;
 12. revisar tests existentes relacionados.
 
@@ -281,7 +281,7 @@ que sean indispensables para cumplir el contrato.
 ### RULE-014 --- No modificar módulos no relacionados
 
 Una tarea de Inventory no debe producir cambios arbitrarios en Articulos,
-Compras, Production, los módulos de referencia `products`/`purchases` o Access Management.
+Compras, Production o Access Management.
 
 ### RULE-015 --- Mantener inyección de dependencias
 
@@ -319,12 +319,12 @@ composición/arranque.
 No crear un segundo sistema ni tratar Logger y Winter como productos
 independientes. Winter extiende el monolito modular existente de Logger.
 
-### RULE-022 --- Products y Purchases son referencias, no ownership final
+### RULE-022 --- Articulos y Compras son el ownership final
 
-Los módulos `products` y `purchases` existentes en Logger son prototipos y
-referencias estructurales. Winter define sus propios módulos `Articulos` y
-`Compras`. No trasladar automáticamente reglas, tablas o contratos de los
-prototipos al dominio final.
+Products y Purchases pertenecieron al proyecto Logger y fueron retirados del
+runtime de Winter una vez implementados Articulos y Compras. Winter utiliza
+únicamente los módulos oficiales `Articulos` y `Compras`; no trasladar reglas,
+tablas ni contratos de los módulos retirados al dominio final.
 
 ### RULE-023 --- Identidad de actor y participantes
 
@@ -586,7 +586,7 @@ production
     depends on:
         recipes
         inventory
-        products
+        articulos
 ```
 
 El código debe consumir:
@@ -594,7 +594,7 @@ El código debe consumir:
 ``` ts
 resolve<RecipeApi>("recipes")
 resolve<InventoryApi>("inventory")
-resolve<ProductApi>("products")
+resolve<ArticulosApi>("articulos")
 ```
 
 No acceder directamente a sus repositories.

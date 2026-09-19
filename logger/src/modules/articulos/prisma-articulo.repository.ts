@@ -18,7 +18,7 @@ export class PrismaArticuloRepository implements ArticuloRepository {
   constructor(
     private readonly client: Pick<
       PrismaClient,
-      "articulo" | "inventoryMovement" | "purchaseLine" | "productionWorkInput" | "productionBatch" | "$queryRaw"
+      "articulo" | "inventoryMovement" | "compraItem" | "productionWorkInput" | "productionBatch" | "$queryRaw"
     >,
   ) {}
 
@@ -38,13 +38,13 @@ export class PrismaArticuloRepository implements ArticuloRepository {
   }
 
   async hasOperationalReferences(id: string): Promise<boolean> {
-    const [inventoryMovement, purchaseLine, productionWorkInput, productionBatch] =
+    const [inventoryMovement, compraItem, productionWorkInput, productionBatch] =
       await Promise.all([
         this.client.inventoryMovement.findFirst({
           where: { articuloId: id },
           select: { id: true },
         }),
-        this.client.purchaseLine.findFirst({
+        this.client.compraItem.findFirst({
           where: { articuloId: id },
           select: { id: true },
         }),
@@ -59,7 +59,7 @@ export class PrismaArticuloRepository implements ArticuloRepository {
       ]);
 
     return inventoryMovement !== null
-      || purchaseLine !== null
+      || compraItem !== null
       || productionWorkInput !== null
       || productionBatch !== null;
   }

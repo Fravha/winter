@@ -69,8 +69,9 @@ production
 inventory
 ```
 
-`products` y `purchases` del proyecto Logger permanecen como referencias y
-módulos de prueba de la base técnica. No son los módulos finales de Winter.
+Products y Purchases pertenecieron al proyecto Logger y fueron retirados del
+runtime de Winter una vez implementados Articulos y Compras. No son módulos
+disponibles ni ownership del dominio final.
 
 No se crea un módulo `Assets` para el MVP.
 
@@ -93,8 +94,8 @@ ARTICULOS
 └── Articulo
 
 COMPRAS
-├── Purchase
-├── PurchaseLine
+├── Compra
+├── CompraItem
 └── demás entidades existentes de compras
 
 PRODUCTION
@@ -196,7 +197,8 @@ createdAt
 updatedAt
 ```
 
-El módulo `products` existente en Logger se utiliza únicamente como referencia estructural. El módulo `Articulos` de Winter tendrá su propio ownership, contratos y persistencia.
+El módulo oficial `Articulos` de Winter tiene su propio ownership, contratos y
+persistencia.
 
 ### Ownership
 
@@ -206,13 +208,15 @@ El módulo `products` existente en Logger se utiliza únicamente como referencia
 
 Production referencia artículos mediante `articuloId`.
 
-No crea un Product alternativo ni una entidad de insumo duplicada.
+No crea una entidad de insumo duplicada.
 
 ---
 
 # 6. Compras
 
-Compras es el módulo final de Winter responsable de adquisiciones y sus documentos. El módulo `purchases` previo de Logger es solamente referencia estructural.
+Compras es el módulo final de Winter responsable de adquisiciones y sus
+documentos. El módulo legacy `purchases` fue retirado y no ofrece una API de
+compatibilidad.
 
 Production no administra compras.
 
@@ -1905,8 +1909,9 @@ Los insumos utilizados se registran cuando realmente se aplican durante un traba
 
 ### D13. Winter construye módulos propios sobre Logger
 
-`products` y `purchases` son módulos de referencia de Logger. Los módulos
-finales del dominio son `Articulos` y `Compras`.
+Products y Purchases pertenecieron al proyecto Logger y fueron retirados del
+runtime de Winter. Los módulos finales del dominio son `Articulos` y
+`Compras`.
 
 ### D14. Usuario autenticado como actor
 
@@ -1948,7 +1953,8 @@ DOMAIN_MODEL.md
 AGGREGATES_AND_ENTITIES.md
 ```
 
-Después debe revisar las APIs públicas de los módulos dependientes y la implementación existente de Products/Purchases cuando corresponda.
+Después debe revisar las APIs públicas de los módulos dependientes y la
+implementación vigente de los módulos Winter correspondientes.
 
 La IA **no debe inventar nuevas entidades, estados o relaciones de negocio** si este documento no las contempla.
 
