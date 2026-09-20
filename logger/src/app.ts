@@ -50,3 +50,5 @@ export function createApp(config: AppConfig = env) {
 }
 
 export const app = createApp();
+
+export default app;
