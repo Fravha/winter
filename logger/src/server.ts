@@ -1,5 +1,4 @@
-/// <reference path="./shared/types/express.d.ts" />
-
+import "./shared/types/express.js";
 import { app } from "./app.js";
 import { env } from "./config/env.js";
 import { prisma } from "./infrastructure/database/prisma-client.js";
