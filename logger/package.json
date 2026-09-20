@@ -1,11 +1,11 @@
 {
-  "name": "logger-api",
+  "name": "winter-api",
   "version": "1.0.0",
-  "description": "Logger API v1 starter with Firebase authentication and Prisma RBAC",
+  "description": "Winter API v1 | Logger API",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "rm -rf dist && prisma generate && tsc && node scripts/package-prisma-client.mjs",
+    "build": "rimraf dist && prisma generate && tsc && node scripts/package-prisma-client.mjs",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test --test-concurrency=1 tests/**/*.test.ts",
