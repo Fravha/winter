@@ -78,7 +78,7 @@ export function ArticuloSelect({ value, onChange, disabled, onArticuloLoaded }: 
   );
 }
 
-export function WarehouseSelect({ value, onChange, disabled, placeholder = "Seleccione almacén", onWarehousesLoaded }: { value: string, onChange: (v: string) => void, disabled?: boolean, placeholder?: string, onWarehousesLoaded?: (warehouses: Warehouse[]) => void }) {
+export function WarehouseSelect({ value, onChange, disabled, placeholder = "Seleccione almacén", onWarehousesLoaded, allowAll, allLabel = "Todos los almacenes" }: { value: string, onChange: (v: string) => void, disabled?: boolean, placeholder?: string, onWarehousesLoaded?: (warehouses: Warehouse[]) => void, allowAll?: boolean, allLabel?: string }) {
   const { data, isLoading, error, isFetching, refetch } = useActiveWarehouses();
   const mappedError = error ? mapInventoryError(error) : null;
   const hasData = !!data;
@@ -120,6 +120,7 @@ export function WarehouseSelect({ value, onChange, disabled, placeholder = "Sele
             </Button>
           </div>
         )}
+        {allowAll && <SelectItem value="ALL">{allLabel}</SelectItem>}
         {data?.map(w => (
           <SelectItem key={w.id} value={w.id}>{w.codigo} - {w.nombre}</SelectItem>
         ))}

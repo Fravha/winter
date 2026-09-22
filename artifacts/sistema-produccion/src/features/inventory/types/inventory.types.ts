@@ -4,6 +4,8 @@ export const LOT_CLASSIFICATIONS = ['PRODUCTO_ENVASADO', 'PRODUCTO_TERMINADO', '
 export type LotClassification = (typeof LOT_CLASSIFICATIONS)[number];
 export const ADJUSTMENT_DIRECTIONS = ['INCREASE', 'DECREASE'] as const;
 export type AdjustmentDirection = (typeof ADJUSTMENT_DIRECTIONS)[number];
+export const MOVEMENT_TYPES = ['INBOUND', 'OUTBOUND', 'TRANSFER', 'ADJUSTMENT'] as const;
+export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
 export type Warehouse = { id: string; codigo: string; nombre: string; ubicacion: string | null; encargadoUserId: string | null; activo: boolean; observaciones: string | null; createdAt: string; updatedAt: string };
 export type WarehouseListFilters = { page?: number; pageSize?: number };
@@ -22,3 +24,35 @@ export type AdjustmentInput = MovementInput & { direction: AdjustmentDirection }
 export type MovementResult = { movementId: string; articuloId: string; inventoryLotId: string | null; quantity: string; unit: InventoryUnit; resultingStock: string; createdAt: string };
 export type TransferResult = MovementResult & { destinationResultingStock: string };
 export type IdempotentCommand<T> = { input: T; idempotencyKey: string };
+
+export type MovementReference = { id: string; codigo: string; nombre: string };
+export type MovementLot = { id: string; lotCode: string };
+export type InventoryMovement = {
+  id: string;
+  type: MovementType;
+  source: string;
+  reason: string | null;
+  quantity: string;
+  unit: InventoryUnit;
+  stockBefore: string;
+  resultingStock: string;
+  createdAt: string;
+  articulo: MovementReference;
+  warehouse: MovementReference;
+  destinationWarehouse: MovementReference | null;
+  lot: MovementLot | null;
+};
+export type MovementListFilters = {
+  articuloId: string;
+  warehouseId?: string;
+  inventoryLotId?: string;
+  type?: MovementType;
+  page?: number;
+  pageSize?: number;
+};
+export type MovementPagination = { page: number; pageSize: number; total: number; totalPages: number };
+export type MovementHistoryResponse = {
+  items: InventoryMovement[];
+  pagination: MovementPagination;
+  requestId: string | null;
+};

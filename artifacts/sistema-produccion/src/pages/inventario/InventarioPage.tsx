@@ -4,6 +4,7 @@ import { StockLookupView } from '../../features/inventory/components/StockLookup
 import { WarehousesView } from '../../features/inventory/components/WarehousesView';
 import { LotsView } from '../../features/inventory/components/LotsView';
 import { OperationsView } from '../../features/inventory/components/OperationsView';
+import { MovementsView } from '../../features/inventory/components/MovementsView';
 
 export default function InventarioPage() {
   return (
@@ -17,21 +18,25 @@ export default function InventarioPage() {
       <Tabs defaultValue="stock" className="w-full">
         <div className="w-full overflow-x-auto pb-2 scrollbar-none">
           <TabsList className="mb-2 min-w-max">
-            <TabsTrigger value="stock" className="px-6">Consulta de Stock</TabsTrigger>
-            <TabsTrigger value="operaciones" className="px-6">Operaciones Físicas</TabsTrigger>
+            <TabsTrigger value="stock" className="px-6">Stock</TabsTrigger>
             <TabsTrigger value="almacenes" className="px-6">Almacenes</TabsTrigger>
-            <TabsTrigger value="lotes" className="px-6">Lotes y Trazabilidad</TabsTrigger>
+            <TabsTrigger value="movimientos" className="px-6">Movimientos</TabsTrigger>
+            <TabsTrigger value="operaciones" className="px-6">Operaciones</TabsTrigger>
+            <TabsTrigger value="lotes" className="px-6">Lotes</TabsTrigger>
           </TabsList>
         </div>
         
         <TabsContent value="stock" className="mt-4 focus-visible:outline-none">
           <StockLookupView />
         </TabsContent>
-        <TabsContent value="operaciones" className="mt-4 focus-visible:outline-none">
-          <OperationsView />
-        </TabsContent>
         <TabsContent value="almacenes" className="mt-4 focus-visible:outline-none">
           <WarehousesView />
+        </TabsContent>
+        <TabsContent value="movimientos" className="mt-4 focus-visible:outline-none">
+          <MovementsView />
+        </TabsContent>
+        <TabsContent value="operaciones" className="mt-4 focus-visible:outline-none">
+          <OperationsView />
         </TabsContent>
         <TabsContent value="lotes" className="mt-4 focus-visible:outline-none">
           <LotsView />

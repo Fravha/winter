@@ -1,4 +1,4 @@
-import type { StockFilters, WarehouseListFilters } from '../types/inventory.types';
+import type { MovementListFilters, StockFilters, WarehouseListFilters } from '../types/inventory.types';
 export const inventoryKeys = {
   all: ['inventory'] as const,
   warehouses: () => [...inventoryKeys.all, 'warehouses'] as const,
@@ -12,4 +12,6 @@ export const inventoryKeys = {
   availableValue: (filters: StockFilters) => [...inventoryKeys.available(), filters] as const,
   lots: () => [...inventoryKeys.all, 'lots'] as const,
   lot: (id: string) => [...inventoryKeys.lots(), id] as const,
+  movements: () => [...inventoryKeys.all, 'movements'] as const,
+  movementList: (filters: MovementListFilters) => [...inventoryKeys.movements(), filters.articuloId, filters] as const,
 };

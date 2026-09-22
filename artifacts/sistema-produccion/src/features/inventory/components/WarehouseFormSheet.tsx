@@ -209,10 +209,10 @@ function EditWarehouseForm({ open, onOpenChange, onSuccessClose, onPendingChange
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormItem>
-          <FormLabel>Código</FormLabel>
-          <FormControl><Input value={warehouse.codigo} disabled className="bg-muted font-mono" /></FormControl>
-        </FormItem>
+        <div className="space-y-2">
+          <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Código</label>
+          <Input value={warehouse.codigo} disabled className="bg-muted font-mono" />
+        </div>
         <FormField
           control={form.control}
           name="nombre"

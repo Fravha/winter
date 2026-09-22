@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
-import { useForm, UseFormReturn, FieldValues, Path } from 'react-hook-form';
+import { useState, useEffect, useRef } from 'react';
+import { useForm, UseFormReturn, FieldValues, Path, PathValue } from 'react-hook-form';
 import { UseMutationOptions, UseMutationResult } from '@tanstack/react-query';
-import { PathValue } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/auth/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import { useRegisterInbound, useRegisterOutbound, useTransferStock, useAdjustStock } from '../api/inventory.hooks';
 import { movementSchema, transferSchema, adjustmentSchema, type MovementFormValues, type TransferFormValues, type AdjustmentFormValues } from '../schemas/inventory.schema';
 import { ArticuloSelect, WarehouseSelect } from './SharedSelects';
@@ -17,8 +17,32 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { CheckCircle2, AlertCircle, Loader2, KeyRound } from 'lucide-react';
-import { IdempotentCommand } from '../types/inventory.types';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { IdempotentCommand, type Warehouse } from '../types/inventory.types';
 import { Articulo } from '../../articulos/types/articulo.types';
+
+export type SnapshotDetails = {
+  type: 'INBOUND' | 'OUTBOUND' | 'TRANSFER' | 'ADJUST';
+  labels: {
+    articulo: string;
+    warehouse?: string;
+    sourceWarehouse?: string;
+    destinationWarehouse?: string;
+  };
+  details: {
+    quantity: string;
+    unit: string;
+    reason?: string;
+    direction?: 'INCREASE' | 'DECREASE';
+    authorizeNegativeStock?: boolean;
+    negativeStockReason?: string;
+  };
+};
+
+export type ConfirmationSnapshot<TInput> = SnapshotDetails & {
+  key: string;
+  input: TInput;
+};
 
 function validateQty(val: string, ctx: z.RefinementCtx, unit: string) {
   const num = Number(val);
@@ -51,6 +75,7 @@ function useMovementLogic<TInput, TResult, TForm extends FieldValues>(
   buildInput: (values: TForm) => TInput
 ) {
   const { can } = useAuth();
+  const { toast } = useToast();
   const [idempotencyState, setIdempotencyState] = useState<{ key: string; payload: string | null; isRetry: boolean }>({
     key: crypto.randomUUID(), payload: null, isRetry: false
   });
@@ -60,6 +85,10 @@ function useMovementLogic<TInput, TResult, TForm extends FieldValues>(
   const [validationDetails, setValidationDetails] = useState<unknown>(null);
   const [showNegativeAuth, setShowNegativeAuth] = useState(false);
   const [loadedArticulos, setLoadedArticulos] = useState<Articulo[]>([]);
+  const [loadedWarehouses, setLoadedWarehouses] = useState<Warehouse[]>([]);
+  const [pendingConfirmData, setPendingConfirmData] = useState<ConfirmationSnapshot<TInput> | null>(null);
+
+  const isMutatingRef = useRef(false);
 
   const qty = form.watch('quantity' as Path<TForm>);
   const artId = form.watch('articuloId' as Path<TForm>);
@@ -78,6 +107,8 @@ function useMovementLogic<TInput, TResult, TForm extends FieldValues>(
   }, [artId, loadedArticulos, form]);
 
   const handleSuccess = (data: TResult) => {
+    isMutatingRef.current = false;
+    setPendingConfirmData(null);
     setSuccessResult(data as { movementId: string; resultingStock: string; unit: string; destinationResultingStock?: string });
     setErrorMsg(null);
     setReqId(null);
@@ -87,9 +118,12 @@ function useMovementLogic<TInput, TResult, TForm extends FieldValues>(
     form.setValue('quantity' as Path<TForm>, '' as PathValue<TForm, Path<TForm>>);
     form.setValue('authorizeNegativeStock' as Path<TForm>, false as PathValue<TForm, Path<TForm>>);
     form.setValue('negativeStockReason' as Path<TForm>, '' as PathValue<TForm, Path<TForm>>);
+    toast({ title: 'Operación Registrada', description: 'El movimiento de stock ha sido procesado exitosamente.' });
   };
 
   const handleError = (error: unknown, payloadObj: unknown) => {
+    isMutatingRef.current = false;
+    setPendingConfirmData(null);
     const mapped = mapInventoryError(error);
     if (mapped.code === 'NEGATIVE_STOCK_AUTHORIZATION_REQUIRED' && can('inventory:negative_stock_authorize')) {
       setShowNegativeAuth(true);
@@ -109,7 +143,7 @@ function useMovementLogic<TInput, TResult, TForm extends FieldValues>(
 
   const mutation = mutationHook({ onSuccess: handleSuccess, onError: (e: unknown, v: { input: TInput, idempotencyKey: string }) => handleError(e, v.input) });
 
-  const onSubmit = (values: TForm) => {
+  const onSubmit = (values: TForm, snapshotDetails: SnapshotDetails) => {
     setErrorMsg(null);
     setReqId(null);
     setValidationDetails(null);
@@ -125,10 +159,23 @@ function useMovementLogic<TInput, TResult, TForm extends FieldValues>(
       setIdempotencyState({ key, payload: payloadString, isRetry: false });
     }
 
-    mutation.mutate({ input: inputData, idempotencyKey: key });
+    setPendingConfirmData({ input: inputData, key, ...snapshotDetails });
   };
 
-  return { form, mutation, onSubmit, successResult, errorMsg, reqId, validationDetails, showNegativeAuth, setShowNegativeAuth, loadedArticulos, setLoadedArticulos, idempotencyState };
+  const confirmOperation = () => {
+    if (pendingConfirmData && !isMutatingRef.current) {
+      isMutatingRef.current = true;
+      mutation.mutate({ input: pendingConfirmData.input, idempotencyKey: pendingConfirmData.key });
+    }
+  };
+
+  const cancelOperation = () => {
+    if (!isMutatingRef.current) {
+      setPendingConfirmData(null);
+    }
+  };
+
+  return { form, mutation, onSubmit, confirmOperation, cancelOperation, pendingConfirmData, successResult, errorMsg, reqId, validationDetails, showNegativeAuth, setShowNegativeAuth, loadedArticulos, setLoadedArticulos, loadedWarehouses, setLoadedWarehouses, idempotencyState };
 }
 
 interface CommonMovementFormProps {
@@ -142,13 +189,13 @@ export function InboundForm({ title, description }: CommonMovementFormProps) {
     defaultValues: { articuloId: '', warehouseId: '', quantity: '', unit: 'UNIDAD', source: '', reason: '', inventoryLotId: '', authorizeNegativeStock: false, negativeStockReason: '' }
   });
 
-  const { mutation, onSubmit, successResult, errorMsg, reqId, validationDetails, showNegativeAuth, setShowNegativeAuth, loadedArticulos, setLoadedArticulos, idempotencyState } = useMovementLogic(
+  const logic = useMovementLogic(
     useRegisterInbound,
     form,
     (v) => ({ ...v, reason: (v.reason as string) || undefined, inventoryLotId: (v.inventoryLotId as string) || undefined, negativeStockReason: (v.negativeStockReason as string) || undefined })
   );
 
-  return <FormLayout form={form} onSubmit={onSubmit} mutation={mutation} title={title} description={description} successResult={successResult} errorMsg={errorMsg} reqId={reqId} validationDetails={validationDetails} showNegativeAuth={showNegativeAuth} setShowNegativeAuth={setShowNegativeAuth} setLoadedArticulos={setLoadedArticulos} type="INBOUND" idempotencyState={idempotencyState} />;
+  return <FormLayout {...logic} title={title} description={description} type="INBOUND" />;
 }
 
 export function OutboundForm({ title, description }: CommonMovementFormProps) {
@@ -157,13 +204,13 @@ export function OutboundForm({ title, description }: CommonMovementFormProps) {
     defaultValues: { articuloId: '', warehouseId: '', quantity: '', unit: 'UNIDAD', source: '', reason: '', inventoryLotId: '', authorizeNegativeStock: false, negativeStockReason: '' }
   });
 
-  const { mutation, onSubmit, successResult, errorMsg, reqId, validationDetails, showNegativeAuth, setShowNegativeAuth, loadedArticulos, setLoadedArticulos, idempotencyState } = useMovementLogic(
+  const logic = useMovementLogic(
     useRegisterOutbound,
     form,
     (v) => ({ ...v, reason: (v.reason as string) || undefined, inventoryLotId: (v.inventoryLotId as string) || undefined, negativeStockReason: (v.negativeStockReason as string) || undefined })
   );
 
-  return <FormLayout form={form} onSubmit={onSubmit} mutation={mutation} title={title} description={description} successResult={successResult} errorMsg={errorMsg} reqId={reqId} validationDetails={validationDetails} showNegativeAuth={showNegativeAuth} setShowNegativeAuth={setShowNegativeAuth} setLoadedArticulos={setLoadedArticulos} type="OUTBOUND" idempotencyState={idempotencyState} />;
+  return <FormLayout {...logic} title={title} description={description} type="OUTBOUND" />;
 }
 
 export function TransferForm({ title, description }: CommonMovementFormProps) {
@@ -172,13 +219,13 @@ export function TransferForm({ title, description }: CommonMovementFormProps) {
     defaultValues: { articuloId: '', sourceWarehouseId: '', destinationWarehouseId: '', quantity: '', unit: 'UNIDAD', source: '', reason: '', inventoryLotId: '', authorizeNegativeStock: false, negativeStockReason: '' }
   });
 
-  const { mutation, onSubmit, successResult, errorMsg, reqId, validationDetails, showNegativeAuth, setShowNegativeAuth, loadedArticulos, setLoadedArticulos, idempotencyState } = useMovementLogic(
+  const logic = useMovementLogic(
     useTransferStock,
     form,
     (v) => ({ ...v, reason: (v.reason as string) || undefined, inventoryLotId: (v.inventoryLotId as string) || undefined, negativeStockReason: (v.negativeStockReason as string) || undefined })
   );
 
-  return <FormLayout form={form} onSubmit={onSubmit} mutation={mutation} title={title} description={description} successResult={successResult} errorMsg={errorMsg} reqId={reqId} validationDetails={validationDetails} showNegativeAuth={showNegativeAuth} setShowNegativeAuth={setShowNegativeAuth} setLoadedArticulos={setLoadedArticulos} type="TRANSFER" idempotencyState={idempotencyState} />;
+  return <FormLayout {...logic} title={title} description={description} type="TRANSFER" />;
 }
 
 export function AdjustForm({ title, description }: CommonMovementFormProps) {
@@ -187,20 +234,23 @@ export function AdjustForm({ title, description }: CommonMovementFormProps) {
     defaultValues: { articuloId: '', warehouseId: '', quantity: '', unit: 'UNIDAD', source: '', reason: '', inventoryLotId: '', direction: 'DECREASE', authorizeNegativeStock: false, negativeStockReason: '' }
   });
 
-  const { mutation, onSubmit, successResult, errorMsg, reqId, validationDetails, showNegativeAuth, setShowNegativeAuth, loadedArticulos, setLoadedArticulos, idempotencyState } = useMovementLogic(
+  const logic = useMovementLogic(
     useAdjustStock,
     form,
     (v) => ({ ...v, reason: (v.reason as string) || undefined, inventoryLotId: (v.inventoryLotId as string) || undefined, negativeStockReason: (v.negativeStockReason as string) || undefined })
   );
 
-  return <FormLayout form={form} onSubmit={onSubmit} mutation={mutation} title={title} description={description} successResult={successResult} errorMsg={errorMsg} reqId={reqId} validationDetails={validationDetails} showNegativeAuth={showNegativeAuth} setShowNegativeAuth={setShowNegativeAuth} setLoadedArticulos={setLoadedArticulos} type="ADJUST" idempotencyState={idempotencyState} />;
+  return <FormLayout {...logic} title={title} description={description} type="ADJUST" />;
 }
 
-function FormLayout<TForm extends FieldValues>({
-  form, onSubmit, mutation, title, description, successResult, errorMsg, reqId, validationDetails, showNegativeAuth, setShowNegativeAuth, setLoadedArticulos, type, idempotencyState
+function FormLayout<TForm extends FieldValues, TInput>({
+  form, onSubmit, confirmOperation, cancelOperation, pendingConfirmData, mutation, title, description, successResult, errorMsg, reqId, validationDetails, showNegativeAuth, setShowNegativeAuth, setLoadedArticulos, loadedArticulos, setLoadedWarehouses, loadedWarehouses, type, idempotencyState
 }: {
   form: UseFormReturn<TForm>;
-  onSubmit: (values: TForm) => void;
+  onSubmit: (values: TForm, snapshot: SnapshotDetails) => void;
+  confirmOperation: () => void;
+  cancelOperation: () => void;
+  pendingConfirmData: ConfirmationSnapshot<TInput> | null;
   mutation: { isPending: boolean };
   title: string;
   description: string;
@@ -211,10 +261,117 @@ function FormLayout<TForm extends FieldValues>({
   showNegativeAuth: boolean;
   setShowNegativeAuth: (v: boolean) => void;
   setLoadedArticulos: (v: Articulo[]) => void;
+  loadedArticulos: Articulo[];
+  setLoadedWarehouses: (v: Warehouse[]) => void;
+  loadedWarehouses: Warehouse[];
   type: 'INBOUND' | 'OUTBOUND' | 'TRANSFER' | 'ADJUST';
   idempotencyState: { isRetry: boolean };
 }) {
   const isPending = mutation.isPending;
+
+  const handleFormSubmit = (values: TForm) => {
+    const valuesRecord = values as Record<string, unknown>;
+
+    const artId = typeof valuesRecord.articuloId === 'string' ? valuesRecord.articuloId : '';
+    const art = loadedArticulos.find(a => a.id === artId);
+    const artLabel = art ? `${art.codigo} - ${art.nombre}` : 'Artículo desconocido';
+
+    let whLabel, sourceWhLabel, destWhLabel;
+    if (type === 'TRANSFER') {
+      const sourceId = typeof valuesRecord.sourceWarehouseId === 'string' ? valuesRecord.sourceWarehouseId : '';
+      const destId = typeof valuesRecord.destinationWarehouseId === 'string' ? valuesRecord.destinationWarehouseId : '';
+      const sourceWh = loadedWarehouses.find(w => w.id === sourceId);
+      const destWh = loadedWarehouses.find(w => w.id === destId);
+      sourceWhLabel = sourceWh ? `${sourceWh.codigo} - ${sourceWh.nombre}` : 'Origen desconocido';
+      destWhLabel = destWh ? `${destWh.codigo} - ${destWh.nombre}` : 'Destino desconocido';
+    } else {
+      const whId = typeof valuesRecord.warehouseId === 'string' ? valuesRecord.warehouseId : '';
+      const wh = loadedWarehouses.find(w => w.id === whId);
+      whLabel = wh ? `${wh.codigo} - ${wh.nombre}` : 'Almacén desconocido';
+    }
+
+    const snapshotDetails: SnapshotDetails = {
+      type,
+      labels: {
+        articulo: artLabel,
+        warehouse: whLabel,
+        sourceWarehouse: sourceWhLabel,
+        destinationWarehouse: destWhLabel,
+      },
+      details: {
+        quantity: String(valuesRecord.quantity || ''),
+        unit: String(valuesRecord.unit || ''),
+        reason: typeof valuesRecord.reason === 'string' && valuesRecord.reason ? valuesRecord.reason : undefined,
+        direction: type === 'ADJUST' ? (valuesRecord.direction as 'INCREASE' | 'DECREASE') : undefined,
+        authorizeNegativeStock: Boolean(valuesRecord.authorizeNegativeStock),
+        negativeStockReason: typeof valuesRecord.negativeStockReason === 'string' ? valuesRecord.negativeStockReason : undefined,
+      }
+    };
+
+    onSubmit(values, snapshotDetails);
+  };
+
+  const renderConfirmationContent = () => {
+    if (!pendingConfirmData) return null;
+    const { type, labels, details } = pendingConfirmData;
+
+    if (type === 'TRANSFER') {
+      return (
+        <div className="space-y-4 text-sm mt-4">
+          <p>
+            Se transferirán <span className="font-semibold">{details.quantity} {details.unit}</span> de <span className="font-semibold">{labels.articulo}</span>
+            <br />
+            desde <span className="font-semibold">{labels.sourceWarehouse}</span>
+            <br />
+            hacia <span className="font-semibold">{labels.destinationWarehouse}</span>.
+          </p>
+          {details.reason && <p>Motivo: {details.reason}</p>}
+          {details.authorizeNegativeStock && (
+            <p className="text-warning font-medium">Incluye autorización de stock negativo: {details.negativeStockReason}</p>
+          )}
+        </div>
+      );
+    } else if (type === 'ADJUST') {
+      const isIncrease = details.direction === 'INCREASE';
+      return (
+        <div className="space-y-4 text-sm mt-4">
+          <p>
+            Se registrará un ajuste para <span className="font-semibold">{isIncrease ? 'aumentar' : 'disminuir'}</span> <span className="font-semibold">{details.quantity} {details.unit}</span> de <span className="font-semibold">{labels.articulo}</span>
+            <br />
+            en <span className="font-semibold">{labels.warehouse}</span>.
+          </p>
+          {details.reason && <p>Motivo: {details.reason}</p>}
+          {details.authorizeNegativeStock && (
+            <p className="text-warning font-medium">Incluye autorización de stock negativo: {details.negativeStockReason}</p>
+          )}
+        </div>
+      );
+    } else {
+      const isOutbound = type === 'OUTBOUND';
+      return (
+        <div className="space-y-4 text-sm mt-4">
+          <p>
+            Se {isOutbound ? 'descontarán' : 'registrará una entrada de'} <span className="font-semibold">{details.quantity} {details.unit}</span> de <span className="font-semibold">{labels.articulo}</span>
+            <br />
+            {isOutbound ? 'de' : 'en'} <span className="font-semibold">{labels.warehouse}</span>.
+          </p>
+          {details.reason && <p>Motivo: {details.reason}</p>}
+          {details.authorizeNegativeStock && (
+            <p className="text-warning font-medium">Incluye autorización de stock negativo: {details.negativeStockReason}</p>
+          )}
+        </div>
+      );
+    }
+  };
+
+  const getPrimaryButtonLabel = () => {
+    switch (type) {
+      case 'INBOUND': return 'Registrar entrada';
+      case 'OUTBOUND': return 'Registrar salida';
+      case 'TRANSFER': return 'Transferir';
+      case 'ADJUST': return 'Registrar ajuste';
+    }
+  };
 
   return (
     <Card className="border-border shadow-sm">
@@ -241,7 +398,7 @@ function FormLayout<TForm extends FieldValues>({
         )}
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -265,7 +422,7 @@ function FormLayout<TForm extends FieldValues>({
                     <FormItem>
                       <FormLabel>Almacén *</FormLabel>
                       <FormControl>
-                        <WarehouseSelect value={field.value as string} onChange={field.onChange} disabled={isPending || showNegativeAuth} />
+                        <WarehouseSelect value={field.value as string} onChange={field.onChange} disabled={isPending || showNegativeAuth} onWarehousesLoaded={setLoadedWarehouses} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -280,7 +437,7 @@ function FormLayout<TForm extends FieldValues>({
                       <FormItem>
                         <FormLabel>Almacén Origen *</FormLabel>
                         <FormControl>
-                          <WarehouseSelect value={field.value as string} onChange={field.onChange} disabled={isPending || showNegativeAuth} placeholder="Almacén de salida" />
+                          <WarehouseSelect value={field.value as string} onChange={field.onChange} disabled={isPending || showNegativeAuth} placeholder="Almacén de salida" onWarehousesLoaded={setLoadedWarehouses} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -293,7 +450,7 @@ function FormLayout<TForm extends FieldValues>({
                       <FormItem>
                         <FormLabel>Almacén Destino *</FormLabel>
                         <FormControl>
-                          <WarehouseSelect value={field.value as string} onChange={field.onChange} disabled={isPending || showNegativeAuth} placeholder="Almacén de llegada" />
+                          <WarehouseSelect value={field.value as string} onChange={field.onChange} disabled={isPending || showNegativeAuth} placeholder="Almacén de llegada" onWarehousesLoaded={setLoadedWarehouses} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -495,14 +652,33 @@ function FormLayout<TForm extends FieldValues>({
             {!showNegativeAuth && (
               <div className="flex justify-end pt-4 border-t border-border">
                 <Button type="submit" disabled={isPending} size="lg" className="min-w-[200px]" data-testid="button-submit-movement">
-                  {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Confirmar Operación
+                  Continuar
                 </Button>
               </div>
             )}
           </form>
         </Form>
       </CardContent>
+
+      <AlertDialog open={!!pendingConfirmData} onOpenChange={(open) => { if (!open && !isPending) cancelOperation(); }}>
+        <AlertDialogContent
+          onEscapeKeyDown={(e) => { if (isPending) e.preventDefault(); }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar operación</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              {renderConfirmationContent()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending} onClick={(e) => { e.preventDefault(); cancelOperation(); }}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction disabled={isPending} onClick={(e) => { e.preventDefault(); confirmOperation(); }}>
+              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {getPrimaryButtonLabel()}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
