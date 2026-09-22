@@ -22,6 +22,8 @@ import ArticulosPage from '@/pages/articulos/ArticulosPage';
 
 
 
+import ComprasPage from '@/pages/compras/ComprasPage';
+
 const queryClient = new QueryClient();
 
 function ProtectedRoutes() {
@@ -39,11 +41,7 @@ function ProtectedRoutes() {
 
           <Route path="/compras">
             <PermissionGuard permission="compras:read" showErrorPage>
-              <PlaceholderPage 
-                eyebrow="Operaciones"
-                title="Compras"
-                description="Registro y recepción de compras a proveedores."
-              />
+              <ComprasPage />
             </PermissionGuard>
           </Route>
 
