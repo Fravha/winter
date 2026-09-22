@@ -19,10 +19,8 @@ import HomePage from '@/pages/HomePage';
 import NotFound from '@/pages/not-found';
 import { PlaceholderPage } from '@/pages/PlaceholderPage';
 import ArticulosPage from '@/pages/articulos/ArticulosPage';
-
-
-
 import ComprasPage from '@/pages/compras/ComprasPage';
+import InventarioPage from '@/pages/inventario/InventarioPage';
 
 const queryClient = new QueryClient();
 
@@ -47,11 +45,7 @@ function ProtectedRoutes() {
 
           <Route path="/inventario">
             <PermissionGuard permission="inventory:read" showErrorPage>
-              <PlaceholderPage 
-                eyebrow="Operaciones"
-                title="Inventario"
-                description="Gestión de almacenes, stock, lotes y movimientos."
-              />
+              <InventarioPage />
             </PermissionGuard>
           </Route>
 

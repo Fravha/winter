@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useReceiveCompra } from '../api/compras.hooks';
-import { useActiveWarehouses } from '../api/inventory.hooks';
+import { useActiveWarehouses } from '@/features/inventory/api/inventory.hooks';
 import { mapCompraError } from '../api/compras.error';
 import type { Compra, ReceiveCompraInput } from '../types/compra.types';
 import { receiveCompraSchema } from '../schemas/compra.schema';
