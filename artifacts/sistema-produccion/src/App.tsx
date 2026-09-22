@@ -18,6 +18,9 @@ import LoginPage from '@/pages/auth/LoginPage';
 import HomePage from '@/pages/HomePage';
 import NotFound from '@/pages/not-found';
 import { PlaceholderPage } from '@/pages/PlaceholderPage';
+import ArticulosPage from '@/pages/articulos/ArticulosPage';
+
+
 
 const queryClient = new QueryClient();
 
@@ -30,11 +33,7 @@ function ProtectedRoutes() {
           
           <Route path="/articulos">
             <PermissionGuard permission="articulos:read" showErrorPage>
-              <PlaceholderPage 
-                eyebrow="Operaciones"
-                title="Artículos"
-                description="Maestro de artículos utilizados por Compras, Inventario y Producción."
-              />
+              <ArticulosPage />
             </PermissionGuard>
           </Route>
 
