@@ -78,7 +78,16 @@ export const correctionSchema = z.object({
   operationKey: code,
 }).strict();
 export const measurementCorrectionSchema = correctionSchema.extend({ field: z.enum(["value", "unit", "measuredAt", "participantId", "observations"]) }).strict();
-export const receptionCorrectionSchema = correctionSchema.extend({ field: z.enum(["receivedAt", "producerId", "observations", "status"]) }).strict();
+const receptionCorrectionCommon = {
+  reason: z.string().trim().min(1).max(2000),
+  operationKey: code,
+};
+export const receptionCorrectionSchema = z.discriminatedUnion("field", [
+  z.object({ field: z.literal("receivedAt"), newValue: z.string().datetime({ offset: true }), ...receptionCorrectionCommon }).strict(),
+  z.object({ field: z.literal("producerId"), newValue: z.string().uuid(), ...receptionCorrectionCommon }).strict(),
+  z.object({ field: z.literal("observations"), newValue: z.union([z.string().max(2000), z.null()]), ...receptionCorrectionCommon }).strict(),
+  z.object({ field: z.literal("status"), newValue: z.enum(["ACCEPTED", "ACCEPTED_WITH_OBSERVATIONS"]), ...receptionCorrectionCommon }).strict(),
+]);
 export const grapeReceptionSchema = z.object({
   productionOrderId: z.string().uuid(), producerId: z.string().uuid().optional(),
   receivedAt: z.coerce.date(), status: z.enum(["ACCEPTED", "ACCEPTED_WITH_OBSERVATIONS"]),
@@ -86,7 +95,10 @@ export const grapeReceptionSchema = z.object({
   items: z.array(z.object({ grapeVarietyId: z.string().uuid(), articuloId: z.string().uuid(), quantity, unit: z.enum(["KG","G","L","M","UNIDAD"]) }).strict()).min(1),
   customFields: z.array(z.object({ definitionId: z.string().uuid(), value: z.union([z.string(), z.number(), z.boolean()]) }).strict()).optional(),
   operationKey: z.string().trim().min(1).max(200), requestHash: z.string().trim().min(1).max(500),
-}).strict();
+}).strict().refine(
+  value => value.status !== "ACCEPTED_WITH_OBSERVATIONS" || Boolean(value.observations?.trim()),
+  { message: "observations is required for ACCEPTED_WITH_OBSERVATIONS", path: ["observations"] },
+);
 export const measurementCreateSchema = z.object({
   measurementTypeId: z.string().uuid(), productionBatchId: z.string().uuid().optional(),
   productionContainerId: z.string().uuid().optional(), productionWorkId: z.string().uuid().optional(),

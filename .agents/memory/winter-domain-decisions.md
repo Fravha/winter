@@ -25,6 +25,14 @@ Winter debe aplicar estas decisiones sin asumir comportamientos adicionales:
 - Los workflows críticos coordinan módulos y auditoría mediante un Unit of Work compartido; cualquier fallo crítico revierte toda la operación.
 - `products` y `purchases` son solo referencias técnicas. Winter usa módulos nuevos: `articulos`, `compras`, `production` e `inventory`, sin migración ni compatibilidad obligatoria.
 
+## Replay de comandos auditables
+
+Un replay con la misma identidad y el mismo comando canónico debe devolver el resultado persistido antes de reevaluar reglas que dependen del estado mutable actual.
+
+**Why:** Una corrección válida podía dejar de ser reintentable si después se desactivaba una referencia o cambiaba otra propiedad relacionada, rompiendo la garantía de idempotencia.
+
+**How to apply:** Validar y canonicalizar el input, bloquear la identidad, resolver replay/conflicto y sólo entonces evaluar referencias, invariantes y estado actual para comandos nuevos.
+
 **Why:** Estas reglas resuelven ambigüedades entre los documentos iniciales y evitan duplicación de ownership, trazabilidad incompleta y confirmaciones parciales.
 
 **How to apply:** Usarlas al diseñar contratos, modelos Prisma, servicios, APIs públicas, transacciones y pruebas de los módulos Winter. Verificar que Logger Core no dependa de los módulos de referencia antes de retirarlos físicamente.

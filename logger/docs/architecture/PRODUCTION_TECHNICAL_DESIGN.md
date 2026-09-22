@@ -427,32 +427,25 @@ Tiene exactamente el mismo núcleo aprobado que `Producer`:
 
 ### 4.15 `GrapeReception`
 
-Toda recepción pertenece a una `ProductionOrder`, corresponde a un productor y
-contiene uno o más items.
+Toda recepción pertenece a una `ProductionOrder`, puede referenciar un productor
+y contiene uno o más items.
 
 | Campo | Tipo | Null | Regla |
 |---|---|---:|---|
 | `id` | Id | no | PK |
-| `code` | String | no | unique, estable |
 | `productionOrderId` | Id | no | FK |
-| `producerId` | Id | no | FK |
+| `producerId` | Id | sí | referencia opaca opcional |
 | `receivedAt` | Timestamp | no | fecha/hora efectiva |
-| `requestedWeight` | Decimal | sí | peso solicitado |
-| `receivedWeight` | Decimal | sí | peso recibido |
-| `weightUnit` | Enum `Unit` existente | sí | unidad capturada |
 | `status` | `ACCEPTED \| ACCEPTED_WITH_OBSERVATIONS` | no | estados aprobados |
 | `observations` | String | sí | observación |
 | `actorUserId` | Id externo | no | contexto autenticado |
 | `createdAt` | Timestamp | no | registro |
 | `updatedAt` | Timestamp | no | actualización técnica |
 
-Índices `(productionOrderId, receivedAt)`, `(producerId)`, `(status)`;
-unique `code`. `GrapeReception 1:N GrapeReceptionItem`, mínimo un item.
+Índices `(productionOrderId, receivedAt)`, `(producerId)`, `(status)`.
+`GrapeReception 1:N GrapeReceptionItem`, mínimo un item.
 Una recepción confirmada no se elimina. Una recepción rechazada no se
 persiste. Correcciones son explícitas.
-
-`weightUnit` se limita al enum `Unit` existente y no se convierte a otra
-unidad.
 
 ### 4.16 `GrapeReceptionItem`
 
@@ -461,6 +454,7 @@ unidad.
 | `id` | Id | no | PK |
 | `receptionId` | Id | no | FK |
 | `grapeVarietyId` | Id | no | FK |
+| `articuloId` | Id externo | no | referencia opaca a Articulos |
 | `quantity` | Decimal | no | `> 0` |
 | `unit` | Enum `Unit` existente | no | unidad capturada |
 | `createdAt` | Timestamp | no | creación |
@@ -619,7 +613,7 @@ Articulo. No se elimina; toda corrección conserva valor original.
 | Campo | Tipo | Null | Regla |
 |---|---|---:|---|
 | `id` | Id | no | PK |
-| `entityType` | Enum | no | `Producer`, `GrapeVariety`, `GrapeReception` |
+| `entityType` | Enum | no | `PRODUCER`, `GRAPE_VARIETY`, `GRAPE_RECEPTION` |
 | `code` | String | no | estable |
 | `label` | String | no | etiqueta |
 | `dataType` | Enum | no | `TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE`, `SELECT` |
@@ -786,8 +780,8 @@ POST /api/v1/production/transformation-orders
 POST /api/v1/production/transformation-orders/:id/close
 POST /api/v1/production/works
 POST /api/v1/production/works/:id/corrections
-POST /api/v1/production/receptions
-POST /api/v1/production/receptions/:id/corrections
+POST /api/v1/production/grape-receptions
+POST /api/v1/production/grape-receptions/:id/corrections
 POST /api/v1/production/transformations
 POST /api/v1/production/measurements
 POST /api/v1/production/measurements/:id/corrections

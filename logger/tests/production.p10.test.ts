@@ -85,14 +85,23 @@ describe("Production P10 corrections and trace acceptance", () => {
   it("corrects Reception administration only and preserves generated facts", options, async () => {
     assert.ok(prisma && service); const f = await fixture();
     const producer = await service.create("producers", { code: `P10-PR-${randomUUID()}`, name: "Producer" }, context);
+    const replacementProducer = await service.create("producers", { code: `P10-PR-${randomUUID()}`, name: "Replacement producer" }, context);
     const reception = await service.createReception({ productionOrderId: f.order.id, producerId: producer.id, receivedAt: new Date("2025-01-01T00:00:00.000Z"), status: "ACCEPTED", items: [{ grapeVarietyId: (await service.create("grape-varieties", { code: `P10-V-${randomUUID()}`, name: "Variety" }, context)).id, articuloId: f.article.id, quantity: "1.000", unit: "KG" }], operationKey: `p10-r-${randomUUID()}`, requestHash: "fixture" }, context);
     const receptionId = (reception.reception as { id: string }).id; const batchId = reception.batchIds[0]!; const itemBefore = await prisma.grapeReceptionItem.findUniqueOrThrow({ where: { productionBatchId: batchId } });
     const received = await service.correctReception(receptionId, { field: "receivedAt", newValue: "2025-01-01T00:00:00.000Z", reason: "same", operationKey: `p10-r-noop-${randomUUID()}` }, context).catch(error => error);
     assert.equal((received as { code?: string }).code, "CORRECTION_NOOP");
     await service.correctReception(receptionId, { field: "observations", newValue: "arrival", reason: "note", operationKey: `p10-r-1-${randomUUID()}` }, context);
     await service.correctReception(receptionId, { field: "status", newValue: "ACCEPTED_WITH_OBSERVATIONS", reason: "status", operationKey: `p10-r-2-${randomUUID()}` }, context);
-    await service.correctReception(receptionId, { field: "producerId", newValue: null, reason: "anonymous", operationKey: `p10-r-3-${randomUUID()}` }, context);
+    const producerCorrectionInput = { field: "producerId", newValue: replacementProducer.id, reason: "replacement", operationKey: `p10-r-3-${randomUUID()}` };
+    const producerCorrection = await service.correctReception(receptionId, producerCorrectionInput, context);
     const current = await service.getReception(receptionId); const currentRow = await prisma.grapeReception.findUniqueOrThrow({ where: { id: receptionId } }); assert.equal(currentRow.version, 3); assert.equal(current?.status, "ACCEPTED_WITH_OBSERVATIONS"); assert.equal(current?.observations, "arrival");
+    for (const correction of (current as any)?.corrections ?? []) {
+      assert.deepEqual(Object.keys(correction).sort(), ["actorUserId", "correctedAt", "field", "fromVersion", "id", "newValue", "previousValue", "reason", "toVersion"]);
+      assert.equal("requestHash" in correction, false);
+      assert.equal("result" in correction, false);
+    }
+    await prisma.producer.update({ where: { id: replacementProducer.id }, data: { active: false } });
+    assert.deepEqual(await service.correctReception(receptionId, producerCorrectionInput, context), producerCorrection);
     const replayInput = { field: "receivedAt", newValue: "2024-12-31T23:59:00.000Z", reason: "replay", operationKey: `p10-r-replay-${randomUUID()}` };
     const replay = await service.correctReception(receptionId, replayInput, context); assert.deepEqual(await service.correctReception(receptionId, replayInput, context), replay);
     await assert.rejects(service.correctReception(receptionId, { ...replayInput, newValue: "2024-12-31T23:58:00.000Z" }, context), (error: { code?: string }) => error.code === "IDEMPOTENCY_CONFLICT");
@@ -104,6 +113,7 @@ describe("Production P10 corrections and trace acceptance", () => {
     await assert.rejects(service.correctReception(receptionId, { field: "observations", newValue: null, reason: "clear", operationKey: `p10-r-clear-${randomUUID()}` }, context), (error: { code?: string }) => error.code === "RECEPTION_OBSERVATIONS_REQUIRED");
     await assert.rejects(service.correctReception(receptionId, { field: "quantity", newValue: "2.000", reason: "blocked field", operationKey: `p10-r-block-${randomUUID()}` }, context), (error: { code?: string }) => error.code === "VALIDATION_ERROR");
     await assert.rejects(service.correctReception(receptionId, { field: "receivedAt", newValue: "2030-01-01T00:00:00.000Z", reason: "late", operationKey: `p10-r-late-${randomUUID()}` }, context), (error: { code?: string }) => error.code === "RECEPTION_DATE_AFTER_BATCH");
+    await assert.rejects(service.correctReception(receptionId, { field: "observations", newValue: "bounded", reason: "key", operationKey: "x".repeat(101) }, context), (error: { code?: string }) => error.code === "VALIDATION_ERROR");
     await assert.rejects(prisma.grapeReception.update({ where: { id: receptionId }, data: { observations: "raw" } })); await assert.rejects(prisma.grapeReception.delete({ where: { id: receptionId } }));
     const correctionId = current?.corrections[0]?.id; if (correctionId) { await assert.rejects(prisma.grapeReceptionCorrection.update({ where: { id: correctionId }, data: { reason: "raw" } })); await assert.rejects(prisma.grapeReceptionCorrection.delete({ where: { id: correctionId } })); }
   });
@@ -111,11 +121,12 @@ describe("Production P10 corrections and trace acceptance", () => {
     assert.ok(prisma && service); const f = await fixture();
     const variety = await service.create("grape-varieties", { code: `P10-V-${randomUUID()}`, name: "Concurrent" }, context);
     const producer = await service.create("producers", { code: `P10-PR-${randomUUID()}`, name: "Concurrent producer" }, context);
+    const replacementProducer = await service.create("producers", { code: `P10-PR-${randomUUID()}`, name: "Concurrent replacement" }, context);
     const reception = await service.createReception({ productionOrderId: f.order.id, producerId: producer.id, receivedAt: new Date("2025-01-01T00:00:00.000Z"), status: "ACCEPTED", items: [{ grapeVarietyId: variety.id, articuloId: f.article.id, quantity: "1.000", unit: "KG" }], operationKey: `p10-rc-${randomUUID()}`, requestHash: "fixture" }, context);
     const id = (reception.reception as { id: string }).id;
     await Promise.all([
       service.correctReception(id, { field: "observations", newValue: "first", reason: "one", operationKey: `p10-rc-1-${randomUUID()}` }, context),
-      service.correctReception(id, { field: "producerId", newValue: null, reason: "two", operationKey: `p10-rc-2-${randomUUID()}` }, context),
+      service.correctReception(id, { field: "producerId", newValue: replacementProducer.id, reason: "two", operationKey: `p10-rc-2-${randomUUID()}` }, context),
     ]);
     const row = await prisma.grapeReception.findUniqueOrThrow({ where: { id }, include: { corrections: { orderBy: { toVersion: "asc" } } } });
     assert.equal(row.version, 2); assert.deepEqual(row.corrections.map(item => [item.fromVersion, item.toVersion]), [[0, 1], [1, 2]]);

@@ -805,9 +805,8 @@ con `production:work_type_manage` o `production:measurement_type_manage`,
 respectivamente. Son catálogos, no comandos históricos, y no tienen seed.
 `GrapeReception` debe referenciarlos por ID. Una recepción puede contener una o
 varias variedades con sus cantidades; no se aceptan como texto libre ni como
-Articulo. Los campos exactos y los contracts de administración de estos
-catálogos deben quedar definidos en Production antes de implementar esta
-sección; la IA no debe inventarlos.
+Articulo. Los campos exactos de la recepción y sus endpoints HTTP se definen
+en `docs/api/PRODUCTION_API.md`, que es la autoridad de wire.
 
 ## `createGrapeReception`
 
@@ -815,31 +814,31 @@ Entrada conceptual:
 
 ``` ts
 {
-  harvestId: string
-  producerId: string
-  varieties: [
+  productionOrderId: string
+  producerId?: string
+  receivedAt: string
+  status: "ACCEPTED" | "ACCEPTED_WITH_OBSERVATIONS"
+  observations?: string
+  items: [
     {
       grapeVarietyId: string
+      articuloId: string
       quantity: DecimalString
-      unit: string
+      unit: "KG" | "G" | "L" | "M" | "UNIDAD"
     }
   ]
-  dateTime: string
-
-  requestedWeight: DecimalString
-  receivedWeight: DecimalString
-
-  brix?: DecimalString
-  alcoholDegree?: DecimalString
-  quality?: string
-
-  status: "ACCEPTED" | "ACCEPTED_WITH_OBSERVATIONS"
-
-  observations?: string
+  customFields?: [{ definitionId: string, value: string | number | boolean }]
+  operationKey: string
+  requestHash: string
 }
 ```
 
-No se acepta un estado `REJECTED`.
+`observations` admite hasta 2000 caracteres y es obligatoria cuando el estado es
+`ACCEPTED_WITH_OBSERVATIONS`; `producerId` y `customFields` son opcionales.
+No se acepta un estado `REJECTED`. La respuesta de creación es un
+`ReceptionResult` con `reception`, `items` y `batchIds`; el detalle HTTP usa
+`GET /api/v1/production/grape-receptions/:id` e incluye items, correcciones y
+los valores públicos de custom fields, sin relaciones humanas anidadas.
 
 Los campos adicionales de `Producer`, `GrapeVariety` y `GrapeReception` se
 gestionan como `CUSTOM_FIELDS`, separados de los `CORE_FIELDS` contractuales.
@@ -863,12 +862,8 @@ Filtros:
 
 ``` ts
 {
-  harvestId?: string
-  producerId?: string
-  grapeVarietyId?: string
-  from?: string
-  to?: string
-  status?: string
+  page: number
+  pageSize: number
 }
 ```
 

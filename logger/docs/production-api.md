@@ -7,7 +7,7 @@ Historical corrections are append-only commands:
 - `POST /api/v1/production/measurements/:id/corrections` (`production:measurement_correct`)
 - `POST /api/v1/production/grape-receptions/:id/corrections` (`production:reception_correct`)
 
-Each command requires `field`, `newValue`, `reason`, and stable `operationKey`. Original facts, actors, batches, ledger and inventory movements remain immutable. Reception corrections are limited to `receivedAt`, `producerId`, `observations`, and `status`; quantities, articles, varieties, units and generated batches are not correctable.
+Each command requires `field`, `newValue`, `reason`, and stable `operationKey`. Original facts, actors, batches, ledger and inventory movements remain immutable. Reception corrections are limited to `receivedAt`, `producerId`, `observations`, and `status`, with field-specific `newValue` types and no public `requestHash`; quantities, articles, varieties, units and generated batches are not correctable. Corrections are append-only, reject no-ops, preserve the same result on an identical replay, and reject a changed payload with `IDEMPOTENCY_CONFLICT`.
 # Production P2/P3/P6 API
 
 Base URL: `/api/v1/production`. All endpoints require authentication. La
@@ -138,11 +138,15 @@ JSON number), INTEGER is a safe integer, and TEXT/SELECT/BOOLEAN use their
 
 ## Grape receptions (P6)
 
-`GET /grape-receptions` and `GET /grape-receptions/:id` require
-`production:read`. El listado `GET /grape-receptions` admite únicamente
-`page` y `pageSize`; no admite `search` ni `active`. `POST /grape-receptions` requires
+`GET /api/v1/production/grape-receptions` and `GET /api/v1/production/grape-receptions/:id` require
+`production:read`. El listado `GET /api/v1/production/grape-receptions` admite únicamente
+`page` y `pageSize`; no admite `search` ni `active`. `POST /api/v1/production/grape-receptions` requires
 `production:reception_create`, a stable `operationKey` and `requestHash`.
-Each item creates exactly one initial ProductionBatch through P3 primitives.
+`producerId` and `observations` are optional; observations are capped at 2000
+characters and are required when status is `ACCEPTED_WITH_OBSERVATIONS`. Each
+item has `grapeVarietyId`, `articuloId`, positive decimal-string `quantity` and
+unit `KG|G|L|M|UNIDAD`; each optional custom field is
+`{definitionId: UUID, value: string|number|boolean}`. Each item creates exactly one initial ProductionBatch through P3 primitives.
 Articles are validated through ArticulosApi and units must match exactly. The
 contractual classification matrix does not currently exist, so no
 classification restriction is invented or enforced. Receptions have no PATCH

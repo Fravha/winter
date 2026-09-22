@@ -219,8 +219,8 @@ una orden y productor, uno o más items, estados únicamente `ACCEPTED` y
 `ACCEPTED_WITH_OBSERVATIONS`. Cada item aceptado genera atómicamente su batch
 inicial y hecho `GENERATED`.
 
-Endpoints aprobados: `POST /api/v1/production/receptions` y
-`POST /api/v1/production/receptions/:id/corrections` (corrección se completa en
+Endpoints aprobados: `POST /api/v1/production/grape-receptions` y
+`POST /api/v1/production/grape-receptions/:id/corrections` (corrección se completa en
 P10); query paginada de recepciones/items con `production:read`.
 
 Services: `GrapeReceptionService`, `GrapeReceptionItemService`,
@@ -333,7 +333,7 @@ generan hechos compensatorios tipados.
 Endpoints aprobados:
 
 - `POST /api/v1/production/works/:id/corrections`;
-- `POST /api/v1/production/receptions/:id/corrections`;
+- `POST /api/v1/production/grape-receptions/:id/corrections`;
 - `POST /api/v1/production/measurements/:id/corrections`;
 - `GET /api/v1/production/batches/:id/trace`.
 

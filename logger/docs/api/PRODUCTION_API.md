@@ -445,13 +445,12 @@ observations`; no `operationKey` ni `requestHash`.
 
 ## 8. Grape receptions
 
-Reception returned by POST is the raw created row:
-`{id,productionOrderId,producerId,receivedAt,status,observations,actorUserId,
-createdAt,updatedAt,version}`; it has **no `items` property**. Item entries
-returned in the top-level ReceptionResult are:
-`{grapeVarietyId,articuloId,quantity,unit,productionBatchId}` (no `id`).
-GET detail additionally loads its item rows and corrections.
-Status: `ACCEPTED|ACCEPTED_WITH_OBSERVATIONS`.
+La recepción no expone relaciones humanas anidadas: `productionOrderId`,
+`producerId`, `grapeVarietyId` y `articuloId` son referencias opacas. Los estados
+de wire son exactamente `ACCEPTED|ACCEPTED_WITH_OBSERVATIONS`; cuando se usa
+`ACCEPTED_WITH_OBSERVATIONS`, `observations` debe existir y no ser sólo espacios.
+`observations` es opcional en los demás casos y admite como máximo 2000
+caracteres. `producerId` también es opcional.
 
 ### `GET /api/v1/production/grape-receptions`
 
@@ -460,28 +459,55 @@ receptions y `meta`. Este listado no admite `search` ni `active`.
 
 ### `GET /api/v1/production/grape-receptions/:id`
 
-Permiso `production:read`; path UUID; 200 devuelve reception e items; 404
+Permiso `production:read`; path UUID; 200 devuelve en `data` el detalle completo
+de la recepción (sin wrapper adicional):
+`{id,productionOrderId,producerId?,receivedAt,status,observations,actorUserId,
+createdAt,updatedAt,version,items,corrections,customFields}`. `items` contiene
+`{id,grapeVarietyId,articuloId,quantity,unit,productionBatchId}`, `corrections`
+y `customFields`. Cada correction histórica tiene
+`{id,field,previousValue,newValue,reason,correctedAt,actorUserId,fromVersion,
+toVersion}`. Cada custom field público tiene
+`{definitionId,entityType,value}`, donde `entityType` es
+`GRAPE_RECEPTION` y `value` es el valor público tipado (TEXT/SELECT string,
+INTEGER number, DECIMAL string, BOOLEAN boolean o DATE ISO-8601 string). No
+incluye la definición completa ni relaciones anidadas. 404
 `GRAPE_RECEPTION_NOT_FOUND`.
 
 ### `POST /api/v1/production/grape-receptions`
 
-Permiso `production:reception_create`; request:
-`{"productionOrderId":"22222222-2222-4222-8222-222222222222","producerId":"33333333-3333-4333-8333-333333333333","receivedAt":"2025-01-02T09:00:00.000Z","status":"ACCEPTED","items":[{"grapeVarietyId":"44444444-4444-4444-8444-444444444444","articuloId":"55555555-5555-4555-8555-555555555555","quantity":"100.000","unit":"KG"}],"operationKey":"reception-1","requestHash":"hash-1"}`.
-`customFields` opcional contiene `definitionId` UUID y valor string/number/
-boolean. `operationKey` y `requestHash` son requeridos. 201 devuelve
-**ReceptionResult**, no una recepción aplanada:
-`{"data":{"reception":{"id":"11111111-1111-4111-8111-111111111111","productionOrderId":"22222222-2222-4222-8222-222222222222","producerId":"33333333-3333-4333-8333-333333333333","receivedAt":"2025-01-02T09:00:00.000Z","status":"ACCEPTED","observations":null,"actorUserId":"44444444-4444-4444-8444-444444444444","createdAt":"2025-01-02T09:00:00.000Z","updatedAt":"2025-01-02T09:00:00.000Z","version":0},"items":[{"grapeVarietyId":"44444444-4444-4444-8444-444444444444","articuloId":"55555555-5555-4555-8555-555555555555","quantity":"100.000","unit":"KG","productionBatchId":"11111111-1111-4111-8111-111111111111"}],"batchIds":["11111111-1111-4111-8111-111111111111"]}}`.
+Permiso `production:reception_create`; request completo:
+`{"productionOrderId":"22222222-2222-4222-8222-222222222222","producerId":"33333333-3333-4333-8333-333333333333","receivedAt":"2025-01-02T09:00:00.000Z","status":"ACCEPTED","observations":"Recepción normal","items":[{"grapeVarietyId":"44444444-4444-4444-8444-444444444444","articuloId":"55555555-5555-4555-8555-555555555555","quantity":"100.000","unit":"KG"}],"customFields":[{"definitionId":"11111111-1111-4111-8111-111111111111","value":"Mendoza"}],"operationKey":"reception-1","requestHash":"hash-1"}`.
+`producerId`, `observations` y `customFields` son opcionales. Cada item
+requiere `grapeVarietyId`, `articuloId`, `quantity` decimal string positiva con
+hasta tres decimales y `unit` exactamente uno de `KG|G|L|M|UNIDAD`.
+Cada custom field requiere `definitionId` UUID y `value` string, number o
+boolean; no se aceptan propiedades adicionales. `operationKey` y `requestHash`
+son requeridos. 201 devuelve este **ReceptionResult** completo, no una
+recepción aplanada:
+`{"data":{"reception":{"id":"11111111-1111-4111-8111-111111111111","productionOrderId":"22222222-2222-4222-8222-222222222222","producerId":"33333333-3333-4333-8333-333333333333","receivedAt":"2025-01-02T09:00:00.000Z","status":"ACCEPTED","observations":"Recepción normal","actorUserId":"44444444-4444-4444-8444-444444444444","createdAt":"2025-01-02T09:00:00.000Z","updatedAt":"2025-01-02T09:00:00.000Z","version":0},"items":[{"grapeVarietyId":"44444444-4444-4444-8444-444444444444","articuloId":"55555555-5555-4555-8555-555555555555","quantity":"100.000","unit":"KG","productionBatchId":"11111111-1111-4111-8111-111111111111"}],"batchIds":["11111111-1111-4111-8111-111111111111"]}}`.
 Errores: referencias inexistentes, unidad/cantidad inválida,
 `ARTICULOS_API_UNAVAILABLE`, estado inválido e `IDEMPOTENCY_CONFLICT`.
 
 ### `POST /api/v1/production/grape-receptions/:id/corrections`
 
-Permiso `production:reception_correct`; request
-`{"field":"status","newValue":"ACCEPTED_WITH_OBSERVATIONS","reason":"Control","operationKey":"corr-rec-1"}`;
+Permiso `production:reception_correct`; strict request
+`{"field":"status","newValue":"ACCEPTED_WITH_OBSERVATIONS","reason":"Control","operationKey":"corr-rec-1"}`.
+Sólo se permiten `receivedAt` (`newValue` ISO-8601 con offset),
+`producerId` (UUID), `observations` (string de hasta 2000 caracteres o
+`null`) y `status` (`ACCEPTED|ACCEPTED_WITH_OBSERVATIONS`); cada tipo de
+`newValue` es específico del campo. `reason` (1--2000 caracteres) y
+`operationKey` (1--100 caracteres) son obligatorios. No se acepta
+`requestHash` ni ningún campo desconocido.
 200 devuelve **`{id,field,value,version,correctionId}`**:
 `{"data":{"id":"11111111-1111-4111-8111-111111111111","field":"status","value":"ACCEPTED_WITH_OBSERVATIONS","version":1,"correctionId":"22222222-2222-4222-8222-222222222222"}}`.
-`operationKey` requerido; `requestHash` no existe en este schema. El replay
-devuelve la misma forma; payload distinto produce `IDEMPOTENCY_CONFLICT`.
+El resultado compacto de este command no es el DTO histórico de `corrections`
+del detalle. Las correcciones son append-only: conservan original, actor, fecha,
+motivo y valores anterior/nuevo; no hay edición destructiva ni DELETE. El replay
+con la misma `operationKey` y payload devuelve la misma forma; un payload
+distinto produce `IDEMPOTENCY_CONFLICT`, y un valor idéntico produce
+`CORRECTION_NOOP`. `status` no puede ser `ACCEPTED_WITH_OBSERVATIONS` sin
+observaciones no vacías ni pueden borrarse observaciones mientras ese estado
+continúe. `receivedAt` no puede quedar después de la generación del batch.
 
 ## 9. Measurements
 

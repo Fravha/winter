@@ -585,8 +585,8 @@ POST /api/v1/production/transformation-orders
 POST /api/v1/production/transformation-orders/:id/close
 POST /api/v1/production/works
 POST /api/v1/production/works/:id/corrections
-POST /api/v1/production/receptions
-POST /api/v1/production/receptions/:id/corrections
+POST /api/v1/production/grape-receptions
+POST /api/v1/production/grape-receptions/:id/corrections
 POST /api/v1/production/transformations
 POST /api/v1/production/measurements
 POST /api/v1/production/measurements/:id/corrections

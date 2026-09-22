@@ -11,7 +11,7 @@ import { errorHandler } from "../src/shared/http/error-handler.js";
 import { requestContext } from "../src/shared/http/request-context.js";
 import { AppError } from "../src/shared/errors/app-error.js";
 import { ProductionTraceService } from "../src/modules/production/production.trace.js";
-import { releaseBatchSchema, grapeReceptionListSchema, transformationCreateSchema } from "../src/modules/production/production.schema.js";
+import { releaseBatchSchema, grapeReceptionListSchema, transformationCreateSchema, grapeReceptionSchema, receptionCorrectionSchema } from "../src/modules/production/production.schema.js";
 
 const id = "00000000-0000-4000-8000-000000000001";
 const verifier: TokenVerifier = { async verify() { return { uid: "p11-hardening" }; } };
@@ -73,6 +73,41 @@ async function request(
 }
 
 describe("P11 contractual HTTP hardening", () => {
+  it("validates the grape reception creation and correction contracts", () => {
+    const base = {
+      productionOrderId: id, receivedAt: "2026-01-01T00:00:00.000Z", status: "ACCEPTED",
+      items: [{ grapeVarietyId: id, articuloId: id, quantity: "1", unit: "KG" }],
+      operationKey: "reception-contract", requestHash: "legacy",
+    };
+    assert.equal(grapeReceptionSchema.safeParse({ ...base, observations: "a".repeat(2000) }).success, true);
+    assert.equal(grapeReceptionSchema.safeParse({ ...base, observations: "a".repeat(2001) }).success, false);
+    assert.equal(grapeReceptionSchema.safeParse({ ...base, status: "ACCEPTED_WITH_OBSERVATIONS" }).success, false);
+    assert.equal(grapeReceptionSchema.safeParse({ ...base, status: "ACCEPTED_WITH_OBSERVATIONS", observations: " arrival " }).success, true);
+
+    const valid: Record<string, unknown>[] = [
+      { field: "receivedAt", newValue: "2026-01-02T00:00:00.000Z" },
+      { field: "producerId", newValue: id },
+      { field: "observations", newValue: null },
+      { field: "status", newValue: "ACCEPTED" },
+    ];
+    for (const change of valid) {
+      assert.equal(receptionCorrectionSchema.safeParse({ ...change, reason: "approved", operationKey: "correction-contract" }).success, true);
+    }
+    for (const change of [
+      { field: "unknown", newValue: "x" },
+      { field: "receivedAt", newValue: "not-a-date" },
+      { field: "producerId", newValue: null },
+      { field: "observations", newValue: 42 },
+      { field: "status", newValue: "OPEN" },
+    ]) {
+      assert.equal(receptionCorrectionSchema.safeParse({ ...change, reason: "approved", operationKey: "correction-contract" }).success, false);
+    }
+    assert.equal(receptionCorrectionSchema.safeParse({ ...valid[0], reason: " ", operationKey: "correction-contract" }).success, false);
+    assert.equal(receptionCorrectionSchema.safeParse({ ...valid[0], reason: "a".repeat(2001), operationKey: "correction-contract" }).success, false);
+    assert.equal(receptionCorrectionSchema.safeParse({ ...valid[0], reason: "approved", operationKey: "a".repeat(101) }).success, false);
+    assert.equal(receptionCorrectionSchema.safeParse({ ...valid[0], reason: "approved", operationKey: "correction-contract", requestHash: "must-reject" }).success, false);
+  });
+
   it("restricts release classification and grape reception query parameters at the contract boundary", async () => {
     const baseRelease = {
       quantity: "1", warehouseId: id, operationKey: "release-1", lotCode: "LOT-1",

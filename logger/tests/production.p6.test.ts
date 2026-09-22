@@ -49,7 +49,14 @@ describe("Production P6 PostgreSQL", () => {
     assert.equal(typeof listed.items[0]?.receivedAt, "string");
     assert.equal(typeof listed.items[0]?.createdAt, "string");
     assert.equal(typeof listed.items[0]?.items[0]?.quantity, "string");
-    assert.deepEqual(await service.getReception((result.reception as any).id), listed.items.find(item => item.id === (result.reception as any).id));
+    const listedReception = listed.items.find(item => item.id === (result.reception as any).id);
+    const loadedReception = await service.getReception((result.reception as any).id) as any;
+    const { corrections: _corrections, customFields: _customFields, ...loadedReceptionSummary } = loadedReception;
+    assert.deepEqual(loadedReceptionSummary, listedReception);
+    const detail = loadedReception;
+    assert.equal(typeof detail.items[0].id, "string");
+    assert.equal(detail.items[0].productionBatchId, result.batchIds[0]);
+    assert.deepEqual(detail.customFields, []);
     assert.equal(await service.getReception(randomUUID()), null);
   });
   it("replays exact idempotent result and rejects changed request", options, async () => {
@@ -113,6 +120,11 @@ describe("Production P6 PostgreSQL", () => {
     assert.equal(await prisma.grapeReception.count({ where: { productionOrderId: f.order.id } }), 0);
     const created = await service.createReception({ ...input, customFields: [{ definitionId: required.id, value: "dock-a" }, { definitionId: booleanField.id, value: true }] }, context);
     assert.equal(await prisma.customFieldValue.count({ where: { entityId: (created.reception as any).id } }), 2);
+    const detail = await service.getReception((created.reception as any).id) as any;
+    assert.deepEqual(detail.customFields.map((field: any) => ({ definitionId: field.definitionId, entityType: field.entityType, value: field.value })).sort((a: any, b: any) => a.definitionId.localeCompare(b.definitionId)), [
+      { definitionId: booleanField.id, entityType: "GRAPE_RECEPTION", value: true },
+      { definitionId: required.id, entityType: "GRAPE_RECEPTION", value: "dock-a" },
+    ].sort((a, b) => a.definitionId.localeCompare(b.definitionId)));
     await service.setDefinitionActive(booleanField.id, false, context);
     await assert.rejects(service.createReception({ ...input, operationKey: `${input.operationKey}-inactive`, customFields: [{ definitionId: required.id, value: "dock-b" }, { definitionId: booleanField.id, value: true }] }, context), (e: any) => e.code === "CUSTOM_FIELD_DEFINITION_INACTIVE");
     await assert.rejects(service.createReception({ ...input, operationKey: `${input.operationKey}-wrong`, customFields: [{ definitionId: required.id, value: 99 }] }, context), (e: any) => e.code === "CUSTOM_FIELD_VALUE_INVALID");
