@@ -11,6 +11,7 @@ import { errorHandler } from "../src/shared/http/error-handler.js";
 import { requestContext } from "../src/shared/http/request-context.js";
 import { AppError } from "../src/shared/errors/app-error.js";
 import { ProductionTraceService } from "../src/modules/production/production.trace.js";
+import { releaseBatchSchema, grapeReceptionListSchema, transformationCreateSchema } from "../src/modules/production/production.schema.js";
 
 const id = "00000000-0000-4000-8000-000000000001";
 const verifier: TokenVerifier = { async verify() { return { uid: "p11-hardening" }; } };
@@ -28,6 +29,8 @@ function makeService() {
     service: {
       list: record("list", page),
       listOrders: record("listOrders", page),
+      listReceptions: record("listReceptions", page),
+      releaseBatchToInventory: record("releaseBatchToInventory", { productionBatchId: id }),
       getOrder: record("getOrder", null),
       createOrder: record("createOrder", { id }),
     } as unknown as ProductionService,
@@ -70,6 +73,40 @@ async function request(
 }
 
 describe("P11 contractual HTTP hardening", () => {
+  it("restricts release classification and grape reception query parameters at the contract boundary", async () => {
+    const baseRelease = {
+      quantity: "1", warehouseId: id, operationKey: "release-1", lotCode: "LOT-1",
+      classification: "PRODUCTO_ENVASADO", fechaIngreso: "2026-01-01T00:00:00.000Z",
+    };
+    assert.equal(releaseBatchSchema.safeParse(baseRelease).success, true);
+    for (const classification of ["PRODUCTO_TERMINADO", "PRODUCTO_TERMINADO_EXPORTACION"]) {
+      assert.equal(releaseBatchSchema.safeParse({ ...baseRelease, classification }).success, false);
+    }
+
+    assert.equal(grapeReceptionListSchema.safeParse({ page: "2", pageSize: "5" }).success, true);
+    assert.equal(grapeReceptionListSchema.safeParse({ page: "1", search: "uva" }).success, false);
+    assert.equal(grapeReceptionListSchema.safeParse({ page: "1", active: "true" }).success, false);
+
+    const invalidQuery = await request("GET", "/grape-receptions?page=1&search=uva", ["production:read"]);
+    assert.equal(invalidQuery.response.status, 400);
+    const invalidRelease = await request("POST", `/batches/${id}/release-to-inventory`, ["production:inventory_release"], {
+      ...baseRelease, classification: "PRODUCTO_TERMINADO",
+    });
+    assert.equal(invalidRelease.response.status, 400);
+    assert.equal(invalidRelease.calls.length, 0);
+  });
+
+  it("requires the production order and preserves transformation-order relationship fields", () => {
+    const base = {
+      transformationOrderId: id, performedAt: "2026-01-01T00:00:00.000Z",
+      operationKey: "transform-1", requestHash: "hash-1",
+      inputs: [{ productionBatchId: id, quantity: "1" }],
+      outputs: [{ articuloId: id, quantity: "1", unit: "KG" }],
+    };
+    assert.equal(transformationCreateSchema.safeParse(base).success, false);
+    assert.equal(transformationCreateSchema.safeParse({ ...base, productionOrderId: id }).success, true);
+  });
+
   it("keeps read permission separate from commands and rejects actor fields from bodies", async () => {
     const read = await request("GET", "/orders?page=2&pageSize=5&status=OPEN", ["production:read"]);
     assert.equal(read.response.status, 200);

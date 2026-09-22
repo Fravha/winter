@@ -475,12 +475,14 @@ con identidad y unidad capturada.
 
 ### 4.17 `Transformation`
 
-Operación atómica de una `TransformationOrder`.
+Operación atómica del ciclo productivo de una `ProductionOrder`, con una
+`TransformationOrder` opcional.
 
 | Campo | Tipo | Null | Regla |
 |---|---|---:|---|
 | `id` | Id | no | PK |
-| `transformationOrderId` | Id | no | FK |
+| `productionOrderId` | Id | no | FK a `ProductionOrder` |
+| `transformationOrderId` | Id | sí | FK opcional; si se informa, debe pertenecer a `productionOrderId` y estar `OPEN` |
 | `performedAt` | Timestamp | no | fecha real |
 | `actorUserId` | Id externo | no | contexto autenticado |
 | `observations` | String | sí | observación |
@@ -488,7 +490,8 @@ Operación atómica de una `TransformationOrder`.
 | `requestHash` | String | no | detección de conflicto |
 | `createdAt` | Timestamp | no | registro |
 
-Índices `(transformationOrderId, performedAt)`, `(operationKey)`;
+Índices `(productionOrderId, performedAt)`, `(transformationOrderId, performedAt)`,
+`(operationKey)`;
 unique `operationKey`. `Transformation 1:N Input`, `1:N Output`; una
 transformación productiva debe tener inputs y outputs coherentes con la
 operación antes de quedar completa. No se elimina.
@@ -562,7 +565,9 @@ extensión de integración y no debe confundirse con transformación de producto
 
 Índices por `productionOrderId`, `transformationOrderId`, `transformationId`,
 `productionWorkId`, `productionBatchId`, y `(occurredAt)`. Unique
-`operationKey`.
+`operationKey`. Cuando la pérdida pertenece a una `Transformation`, esta
+clave se conserva como identificador interno/persistido y no constituye un
+replay HTTP independiente.
 
 Debe pertenecer a una `Transformation` o `ProductionWork`. Puede no conocer
 el batch exacto. Si lo conoce, inserta `LOSS` en su ledger dentro de la misma
@@ -707,7 +712,7 @@ matriz conservadora aplicable es:
 | Crear batch inicial de recepción | Solo un Articulo activo cuya clasificación vigente de Articulos haya sido aprobada explícitamente para materia prima; de lo contrario, rechazar |
 | Input de transformación | Solo batch existente y trazable; no se valida por `articuloId` directo |
 | Output de transformación | Articulo activo cuya clasificación vigente de Articulos haya sido aprobada explícitamente para producto en proceso |
-| Producto enviado a Inventory | Articulo activo validado por Articulos e Inventory; clasificación final la decide Inventory |
+| Producto enviado a Inventory | Articulo activo validado por Articulos e Inventory; clasificación inicial exclusivamente `PRODUCTO_ENVASADO` y las transiciones posteriores las decide Inventory |
 | Insumo auxiliar de trabajo | Articulo activo aprobado para insumo/material por Articulos; se consume por Inventory, no como input de transformación |
 | Container, Producer, GrapeVariety | No son Articulos |
 
@@ -736,19 +741,19 @@ excede. Un recipiente no tiene dos batches independientes simultáneos.
 
 ## 8. Idempotencia
 
-Requieren idempotencia recepción, transformación, consumos, outputs, pérdidas
-con efecto cuantitativo, movimientos entre recipientes y salida
-Production→Inventory.
+Requieren idempotencia recepción, transformación, consumos, outputs, movimientos
+entre recipientes y salida Production→Inventory. Las pérdidas registradas
+dentro de una transformación no tienen un replay HTTP independiente.
 
-Cada operación guarda `operationKey` unique y `requestHash`. Repetir la misma
-clave con el mismo hash devuelve el resultado persistido; repetirla con
-payload distinto produce `IDEMPOTENCY_CONFLICT`. Las claves estables incluyen:
+Cada comando idempotente guarda `operationKey` unique y `requestHash`. Repetir
+la misma clave con el mismo hash devuelve el resultado persistido; repetirla
+con payload distinto produce `IDEMPOTENCY_CONFLICT`. En `Transformation`, la
+clave identifica la transformación completa, incluidas sus pérdidas; no se
+reintenta una pérdida mediante API separada. Las claves estables incluyen:
 
 ```text
 production-reception:{receptionId}
 production-transformation:{transformationId}
-production-output:{transformationId}:{outputId}
-production-loss:{lossId}
 ```
 
 Nunca se genera un UUID distinto al reintentar.

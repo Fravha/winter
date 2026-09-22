@@ -129,6 +129,9 @@ Reglas:
 - Se aceptan diferencias entre inputs, outputs y pérdidas cuando los datos
   registrados representan cantidades reales y trazables.
 - La transformación completa es atómica.
+- `productionOrderId` es obligatorio y `transformationOrderId` es opcional. Si
+  se proporciona este último, debe existir, pertenecer a la orden de producción
+  indicada y estar `OPEN`; el backend valida la relación.
 
 ## 6. ProductionLoss
 
@@ -304,6 +307,10 @@ ACCEPTED
 ACCEPTED_WITH_OBSERVATIONS
 ```
 
+El listado público de recepciones utiliza únicamente `page` y `pageSize`.
+`search` y `active` no son filtros soportados; `GrapeReception` no tiene un
+atributo `active`.
+
 ## 14. Measurement
 
 Reglas:
@@ -395,6 +402,9 @@ ProductionBatch
 Reglas:
 
 - El cruce es atómico.
+- La clasificación inicial de todo `InventoryLot` liberado desde Production es
+  exclusivamente `PRODUCTO_ENVASADO`. Inventory controla después sus
+  transiciones a `PRODUCTO_TERMINADO` o `PRODUCTO_TERMINADO_EXPORTACION`.
 - `InventoryLot` conserva `originProductionBatchId`.
 - Un batch puede transferirse parcialmente a Inventory.
 - Un batch puede originar varios `InventoryLot`.
@@ -466,20 +476,23 @@ Requieren idempotencia al menos:
 - transformación;
 - consumos;
 - outputs;
-- pérdidas con efecto cuantitativo;
 - movimientos de batch entre recipientes;
 - salida Production → Inventory.
 
 Las claves son estables por operación lógica. Nunca se genera un UUID aleatorio
 nuevo por retry.
 
+Para `Transformation`, la unidad pública de replay es la transformación
+completa: su `operationKey`/`requestHash` identifica el comando completo,
+incluidas sus pérdidas. No existe retry por API independiente para una pérdida;
+las claves de pérdida, si se conservan, son identificadores internos o
+persistidos.
+
 Ejemplos conceptuales:
 
 ```text
 production-reception:{receptionId}
 production-transformation:{transformationId}
-production-output:{transformationId}:{outputId}
-production-loss:{lossId}
 ```
 
 ## 21. Atomicidad

@@ -95,9 +95,27 @@ describe("Production P8 PostgreSQL", () => {
   it("replays idempotently, rejects conflicts, serializes concurrent consumption and preserves rollback", options, async () => {
     assert.ok(prisma && service && articles);
     const f = await fixture("5.000");
-    const input = command(f);
+    const input = command(f, {
+      losses: [{
+        productionBatchId: f.input.id, quantity: "0.100", unit: "KG",
+        operationKey: `p8-loss-${randomUUID()}`, requestHash: "loss",
+      }],
+    });
     const first = await service.createTransformation(input, context);
+    const lossCount = await prisma.productionLoss.count({ where: { transformationId: first.id } });
+    const lossLedgerCount = await prisma.productionBatchLedgerEntry.count({ where: { productionBatchId: f.input.id, entryType: "LOSS" } });
+    assert.equal(lossCount, 1);
+    assert.equal(lossLedgerCount, 1);
     assert.deepEqual(await service.createTransformation(input, context), first);
+    assert.equal(await prisma.productionLoss.count({ where: { transformationId: first.id } }), lossCount);
+    assert.equal(await prisma.productionBatchLedgerEntry.count({ where: { productionBatchId: f.input.id, entryType: "LOSS" } }), lossLedgerCount);
+    await assert.rejects(
+      service.createTransformation({
+        ...input,
+        losses: [{ ...input.losses![0]!, quantity: "0.200" }],
+      }, context),
+      (e: any) => e.code === "IDEMPOTENCY_CONFLICT",
+    );
     assert.deepEqual(await service.createTransformation({ ...input, requestHash: "caller-spoofed" }, context), first);
     await assert.rejects(service.createTransformation({ ...input, requestHash: "changed", inputs: [{ productionBatchId: f.input.id, quantity: "3.000" }] }, context), (e: any) => e.code === "IDEMPOTENCY_CONFLICT");
     const race = await fixture("2.000");
@@ -126,6 +144,17 @@ describe("Production P8 PostgreSQL", () => {
     assert.ok(prisma && service);
     const f = await fixture("8.000");
     const other = await fixture("8.000");
+    const otherTransformationOrder = await service.createTransformationOrder({
+      code: `P8-T-${randomUUID()}`, productionOrderId: other.order.id, periodStart: new Date(),
+    }, context);
+    await assert.rejects(
+      service.createTransformation(command(f, { transformationOrderId: otherTransformationOrder.id }), context),
+      (e: any) => e.code === "TRANSFORMATION_ORDER_MISMATCH",
+    );
+    await assert.rejects(
+      service.createTransformation(command(f, { transformationOrderId: randomUUID() }), context),
+      (e: any) => e.code === "TRANSFORMATION_ORDER_NOT_FOUND",
+    );
     await assert.rejects(service.createTransformation(command(f, { inputs: [{ productionBatchId: f.input.id, quantity: "1.000" }, { productionBatchId: f.input.id, quantity: "1.000" }] }), context), (e: any) => e.code === "DUPLICATE_INPUT_BATCH");
     await assert.rejects(service.createTransformation(command(f, { inputs: [{ productionBatchId: other.input.id, quantity: "1.000" }] }), context), (e: any) => e.code === "BATCH_ORDER_MISMATCH");
     await assert.rejects(service.createTransformation(command(f, { losses: [{ productionBatchId: other.input.id, quantity: "1.000", unit: "KG" }] }), context), (e: any) => e.code === "BATCH_ORDER_MISMATCH");

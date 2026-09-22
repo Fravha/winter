@@ -279,8 +279,10 @@ corresponda al contrato, con `production:loss_create`.
 Services: `TransformationService`, `TransformationInputService`,
 `TransformationOutputService`, `ProductionLossService`; repositories
 correspondientes. UoW atómica: lock de inputs, ledger `CONSUMED`/`GENERATED` o
-`LOSS`, lineage, idempotencia y auditoría. APIs ArticulosApi valida clasificación
-activa; Core/Auth/Audit. Permisos `production:transformation_create` y
+`LOSS`, idempotencia de la Transformation completa y auditoría. Las pérdidas se
+registran dentro de ese command y no tienen retry HTTP independiente. APIs
+ArticulosApi valida clasificación activa; Core/Auth/Audit. Permisos
+`production:transformation_create` y
 `production:loss_create`, además de lectura.
 
 Pruebas de uno o varios inputs/outputs, cantidades parciales, cambio de
@@ -381,7 +383,9 @@ abierto.
 ## 14. Bloqueos explícitos antes de cerrar fases
 
 Permanecen bloqueantes, sin resolución inferida: valores reales y matriz de
-`Articulo.clasificacion`; enum `Unit`; tensión recepción/Harvest; enum del
+`Articulo.clasificacion` (salvo la clasificación inicial de la salida
+Production → Inventory, resuelta como `PRODUCTO_ENVASADO`); enum `Unit`;
+tensión recepción/Harvest; enum del
 ledger; estrategia de correcciones; decisión sobre `ProductionWorkInput`;
 contrato transaccional y resultado de Inventory; repetición de variedad; y
 semántica de `SEPARATED`. Las fases que los requieren deben reportarlos como

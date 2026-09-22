@@ -1253,79 +1253,19 @@ Filtros:
 
 # 21. Production API --- Ocupación
 
-## `occupyContainer`
-
-Entrada:
-
-``` ts
-{
-  productionBatchId: string
-  containerId: string
-  entryDate: string
-  volume: DecimalString
-  unit: string
-}
-```
-
-Debe validar capacidad disponible.
-
-------------------------------------------------------------------------
-
-## `releaseContainerQuantity`
-
-Permite retirar una parte del contenido sin eliminar necesariamente la
-ocupación restante.
-
-Entrada:
-
-``` ts
-{
-  productionBatchId: string
-  containerId: string
-  quantity: DecimalString
-  dateTime: string
-  workId?: string
-  reason: string
-}
-```
-
-------------------------------------------------------------------------
-
-## `closeContainerOccupancy`
-
-Cierra la ocupación cuando el lote ya no está en el recipiente.
+La API pública actual permite consultar las ocupaciones de un recipiente, pero
+no expone comandos HTTP para ocuparlo, retirar contenido ni cerrar una
+ocupación. Esas capacidades permanecen como primitivas internas del dominio
+hasta que exista un contrato público específico.
 
 ------------------------------------------------------------------------
 
 # 22. Production API --- Movimientos de proceso
 
-## `moveProcessProduct`
-
-Entrada:
-
-``` ts
-{
-  productionBatchId: string
-  workId: string
-
-  originContainerId: string
-  destinationContainerId: string
-
-  quantity: DecimalString
-  unit: string
-
-  dateTime: string
-  reason: string
-  observations?: string
-}
-```
-
-La operación debe validar:
-
--   que el origen tenga cantidad suficiente;
--   que el destino tenga capacidad;
--   que el movimiento sea coherente con el estado del batch;
--   que las ocupaciones resultantes sean consistentes.
+La API pública actual permite consultar los movimientos asociados a un
+recipiente, pero no expone un comando HTTP para mover producto entre
+recipientes. La operación interna debe seguir validando cantidad, capacidad y
+consistencia, pero no puede ser invocada directamente por clientes.
 
 ------------------------------------------------------------------------
 
@@ -1337,41 +1277,45 @@ Entrada:
 
 ``` ts
 {
-  transformationOrderId: string
-  transformationTypeId: string
-  dateTime: string
+  productionOrderId: string
+  transformationOrderId?: string
+  performedAt: string
   observations?: string
+  operationKey: string
+  requestHash: string
+  inputs: TransformationInput[]
+  outputs: TransformationOutput[]
+  losses?: ProductionLossInput[]
 }
 ```
 
+`productionOrderId` es obligatorio. `transformationOrderId` es opcional; si se
+envía, debe existir, pertenecer a `productionOrderId` y estar `OPEN`. Inputs,
+outputs y pérdidas se registran como parte del comando atómico de la
+Transformation; no existen comandos HTTP independientes para pérdidas.
+
 ------------------------------------------------------------------------
 
-## `addTransformationInput`
-
-Entrada:
+### `TransformationInput`
 
 ``` ts
 {
-  transformationId: string
   productionBatchId: string
   quantity: DecimalString
-  unit: string
 }
 ```
 
 Todo input de una `Transformation` es uno o varios `ProductionBatch` trazables;
-no se aceptan inputs identificados únicamente por `articuloId`.
+no se aceptan inputs identificados únicamente por `articuloId`. Los inputs se
+envían dentro de `createTransformation`; no se agregan posteriormente mediante
+un comando HTTP independiente.
 
 ------------------------------------------------------------------------
 
-## `addTransformationOutput`
-
-Entrada:
+### `TransformationOutput`
 
 ``` ts
 {
-  transformationId: string
-  productionBatchId: string
   articuloId: string
   quantity: DecimalString
   unit: string
@@ -1381,6 +1325,8 @@ Entrada:
 Todo output reutilizable se representa mediante `ProductionBatch`; este
 contrato conceptual no implica una entidad persistida independiente de output.
 La transformación completa, incluidos consumos, outputs y pérdidas, es atómica.
+Los outputs se envían dentro de `createTransformation`; no se agregan mediante
+un comando HTTP independiente.
 
 ------------------------------------------------------------------------
 
@@ -1401,48 +1347,17 @@ mermas asociadas
 
 # 24. Production API --- Mermas
 
-## `recordProductionLoss`
+No existe una operación HTTP pública independiente para registrar o listar
+`ProductionLoss`.
 
-Entrada:
+Las pérdidas se envían exclusivamente dentro de
+`POST /api/v1/production/transformations` y forman parte del mismo comando
+atómico e idempotente que sus inputs y outputs. La `operationKey` pública
+identifica la transformación completa; las claves persistidas por pérdida son
+identificadores internos y no habilitan reintentos independientes.
 
-``` ts
-{
-  productionOrderId: string
-  transformationOrderId?: string
-  productionBatchId?: string
-  workId?: string
-
-  lossTypeId: string
-
-  quantity: DecimalString
-  unit: string
-
-  dateTime: string
-  observations?: string
-}
-```
-
-Debe existir suficiente contexto para conocer dónde se produjo la
-pérdida.
-
+Cada pérdida debe conservar suficiente contexto para conocer dónde se produjo.
 La merma no es un sustituto para ocultar diferencias no explicadas.
-
-------------------------------------------------------------------------
-
-## `listProductionLosses`
-
-Filtros:
-
-``` ts
-{
-  productionOrderId?: string
-  productionBatchId?: string
-  workId?: string
-  lossTypeId?: string
-  from?: string
-  to?: string
-}
-```
 
 ------------------------------------------------------------------------
 
@@ -1629,20 +1544,11 @@ createContainer
 updateContainer
 getContainer
 listContainers
-
-occupyContainer
-releaseContainerQuantity
-closeContainerOccupancy
-
-moveProcessProduct
+getContainerOccupancies
+getContainerMovements
 
 createTransformation
-addTransformationInput
-addTransformationOutput
 getTransformation
-
-recordProductionLoss
-listProductionLosses
 
 closeProductionOrder
 
@@ -1745,9 +1651,7 @@ Especialmente:
 receivePurchase
 registerInbound
 registerOutbound
-registerProductionConsumption
-registerProductionOutput
-moveProcessProduct
+createTransformation
 ```
 
 La implementación concreta de la clave idempotente seguirá las
@@ -1807,17 +1711,7 @@ addWorkInput
 recordMeasurement
 recordProductionDecision
 
-occupyContainer
-releaseContainerQuantity
-closeContainerOccupancy
-
-moveProcessProduct
-
 createTransformation
-addTransformationInput
-addTransformationOutput
-
-recordProductionLoss
 closeProductionOrder
 
 receivePurchase

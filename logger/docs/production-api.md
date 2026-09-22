@@ -10,8 +10,9 @@ Historical corrections are append-only commands:
 Each command requires `field`, `newValue`, `reason`, and stable `operationKey`. Original facts, actors, batches, ledger and inventory movements remain immutable. Reception corrections are limited to `receivedAt`, `producerId`, `observations`, and `status`; quantities, articles, varieties, units and generated batches are not correctable.
 # Production P2/P3/P6 API
 
-Base URL: `/api/v1/production`. All endpoints require authentication. List
-queries use `page`, `pageSize`, `search` and `active`.
+Base URL: `/api/v1/production`. All endpoints require authentication. La
+paginación y los filtros de los listados son específicos de cada endpoint; no
+todos soportan `search` o `active`.
 
 ## Catalogs
 
@@ -138,7 +139,8 @@ JSON number), INTEGER is a safe integer, and TEXT/SELECT/BOOLEAN use their
 ## Grape receptions (P6)
 
 `GET /grape-receptions` and `GET /grape-receptions/:id` require
-`production:read`; `POST /grape-receptions` requires
+`production:read`. El listado `GET /grape-receptions` admite únicamente
+`page` y `pageSize`; no admite `search` ni `active`. `POST /grape-receptions` requires
 `production:reception_create`, a stable `operationKey` and `requestHash`.
 Each item creates exactly one initial ProductionBatch through P3 primitives.
 Articles are validated through ArticulosApi and units must match exactly. The

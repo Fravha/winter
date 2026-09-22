@@ -46,9 +46,13 @@ const quantity = z.string().regex(/^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/);
 const positiveQuantity = quantity.refine(value => Number(value) > 0, "Quantity must be positive");
 export const releaseBatchSchema = z.object({
   quantity: positiveQuantity, warehouseId: z.string().uuid(), operationKey: code,
-  lotCode: code, classification: z.enum(["PRODUCTO_ENVASADO", "PRODUCTO_TERMINADO", "PRODUCTO_TERMINADO_EXPORTACION"]),
+  lotCode: code, classification: z.literal("PRODUCTO_ENVASADO"),
   fechaIngreso: z.coerce.date(), observations: z.string().max(2000).optional(),
   requestHash: z.string().optional(),
+}).strict();
+export const grapeReceptionListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
 }).strict();
 const measurementValue = z.string().trim().regex(/^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/);
 export const containerCreateSchema = z.object({ code: code, capacity: quantity, capacityUnit: z.string().trim().min(1).max(30), observations: z.string().max(2000).optional() }).strict();
