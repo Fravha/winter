@@ -1,9 +1,13 @@
 import type { ExecutionContext, StockPosition, TrustedIntermoduleContext, InventoryLotClassification } from "./inventory.model.js";
-import type { AdjustmentInput, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
+import type { AdjustmentInput, InventoryMovementListInput, InventoryMovementListResult, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
 import type { SharedTransactionContext } from "../../core/database/shared-unit-of-work.js";
 export interface InventoryApi {
  getWarehouse(input: { warehouseId: string }, context?: ExecutionContext): Promise<unknown>;
  listWarehouses(input?: { page?: number; pageSize?: number }, context?: ExecutionContext): Promise<unknown>;
+ listMovements(
+  input: InventoryMovementListInput,
+  context?: ExecutionContext,
+): Promise<InventoryMovementListResult>;
  getInventoryLot(input: { inventoryLotId: string }, context?: ExecutionContext): Promise<unknown>;
  getStock(input: { warehouseId: string; articuloId: string; inventoryLotId?: string }, context?: ExecutionContext): Promise<StockPosition>;
  getAvailableQuantity(input: { warehouseId: string; articuloId: string; inventoryLotId?: string }, context?: ExecutionContext): Promise<unknown>;

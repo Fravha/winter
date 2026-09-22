@@ -1,9 +1,9 @@
 # Inventory — contrato HTTP
 
 Este documento describe exclusivamente las rutas montadas por
-`inventoryDocType` en `/api/v1/inventory`. Hay **14 endpoints públicos**:
-almacenes (6), consultas de stock/lotes (3), clasificación de lotes (1) y
-movimientos (4).
+`inventoryDocType` en `/api/v1/inventory`. Hay **15 endpoints públicos**:
+almacenes (6), consultas de stock/lotes (3), clasificación de lotes (1),
+consulta de historial de movimientos (1) y comandos de movimientos (4).
 
 Todas las rutas requieren:
 
@@ -72,9 +72,15 @@ no aceptan un mecanismo HTTP de idempotencia.
 Cada movimiento exitoso escribe un `InventoryMovement` inmutable con tipo,
 fuente, cantidad, unidad, saldo anterior y saldo resultante. También actualiza
 atómicamente `InventoryStock`, que es el saldo materializado para consultas
-rápidas. No existe endpoint HTTP para listar el ledger de movimientos: el
-movimiento es el historial/fuente de verdad y `InventoryStock` es la lectura
-materializada.
+rápidas.
+
+`InventoryMovement` constituye el historial y fuente de verdad de movimientos.
+El historial puede consultarse mediante `GET /api/v1/inventory/movements`,
+principalmente por artículo. Esta consulta es de solo lectura y no modifica
+saldos ni movimientos históricos.
+
+`InventoryStock` continúa siendo la lectura materializada utilizada para
+consultar el saldo actual.
 
 ## Almacenes
 
@@ -329,7 +335,94 @@ Idempotency-Key: lot-classify-001
 
 ## Movimientos
 
-### 11. Registrar inbound
+### 11. Consultar historial de movimientos por artículo
+
+**GET `/api/v1/inventory/movements`**
+
+- **Objetivo:** consultar el historial inmutable de movimientos de un artículo
+  sin requerir que el usuario conozca los UUID de sus lotes.
+- **Autenticación/permiso:** Firebase ID Token; `inventory:read`.
+- **Headers:** `Authorization`; `x-request-id` opcional.
+  No requiere `Idempotency-Key` porque es una consulta de solo lectura.
+- **Query param requerido:**
+  - `articuloId`: UUID del artículo.
+- **Query params opcionales:**
+  - `warehouseId`: UUID del almacén origen.
+  - `inventoryLotId`: UUID del lote.
+  - `type`: `INBOUND | OUTBOUND | TRANSFER | ADJUSTMENT`.
+  - `page`: entero positivo; default `1`.
+  - `pageSize`: entero positivo; default `20`.
+- **Body:** ninguno.
+- **Éxito:** `200`.
+- **Orden:** movimientos más recientes primero.
+- **Paginación:** la respuesta incluye `page`, `pageSize`, `total` y
+  `totalPages`.
+- **Errores:** `400 VALIDATION_ERROR` cuando faltan parámetros requeridos,
+  algún UUID es inválido, el tipo no pertenece al enum permitido o la
+  paginación es inválida; `401` por autenticación inválida y `403` por falta
+  de `inventory:read`.
+- **Reglas:**
+  - `articuloId` es el criterio principal de consulta.
+  - La consulta no modifica `InventoryMovement` ni `InventoryStock`.
+  - No requiere lote. Un movimiento puede responder `lot: null`.
+  - Cuando existe lote, la respuesta incluye su `lotCode` legible.
+  - Los UUID se conservan como identificadores técnicos, pero la respuesta
+    también incluye código y nombre de artículo y almacenes para consumo del
+    frontend.
+  - En movimientos `TRANSFER`, `destinationWarehouse` contiene el almacén
+    destino; en otros tipos puede ser `null`.
+
+Ejemplo:
+
+```http
+GET /api/v1/inventory/movements?articuloId=c2b934ca-5439-47bb-89f4-ae732eb547ea&page=1&pageSize=20
+Authorization: Bearer <Firebase-ID-token>
+
+{
+  "data": {
+    "items": [
+      {
+        "id": "f51275f6-3256-491d-aa7d-1a71b5e2520e",
+        "type": "TRANSFER",
+        "source": "TRASLADO",
+        "reason": null,
+        "quantity": "15.000",
+        "unit": "G",
+        "stockBefore": "490.000",
+        "resultingStock": "475.000",
+        "createdAt": "2026-09-22T20:48:40.970Z",
+        "articulo": {
+          "id": "c2b934ca-5439-47bb-89f4-ae732eb547ea",
+          "codigo": "TEST-002",
+          "nombre": "Ventonita"
+        },
+        "warehouse": {
+          "id": "bfa62443-e3a8-44ed-9c64-a49e9b69b624",
+          "codigo": "ALM-002",
+          "nombre": "Almacen Tarija"
+        },
+        "destinationWarehouse": {
+          "id": "897fc4c1-fc45-4d22-b44c-2c1d9b2c5ca4",
+          "codigo": "ALM-001",
+          "nombre": "Almacen MB - Green Tower"
+        },
+        "lot": null
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "pageSize": 20,
+      "total": 3,
+      "totalPages": 1
+    }
+  },
+  "meta": {
+    "requestId": null
+  }
+}
+```
+
+### 12. Registrar inbound
 
 **POST `/api/v1/inventory/inbound`**
 
@@ -362,7 +455,7 @@ Idempotency-Key: lot-classify-001
 }
 ```
 
-### 12. Registrar outbound
+### 13. Registrar outbound
 
 **POST `/api/v1/inventory/outbound`**
 
@@ -391,7 +484,7 @@ Idempotency-Key: lot-classify-001
 }
 ```
 
-### 13. Transferir entre almacenes
+### 14. Transferir entre almacenes
 
 **POST `/api/v1/inventory/transfer`**
 
@@ -425,7 +518,7 @@ Idempotency-Key: lot-classify-001
 }
 ```
 
-### 14. Registrar ajuste
+### 15. Registrar ajuste
 
 **POST `/api/v1/inventory/adjustment`**
 

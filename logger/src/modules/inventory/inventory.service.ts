@@ -1,7 +1,7 @@
 import { AppError } from "../../shared/errors/app-error.js";
 import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
 import type { InventoryApi } from "./inventory.api.js";
-import type { AdjustmentInput, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
+import type { AdjustmentInput, InventoryMovementListInput, InventoryMovementListResult, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
 import { isTrustedIntermoduleContext } from "./inventory.model.js";
 import type { ExecutionContext, InventoryLotClassification, InventoryUnit, TrustedIntermoduleContext } from "./inventory.model.js";
 import { InventoryUnitOfWork } from "./inventory.unit-of-work.js";
@@ -233,11 +233,11 @@ export class InventoryService implements InventoryApi {
     await tx.inventoryIdempotency.create({ data: { key, operation, requestFingerprint, response: JSON.parse(JSON.stringify(result)) as Prisma.InputJsonValue } });
     return result;
   }
-  private async movement(input: MovementInput, ctx: ExecutionContext, type: "INBOUND"|"OUTBOUND"|"ADJUSTMENT", permission: string, lotInput?: LotInput, operationName: string = type) {
+  private async movement(input: MovementInput, ctx: ExecutionContext, type: "INBOUND" | "OUTBOUND" | "ADJUSTMENT", permission: string, lotInput?: LotInput, operationName: string = type) {
     required(ctx, permission);
     await this.validateArticle(input);
     const amount = parsePositiveInventoryQuantity(input.quantity, input.unit as InventoryUnit);
-    if (!["KG","G","L","M","UNIDAD"].includes(input.unit)) throw new AppError("INVALID_UNIT", "Unit is not supported", 400);
+    if (!["KG", "G", "L", "M", "UNIDAD"].includes(input.unit)) throw new AppError("INVALID_UNIT", "Unit is not supported", 400);
     return this.uow.execute(async (tx) => this.idempotent(tx, input.idempotencyKey, operationName, inventoryRequestFingerprint({ input, lotInput }), async () => {
       const warehouse = await tx.warehouse.findUnique({ where: { id: input.warehouseId } });
       if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found", 404);
@@ -379,7 +379,7 @@ export class InventoryService implements InventoryApi {
     }));
   }
   getWarehouse(i: { warehouseId: string }) { return this.prisma.warehouse.findUniqueOrThrow({ where: { id: i.warehouseId } }); }
-  
+
   listWarehouses(
     i: { page?: number | string; pageSize?: number | string } = {},
   ) {
@@ -407,6 +407,124 @@ export class InventoryService implements InventoryApi {
       take: pageSize,
       orderBy: { codigo: "asc" },
     });
+  }
+
+  async listMovements(
+    i: InventoryMovementListInput,
+  ): Promise<InventoryMovementListResult> {
+    const page = Number(i.page ?? 1);
+    const pageSize = Number(i.pageSize ?? 20);
+
+    if (!Number.isInteger(page) || page < 1) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "page must be a positive integer",
+        400,
+      );
+    }
+
+    if (!Number.isInteger(pageSize) || pageSize < 1) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "pageSize must be a positive integer",
+        400,
+      );
+    }
+
+    const where: Prisma.InventoryMovementWhereInput = {
+      articuloId: i.articuloId,
+      ...(i.warehouseId ? { warehouseId: i.warehouseId } : {}),
+      ...(i.inventoryLotId ? { inventoryLotId: i.inventoryLotId } : {}),
+      ...(i.type ? { type: i.type } : {}),
+    };
+
+    const [total, movements] = await this.prisma.$transaction([
+      this.prisma.inventoryMovement.count({ where }),
+
+      this.prisma.inventoryMovement.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: [
+          { createdAt: "desc" },
+          { id: "desc" },
+        ],
+        select: {
+          id: true,
+          type: true,
+          source: true,
+          reason: true,
+          quantity: true,
+          unit: true,
+          stockBefore: true,
+          resultingStock: true,
+          createdAt: true,
+
+          articulo: {
+            select: {
+              id: true,
+              codigo: true,
+              nombre: true,
+            },
+          },
+
+          warehouse: {
+            select: {
+              id: true,
+              codigo: true,
+              nombre: true,
+            },
+          },
+
+          destinationWarehouse: {
+            select: {
+              id: true,
+              codigo: true,
+              nombre: true,
+            },
+          },
+
+          lot: {
+            select: {
+              id: true,
+              lotCode: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      items: movements.map((movement) => ({
+        id: movement.id,
+        type: movement.type,
+        source: movement.source,
+        reason: movement.reason,
+        quantity: formatInventoryQuantity(
+          parseInventoryQuantity(movement.quantity.toString()),
+        ),
+        unit: movement.unit,
+        stockBefore: formatInventoryQuantity(
+          parseInventoryQuantity(movement.stockBefore.toString()),
+        ),
+        resultingStock: formatInventoryQuantity(
+          parseInventoryQuantity(movement.resultingStock.toString()),
+        ),
+        createdAt: movement.createdAt.toISOString(),
+
+        articulo: movement.articulo,
+        warehouse: movement.warehouse,
+        destinationWarehouse: movement.destinationWarehouse,
+        lot: movement.lot,
+      })),
+
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
 
   getInventoryLot(i: { inventoryLotId: string }) { return this.prisma.inventoryLot.findUniqueOrThrow({ where: { id: i.inventoryLotId } }); }

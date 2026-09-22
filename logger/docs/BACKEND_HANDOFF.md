@@ -163,6 +163,17 @@ inventar códigos.
 `InventoryStock` es el saldo materializado que se actualiza dentro de los
 workflows transaccionales.
 
+Inventory expone además una consulta de solo lectura del historial mediante:
+
+```text
+GET /api/v1/inventory/movements
+```
+La consulta utiliza articuloId como criterio principal y permite filtrar
+opcionalmente por almacén, lote y tipo de movimiento. La respuesta incorpora
+datos legibles de artículo, almacén origen, almacén destino y lote cuando
+corresponde, evitando que el frontend dependa de UUID de lote como mecanismo
+principal de consulta.
+
 ### Production
 
 El flujo principal conecta:

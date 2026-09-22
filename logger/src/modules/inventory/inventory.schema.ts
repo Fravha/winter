@@ -12,3 +12,11 @@ export const warehouseUpdateSchema = z.object({
 }).strict();
 export const idempotencySchema = z.string().min(1);
 export const classificationSchema = z.object({ classification: z.enum(["PRODUCTO_ENVASADO", "PRODUCTO_TERMINADO", "PRODUCTO_TERMINADO_EXPORTACION"]) });
+export const movementHistoryQuerySchema = z.object({
+  articuloId: z.string().uuid(),
+  warehouseId: z.string().uuid().optional(),
+  inventoryLotId: z.string().uuid().optional(),
+  type: z.enum(["INBOUND", "OUTBOUND", "TRANSFER", "ADJUSTMENT"]).optional(),
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().optional(),
+}).strict();

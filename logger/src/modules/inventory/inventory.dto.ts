@@ -33,3 +33,57 @@ export interface RegisterInboundResult {
   resultingStock: string;
   createdAt: string;
 }
+
+export interface InventoryMovementListInput {
+  articuloId: string;
+  warehouseId?: string;
+  inventoryLotId?: string;
+  type?: InventoryMovementType;
+  page?: number | string;
+  pageSize?: number | string;
+}
+
+export interface InventoryMovementListItem {
+  id: string;
+  type: InventoryMovementType;
+  source: string;
+  reason: string | null;
+  quantity: string;
+  unit: InventoryUnit;
+  stockBefore: string;
+  resultingStock: string;
+  createdAt: string;
+
+  articulo: {
+    id: string;
+    codigo: string;
+    nombre: string;
+  };
+
+  warehouse: {
+    id: string;
+    codigo: string;
+    nombre: string;
+  };
+
+  destinationWarehouse: {
+    id: string;
+    codigo: string;
+    nombre: string;
+  } | null;
+
+  lot: {
+    id: string;
+    lotCode: string;
+  } | null;
+}
+
+export interface InventoryMovementListResult {
+  items: InventoryMovementListItem[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+}
