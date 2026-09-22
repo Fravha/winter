@@ -379,7 +379,36 @@ export class InventoryService implements InventoryApi {
     }));
   }
   getWarehouse(i: { warehouseId: string }) { return this.prisma.warehouse.findUniqueOrThrow({ where: { id: i.warehouseId } }); }
-  listWarehouses(i: { page?: number; pageSize?: number } = {}) { const page = i.page ?? 1, pageSize = i.pageSize ?? 20; return this.prisma.warehouse.findMany({ skip: (page - 1) * pageSize, take: pageSize, orderBy: { codigo: "asc" } }); }
+  
+  listWarehouses(
+    i: { page?: number | string; pageSize?: number | string } = {},
+  ) {
+    const page = Number(i.page ?? 1);
+    const pageSize = Number(i.pageSize ?? 20);
+
+    if (!Number.isInteger(page) || page < 1) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "page must be a positive integer",
+        400,
+      );
+    }
+
+    if (!Number.isInteger(pageSize) || pageSize < 1) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "pageSize must be a positive integer",
+        400,
+      );
+    }
+
+    return this.prisma.warehouse.findMany({
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy: { codigo: "asc" },
+    });
+  }
+
   getInventoryLot(i: { inventoryLotId: string }) { return this.prisma.inventoryLot.findUniqueOrThrow({ where: { id: i.inventoryLotId } }); }
   async getStock(i: { warehouseId: string; articuloId: string; inventoryLotId?: string }) {
     const row = await this.prisma.inventoryStock.findFirst({
