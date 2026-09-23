@@ -14,7 +14,7 @@ const quickAccessItems = [
 export default function HomePage() {
   const { user, role, can } = useAuth();
   const visibleItems = quickAccessItems.filter((item) => can(item.permission));
-  const canAccessAdministration = can('users:read') || can('rbac:read');
+  const canAccessAdministration = ['users:read', 'users:manage', 'rbac:read', 'rbac:manage'].some(can);
   
   return (
     <div className="space-y-6">

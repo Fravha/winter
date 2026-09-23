@@ -17,7 +17,10 @@ import { AppShell } from '@/components/layout/AppShell';
 import LoginPage from '@/pages/auth/LoginPage';
 import HomePage from '@/pages/HomePage';
 import NotFound from '@/pages/not-found';
-import { PlaceholderPage } from '@/pages/PlaceholderPage';
+import AdministracionPage from '@/pages/administracion/AdministracionPage';
+import UsuariosPage from '@/pages/administracion/UsuariosPage';
+import RolesPage from '@/pages/administracion/RolesPage';
+import PermisosPage from '@/pages/administracion/PermisosPage';
 import ProduccionPage from '@/pages/produccion/ProduccionPage';
 import BatchTracePage, { BATCH_TRACE_PERMISSION } from '@/pages/produccion/BatchTracePage';
 import ArticulosPage from '@/pages/articulos/ArticulosPage';
@@ -65,14 +68,27 @@ function ProtectedRoutes() {
             )}
           </Route>
 
-          {/* Grouped administracion - using generic routing for these roles */}
+          <Route path="/administracion/usuarios">
+            <PermissionGuard permission="users:read" showErrorPage>
+              <UsuariosPage />
+            </PermissionGuard>
+          </Route>
+
+          <Route path="/administracion/roles">
+            <PermissionGuard permission="rbac:read" showErrorPage>
+              <RolesPage />
+            </PermissionGuard>
+          </Route>
+
+          <Route path="/administracion/permisos">
+            <PermissionGuard permission="rbac:read" showErrorPage>
+              <PermisosPage />
+            </PermissionGuard>
+          </Route>
+
           <Route path="/administracion">
-            <PermissionGuard permission={['users:read', 'rbac:read']} showErrorPage>
-              <PlaceholderPage
-                eyebrow="Administración"
-                title="Administración"
-                description="Ajustes generales, usuarios, roles y permisos."
-              />
+            <PermissionGuard permission={['users:read', 'users:manage', 'rbac:read', 'rbac:manage']} showErrorPage>
+              <AdministracionPage />
             </PermissionGuard>
           </Route>
 

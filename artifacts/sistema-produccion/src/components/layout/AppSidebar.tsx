@@ -19,13 +19,16 @@ import {
   Boxes,
   Factory,
   Settings,
+  Users,
+  Shield,
+  KeyRound,
 } from 'lucide-react';
 
 type NavItem = {
   label: string;
   href: string;
   icon: React.ElementType;
-  permission?: string;
+  permission?: string | string[];
 };
 
 type NavGroup = {
@@ -52,7 +55,10 @@ const navGroups: NavGroup[] = [
   {
     label: 'ADMINISTRACIÓN',
     items: [
-      { label: 'Administración', href: '/administracion', icon: Settings },
+      { label: 'Administración', href: '/administracion', icon: Settings, permission: ['users:read', 'users:manage', 'rbac:read', 'rbac:manage'] },
+      { label: 'Usuarios', href: '/administracion/usuarios', icon: Users, permission: 'users:read' },
+      { label: 'Roles', href: '/administracion/roles', icon: Shield, permission: 'rbac:read' },
+      { label: 'Permisos', href: '/administracion/permisos', icon: KeyRound, permission: 'rbac:read' },
     ],
   },
 ];
@@ -61,8 +67,6 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { can } = useAuth();
   const { isMobile, setOpenMobile } = useSidebar();
-
-  const canAccessAdministration = can('users:read') || can('rbac:read');
 
   const closeMobileNavigation = () => {
     if (isMobile) setOpenMobile(false);
@@ -86,8 +90,8 @@ export function AppSidebar() {
         {navGroups.map((group) => {
           // Filter items based on permissions
           const visibleItems = group.items.filter((item) => {
-            if (item.href === '/administracion') return canAccessAdministration;
-            return !item.permission || can(item.permission);
+            if (!item.permission) return true;
+            return (Array.isArray(item.permission) ? item.permission : [item.permission]).some(can);
           });
           
           if (visibleItems.length === 0) return null;
@@ -101,7 +105,7 @@ export function AppSidebar() {
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton
                         asChild
-                        isActive={location === item.href || (item.href !== '/' && location.startsWith(item.href))}
+                          isActive={location === item.href || (item.href !== '/' && item.href !== '/administracion' && location.startsWith(`${item.href}/`))}
                         tooltip={item.label}
                       >
                         <Link href={item.href} onClick={closeMobileNavigation}>
