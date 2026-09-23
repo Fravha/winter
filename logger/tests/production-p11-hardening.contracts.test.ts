@@ -233,7 +233,9 @@ function tracePrisma(edges: Array<{ id: string; parentBatchId: string; childBatc
     productionLoss: { findMany: async () => [] },
     inventoryLot: { findMany: async () => [] },
     inventoryMovement: { findMany: async () => [] },
+     productionInventoryRelease: { findMany: async () => [] },
     inventoryStock: { findMany: async () => [] },
+     warehouse: { findMany: async () => [] },
   } as unknown as FakePrisma;
 }
 

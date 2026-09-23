@@ -30,7 +30,7 @@ IDs de path son UUID; cuerpos strict de Zod rechazan campos desconocidos.
 `production:transformation_create`, `production:loss_create`,
 `production:inventory_release`, `production:measurement_correct`,
 `production:reception_correct`, `production:work_input_create`,
-`production:work_input_reverse`.
+`production:work_input_reverse`, `production:inventory_release_reverse`.
 
 `code` tiene 1--100 caracteres; `name` y `label`, 1--200. Las cantidades
 son strings no negativas con hasta tres decimales; cantidades de operación
@@ -322,36 +322,44 @@ transferredToInventory,available,ledgerVersion,updatedAt}}`.
 Permiso `production:read`; query `page,pageSize,articuloId,productionOrderId`;
 200 devuelve `data` de detalles con la forma anterior y `meta`.
 
-### `GET /api/v1/production/batches/:id`
+### `GET /api/v1/production/batches/:batchId`
 
 Permiso `production:read`; path UUID; 200 devuelve un detalle completo con
 balance embebido; el controller delega inexistencia al servicio.
 
-### `GET /api/v1/production/batches/:id/trace`
+### `GET /api/v1/production/batches/:batchId/trace`
 
 Permiso `production:read`; path UUID; 200:
 `{"data":{"batches":[{"id":"11111111-1111-4111-8111-111111111111","code":"B-1","productionOrderId":"22222222-2222-4222-8222-222222222222","articuloId":"33333333-3333-4333-8333-333333333333","unit":"KG","createdAt":"2025-01-01T00:00:00.000Z","observations":null,"version":0,"balance":{"productionBatchId":"11111111-1111-4111-8111-111111111111","generated":"100.000","consumed":"0.000","separated":"0.000","lost":"0.000","transferredToInventory":"0.000","available":"100.000","ledgerVersion":0,"updatedAt":"2025-01-01T00:00:00.000Z"}}],"lineage":[],"ledger":[],"receptions":[],"transformations":[],"measurements":[],"works":[],"containers":[]}}`.
 Puede producir `TRACE_LIMIT_EXCEEDED` (422) sobre profundidad 100 o 1000
 batches.
 
-### `GET /api/v1/production/batches/:id/balance`
+### `GET /api/v1/production/batches/:batchId/balance`
 
 Permiso `production:read`; path UUID; body/query `—`; 200 **sólo**:
 `{"data":{"productionBatchId":"11111111-1111-4111-8111-111111111111","unit":"KG","available":"100.000"}}`.
 No devuelve `generated`, `consumed`, `ledgerVersion` ni el balance embebido
 del detalle.
 
-### `POST /api/v1/production/batches/:id/release-to-inventory`
+### `POST /api/v1/production/batches/:batchId/release-to-inventory`
 
 Permiso `production:inventory_release`; request:
 `{"quantity":"20.000","warehouseId":"44444444-4444-4444-8444-444444444444","operationKey":"release-1","lotCode":"LOT-1","classification":"PRODUCTO_ENVASADO","fechaIngreso":"2025-01-02T00:00:00.000Z","observations":"Liberación"}`.
-`requestHash` es opcional. 200:
-`{"data":{"productionBatchId":"11111111-1111-4111-8111-111111111111","quantity":"20.000","remainingProductionQuantity":"80.000","inventoryLotId":"55555555-5555-4555-8555-555555555555","inventoryMovementId":"44444444-4444-4444-8444-444444444444","warehouseId":"44444444-4444-4444-8444-444444444444"}}`.
+El backend calcula y persiste el SHA-256 del comando normalizado; el cliente no
+puede elegir ese hash.
+El replay con la misma clave y payload devuelve el resultado original y un
+payload distinto produce `IDEMPOTENCY_CONFLICT`. 200:
+`{"data":{"releaseId":"33333333-3333-4333-8333-333333333333","productionBatchId":"11111111-1111-4111-8111-111111111111","quantity":"20.000","remainingProductionQuantity":"80.000","inventoryLotId":"55555555-5555-4555-8555-555555555555","inventoryMovementId":"44444444-4444-4444-8444-444444444444","warehouseId":"44444444-4444-4444-8444-444444444444"}}`.
 `classification` acepta exclusivamente `PRODUCTO_ENVASADO`. Production libera
 el lote con esa clasificación inicial; las transiciones posteriores a
 `PRODUCTO_TERMINADO` o `PRODUCTO_TERMINADO_EXPORTACION` son responsabilidad de
 Inventory. Balance insuficiente e
 `IDEMPOTENCY_CONFLICT` son errores relevantes.
+
+### `GET /api/v1/production/inventory-release/warehouses`
+
+Permiso `production:inventory_release`; devuelve los almacenes activos
+disponibles para release a Inventory.
 
 ## 6. Containers / occupancies / movements
 
@@ -364,6 +372,22 @@ Occupancy is `{id,containerId,batchId,quantity,unit,openedAt,closedAt}`;
 movement is `{id,movementType,sourceContainerId,destinationContainerId,
 sourceBatchId,destinationBatchId,quantity,unit,productionWorkId,observations,
 actorUserId,occurredAt,createdAt}` and never exposes `requestHash`.
+
+### `GET /api/v1/production/batches/:batchId/releases`
+
+Permiso `production:read`; devuelve el historial append-only de releases del
+batch, con cantidad, lote/movimiento de Inventory, almacén, actor y fechas. No
+se edita ni elimina historia.
+
+### `POST /api/v1/production/batches/:batchId/releases/:releaseId/reverse`
+
+Permiso `production:inventory_release_reverse`; request:
+`{"operationKey":"reverse-1","reason":"Corrección operativa"}`. La reversión es
+completa y append-only: conserva el release original y crea el movimiento
+compensatorio. Rechaza un release ya revertido, ajeno al batch o cuyo estado
+actual haría insegura la compensación (`UNSAFE_RELEASE_REVERSAL`). No acepta
+`authorizeNegativeStock` ni autoriza stock negativo. Production, Inventory y
+auditoría confirman o revierten juntas.
 
 ### `GET /api/v1/production/containers`
 
@@ -652,16 +676,38 @@ No hay ruta HTTP independiente. Sólo se crean en `losses` de
 
 ## 12. Production → Inventory
 
-La única ruta es `POST /api/v1/production/batches/:id/release-to-inventory`,
+Las rutas son `POST /api/v1/production/batches/:batchId/release-to-inventory`
+y `POST /api/v1/production/batches/:batchId/releases/:releaseId/reverse`,
 descrita arriba. Crea InventoryMovement y actualiza lote/stock de forma
 transaccional; `operationKey` evita duplicar el efecto. No hay endpoint
 adicional.
 
 ## Conteo y auditoría
 
-Las 72 rutas actuales son: 25 de catálogos y 47 rutas explícitas (incluidas
-6 de custom fields, 4 órdenes, 4 transformation-orders, 3 transformations,
-5 batches, 11 containers, 5 works, 4 receptions y 4 measurements). Se
-verificaron métodos, paths,
+El inventario de rutas públicas de este documento (incluidas las rutas de
+release/reversal y el historial de release) se verificó contra métodos, paths,
 permisos, schemas Zod y controllers; las correcciones, ReceptionResult,
 balance reducido y ejemplos UUID reflejan sus formas actuales.
+
+## Cierre P5.5 — contrato público vigente
+
+El inventario público de este documento comprende catálogos, custom fields,
+órdenes, transformation-orders, batches (listado, detalle, trace, balance,
+releases, release y reversal), warehouse options, containers (maestro, detalle,
+occupancies,
+movements, assign, transfer total y partial), works (listado, detalle,
+creación, corrección, inputs y reversal), receptions (listado, detalle,
+creación y corrección), measurements (listado, detalle, creación y corrección)
+y transformations (listado, detalle y creación), todos bajo
+`/api/v1/production` y autenticación Firebase.
+
+P5.5A usa `ProductionWorkInput`, primitives confiables de Inventory y
+`SharedUnitOfWork`; consumo y reversal preservan provenance y son idempotentes.
+Inventory decide la autorización de stock negativo. P5.5B conserva estados
+`DISPONIBLE`, `OCUPADO`, `FUERA_DE_SERVICIO` y movimientos
+`ASSIGNED`/`TRANSFERRED`/`PARTIAL_TRANSFERRED` con lineage. No hay merge-back ni
+reversión destructiva automática de un traslado parcial en el MVP: la corrección
+requiere una nueva operación productiva válida. P5.5C expone trace backward y
+forward con límites, warnings y enlaces de Inventory. P5.5D fija
+`PRODUCTO_ENVASADO`, hash canónico server-side, reversión completa, historia y
+auditoría append-only, y rechazo de reversiones inseguras.

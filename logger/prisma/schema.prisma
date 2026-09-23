@@ -233,9 +233,9 @@ model ProductionInventoryRelease {
   actorUserId        String   @map("actor_user_id") @db.Uuid
   occurredAt         DateTime @map("occurred_at")
   observations       String?
-  productionBatch    ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
-  warehouse          Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  inventoryLot       InventoryLot @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
+  productionBatch    ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  warehouse          Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  inventoryLot       InventoryLot @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   reversal           ProductionInventoryReversal?
   @@index([productionBatchId, occurredAt, id], map: "production_inventory_releases_batch_occurred_id_idx")
   @@unique([operationKey])
@@ -250,7 +250,7 @@ model ProductionInventoryReversal {
   actorUserId        String   @map("actor_user_id") @db.Uuid
   occurredAt         DateTime @map("occurred_at")
   inventoryMovementId String   @map("inventory_movement_id") @db.Uuid
-  release             ProductionInventoryRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict)
+  release             ProductionInventoryRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   @@map("production_inventory_reversals")
 }
 
@@ -640,8 +640,8 @@ model ProductionWorkInput {
   reversedBy       User?          @relation("ProductionWorkInputReverser", fields: [reversedByUserId], references: [id], onDelete: Restrict)
 
   @@index([articuloId])
-  @@index([productionWorkId, createdAt])
-  @@index([warehouseId, articuloId, inventoryLotId])
+  @@index([productionWorkId, createdAt], map: "production_work_inputs_work_created_idx")
+  @@index([warehouseId, articuloId, inventoryLotId], map: "production_work_inputs_position_idx")
   @@map("production_work_inputs")
 }
 

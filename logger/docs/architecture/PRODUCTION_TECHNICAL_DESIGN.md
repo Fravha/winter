@@ -792,7 +792,7 @@ POST /api/v1/production/measurements/:id/corrections
 Query explícita de trazabilidad:
 
 ```text
-GET /api/v1/production/batches/:id/trace
+GET /api/v1/production/batches/:batchId/trace
 ```
 
 La respuesta tipada reconstruye origen, padres, hijos, transformaciones,
@@ -944,5 +944,57 @@ auditoría; Failure C revierte todo, incluido split/lineage/ledger.
 
 Los movimientos históricos son inmutables. Total puede compensarse con un
 traslado inverso nuevo si el estado actual sigue compatible; no se inventa
-un unassign destructivo. La reversión parcial se difiere a P5.5E como decisión
-de dominio. El traslado interno no crea InventoryMovement.
+un unassign destructivo. La reversión parcial no es automática en el MVP: no
+hay merge-back ni reversión destructiva; la corrección requiere una nueva
+operación productiva válida. El traslado interno no crea InventoryMovement.
+
+## 16. Cierre P5.5A–D y criterios de validación
+
+P5.5A–D están reflejados en el diseño vigente: `ProductionWorkInput` usa
+primitives confiables de Inventory dentro de `SharedUnitOfWork`, con consumo,
+reversal compensatorio, idempotencia y política de stock negativo propiedad de
+Inventory. Containers conservan metadata, ocupaciones y movimientos
+`ASSIGNED`, `TRANSFERRED` y `PARTIAL_TRANSFERRED`; el traslado parcial crea
+batch hijo y lineage.
+
+P5.5C expone trace backward/forward con límites, warnings y enlaces de release.
+P5.5D usa las rutas públicas de release y reversal, permisos dedicados,
+clasificación inicial fija `PRODUCTO_ENVASADO`, hash canónico server-side,
+reversión completa, rechazo de estado inseguro e historia append-only.
+
+Las comprobaciones ejecutables y contractuales quedan **PASS**:
+P5.5A PostgreSQL **5/5**, P5.5B **6/6**, P5.5D **21/21**, P5.5E **1/1**,
+P10 Trace **10/10**, Production backend **236/236** con **0 skipped**, Vitest
+frontend **20/20**, typecheck/build backend y frontend **PASS**, Prisma
+validate/generate **PASS**, 33 migraciones aplicadas/status actualizado,
+`No difference detected` entre datasource configurado y schema, y
+`git diff --check` **PASS**.
+
+Las migraciones nuevas son `20260927000000_production_p55e_align_prisma_object_names`
+(alineación de metadata) y
+`20260927010000_production_p55e_eliminate_schema_drift` (eliminación de drift
+de `onUpdate` de FK y nombres de índices); no se editó ninguna migración
+existente.
+
+La aceptación operativa E2E A–F es **PASS**: **A**, BARRICA dinámica sin
+cambios de código; **B**, WorkType dinámico; **C**, WorkInput estructurado y
+consumo mediante InventoryMovement; **D**, movimiento físico estructurado de
+recipientes; **E**, separación GrapeVariety/producto; **F**, observaciones sólo
+narrativas y hechos estructurados en sus campos/entidades correspondientes.
+Login shell
+frontend **PASS** en desktop 1440x1000 y mobile 390x844, con consola limpia.
+El smoke autenticado de Production no es ejecutable por falta de
+`WINTER_DATABASE_URL` y credenciales runtime Firebase; no se inventaron
+credenciales. Las pruebas frontend focalizadas cubren trace/release/reversal,
+permisos, errores, historial vacío, pending/double-submit e idempotencia;
+UAT autenticado completo queda diferido. Por ello el cierre global P5.5E queda
+**BLOCKED**, únicamente por el smoke manual autenticado no ejecutable.
+Fotografías/evidencia quedan
+`Deferred to UAT / Hardening`.
+
+La validación destructiva usa exclusivamente `LOCAL INTEGRATION TEST`,
+`127.0.0.1`, `winter_p55_test`, PostgreSQL local, sin acceso productivo/remoto y
+sin credenciales documentadas. `DATABASE_URL`/heliumdb no están autorizados.
+La limitación del workflow Winter Backend por ausencia de
+`WINTER_DATABASE_URL`/Firebase no invalida typecheck, build, Prisma validation o
+tests de integración.

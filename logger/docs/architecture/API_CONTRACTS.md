@@ -1248,19 +1248,23 @@ Filtros:
 
 # 21. Production API --- Ocupación
 
-La API pública actual permite consultar las ocupaciones de un recipiente, pero
-no expone comandos HTTP para ocuparlo, retirar contenido ni cerrar una
-ocupación. Esas capacidades permanecen como primitivas internas del dominio
-hasta que exista un contrato público específico.
+La API pública actual permite consultar las ocupaciones de un recipiente y
+expone los comandos HTTP `POST /api/v1/production/containers/:id/assign`,
+`POST /api/v1/production/containers/:sourceId/transfers` y
+`POST /api/v1/production/containers/:sourceId/transfers/partial`. Usan,
+respectivamente, `production:container_assign` y
+`production:container_transfer`; validan capacidad, unidad, ocupación y
+lineage dentro de `SharedUnitOfWork`.
 
 ------------------------------------------------------------------------
 
 # 22. Production API --- Movimientos de proceso
 
 La API pública actual permite consultar los movimientos asociados a un
-recipiente, pero no expone un comando HTTP para mover producto entre
-recipientes. La operación interna debe seguir validando cantidad, capacidad y
-consistencia, pero no puede ser invocada directamente por clientes.
+recipiente y mover producto entre recipientes mediante los tres comandos
+anteriores. El traslado total conserva el batch; el parcial crea batch hijo y
+lineage. No existe merge-back ni reversión destructiva automática de un
+traslado parcial en el MVP.
 
 ------------------------------------------------------------------------
 
@@ -2111,8 +2115,10 @@ para simplificar la implementación interna.
 
 ### P9 production inventory release
 
-Production exposes only `POST /api/v1/production/batches/:id/release-to-inventory`
-for this command, protected by `production:inventory_release`. Its command
+Production exposes `POST /api/v1/production/batches/:batchId/release-to-inventory`
+and `POST /api/v1/production/batches/:batchId/releases/:releaseId/reverse`,
+protected by `production:inventory_release` and
+`production:inventory_release_reverse`. Its release command
 contains the positive decimal quantity, warehouse, operation key and existing
 Inventory lot fields. It is allowed for OPEN and CLOSED orders. Production
 coordinates a single Serializable transaction with the trusted Inventory API;
@@ -2156,8 +2162,9 @@ conserva batch/ocupación y no crea `InventoryMovement`.
 Los hechos históricos son inmutables. Una transferencia total puede
 representarse por un traslado inverso nuevo sólo si el destino permanece
 intacto y el estado actual sigue siendo compatible; no se inventa un
-`unassign` destructivo. La reversión de una transferencia parcial queda
-diferida como decisión de dominio P5.5E: no se hace merge inverso ni se
-destruye lineage. Assign, total y parcial se ejecutan en
+`unassign` destructivo. La reversión de una transferencia parcial no es
+automática en MVP: no se hace merge inverso ni reversión destructiva, y se
+corrige con una nueva operación productiva válida. Assign, total y parcial se
+ejecutan en
 `SharedUnitOfWork`; Failure C revierte movement, ocupaciones, estados,
 split/lineage/ledger y auditoría conjuntamente.

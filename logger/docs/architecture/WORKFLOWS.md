@@ -1772,3 +1772,38 @@ Tests
 >
 Generic conventions
 ```
+
+# 44. Production P5.5A–D — contrato operativo vigente
+
+Esta sección prevalece sobre los workflows conceptuales anteriores que nombran
+entidades retiradas o rutas abreviadas. `ProductionWorkInput` es propiedad de
+Production, pero el consumo/reversal de stock usa primitives confiables de
+Inventory dentro de `SharedUnitOfWork`; Inventory conserva ownership de lotes,
+movimientos, stock y la política de stock negativo. Ambos comandos son
+idempotentes y append-only.
+
+Los comandos públicos de recipientes son:
+
+```text
+POST /api/v1/production/containers/:id/assign
+POST /api/v1/production/containers/:sourceId/transfers
+POST /api/v1/production/containers/:sourceId/transfers/partial
+```
+
+Usan `production:container_assign` o `production:container_transfer` (el
+maestro usa `production:container_manage`), registran ocupaciones y los hechos
+`ASSIGNED`, `TRANSFERRED` y `PARTIAL_TRANSFERRED`. Un traslado parcial crea un
+batch hijo y lineage. No existe merge-back ni reversión destructiva automática
+en el MVP; se corrige mediante una nueva operación productiva válida.
+
+La trazabilidad pública es
+`GET /api/v1/production/batches/:batchId/trace` y conecta recepción, batches,
+lineage, works, inputs, mediciones, containers, transformaciones, pérdidas,
+releases y reversals, con límites y warnings. La salida a Inventory es
+`POST /api/v1/production/batches/:batchId/release-to-inventory`, permiso
+`production:inventory_release`, clasificación inicial fija
+`PRODUCTO_ENVASADO`; su reversal es
+`POST /api/v1/production/batches/:batchId/releases/:releaseId/reverse`, permiso
+`production:inventory_release_reverse`. El hash canónico se calcula en servidor,
+la reversión es completa, rechaza estados inseguros, no autoriza stock negativo
+y conserva historia/auditoría append-only.

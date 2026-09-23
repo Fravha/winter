@@ -1,6 +1,6 @@
 ## P10 trace and historical corrections
 
-`GET /api/v1/production/batches/:id/trace` reconstructs bounded batch lineage and related reception, work, transformation, loss, container, measurement and Inventory facts with `production:read`.
+`GET /api/v1/production/batches/:batchId/trace` reconstructs bounded batch lineage and related reception, work, transformation, loss, container, measurement and Inventory facts with `production:read`.
 
 Historical corrections are append-only commands:
 
@@ -58,8 +58,8 @@ ledger, balance, lineage, operation-key and audit writes atomically.
 The read-only endpoints require `production:read`:
 
 * `GET /batches?page=1&pageSize=20&productionOrderId=...&articuloId=...`
-* `GET /batches/:id`
-* `GET /batches/:id/balance`
+* `GET /batches/:batchId`
+* `GET /batches/:batchId/balance`
 
 All quantities are decimal strings with exactly three supported fractional
 places and all units must match exactly. Batches have no status and remain
@@ -182,7 +182,8 @@ work, so those checks remain explicit gaps.
 
 ## Release production to Inventory (P9)
 
-`POST /batches/:id/release-to-inventory` requires `production:inventory_release`.
+`POST /batches/:batchId/release-to-inventory` requires `production:inventory_release`.
+
 The body contains `quantity`, `warehouseId`, `operationKey`, `lotCode`,
 `classification`, `fechaIngreso` and optional `observations`. Releases are
 allowed for OPEN and CLOSED orders, while the order and batch are locked.

@@ -30,22 +30,30 @@ const actor: AuthenticatedUser = {
 describe("P11 real PostgreSQL production pagination", () => {
   const prisma = database?.createClient();
   const service = prisma ? new ProductionService(prisma, new AuditService(new PrismaAuditRepository(prisma))) : undefined;
-  const seededIds: string[] = [];
+  const preexistingOrders: Array<{ id: string; status: "OPEN" | "CLOSED" }> = [];
 
   before(async () => {
     if (!prisma) return;
+    // Existing orders (including rows left by other production suites) would
+    // contaminate the status-filtered page. Move them aside without deleting
+    // any unrelated data; related rows make deletion unsafe.
+    const existing = await prisma.productionOrder.findMany({ select: { id: true, code: true, status: true } });
+    preexistingOrders.push(...existing
+      .filter(row => !row.code.startsWith("P11-PAGE-"))
+      .map(row => ({ id: row.id, status: row.status as "OPEN" | "CLOSED" })));
+    if (preexistingOrders.length) await prisma.productionOrder.updateMany({ where: { id: { in: preexistingOrders.map(row => row.id) } }, data: { status: "CLOSED" } });
     await prisma.productionOrder.deleteMany({ where: { code: { startsWith: "P11-PAGE-" } } });
     const rows = await Promise.all([
       prisma.productionOrder.create({ data: { code: "P11-PAGE-A", startDate: new Date("2026-01-02T00:00:00.000Z"), status: "OPEN" } }),
       prisma.productionOrder.create({ data: { code: "P11-PAGE-B", startDate: new Date("2026-01-02T00:00:00.000Z"), status: "OPEN" } }),
       prisma.productionOrder.create({ data: { code: "P11-PAGE-C", startDate: new Date("2026-01-01T00:00:00.000Z"), status: "OPEN" } }),
     ]);
-    seededIds.push(...rows.map((row) => row.id));
   });
 
   after(async () => {
     if (!prisma) return;
-    await prisma.productionOrder.deleteMany({ where: { id: { in: seededIds } } });
+    await prisma.productionOrder.deleteMany({ where: { code: { startsWith: "P11-PAGE-" } } });
+    for (const row of preexistingOrders) await prisma.productionOrder.update({ where: { id: row.id }, data: { status: row.status } });
     await prisma.$disconnect();
   });
 
@@ -73,6 +81,7 @@ describe("P11 real PostgreSQL production pagination", () => {
       const secondPage = await fetch(`${base}?status=OPEN&page=2&pageSize=2`, { headers: { authorization: "Bearer valid" } });
       assert.deepEqual((await secondPage.json() as { data: Array<{ code: string }> }).data.map((row) => row.code), ["P11-PAGE-C"]);
 
+      if (preexistingOrders.length) await prisma.productionOrder.updateMany({ where: { id: { in: preexistingOrders.map(row => row.id) } }, data: { status: "OPEN" } });
       const empty = await fetch(`${base}?status=CLOSED&page=1&pageSize=100`, { headers: { authorization: "Bearer valid" } });
       assert.equal(empty.status, 200);
       const emptyBody = await empty.json() as { data: unknown[]; meta: { total: number } };

@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { AuditService } from "../src/core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../src/core/audit/prisma-audit.repository.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
-import { ProductionContainerService } from "../src/modules/production/production.container.js";
+import {
+  canonicalContainerAssignmentRequest,
+  canonicalContainerPartialTransferRequest,
+  canonicalContainerTransferRequest,
+  ProductionContainerService,
+} from "../src/modules/production/production.container.js";
 import { createTemporaryProductionDatabaseResource } from "./helpers/production-test-database.js";
 
 const database = createTemporaryProductionDatabaseResource("P4_DATABASE_URL", connectionString => ({
@@ -14,6 +19,13 @@ const database = createTemporaryProductionDatabaseResource("P4_DATABASE_URL", co
   createClient: () => new PrismaClient({ adapter: new PrismaPg({ connectionString }) }),
 }));
 const connectionString = database?.connectionString;
+const stable = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
+  : Array.isArray(value) ? `[${value.map(stable).join(",")}]`
+    : `{${Object.keys(value as object).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`;
+const digest = (value: unknown) => createHash("sha256").update(stable(value)).digest("hex");
+const assignmentHash = (data: any) => digest(canonicalContainerAssignmentRequest(data));
+const transferHash = (data: any) => digest(canonicalContainerTransferRequest(data));
+const partialHash = (data: any) => digest(canonicalContainerPartialTransferRequest(data));
 let available = false;
 if (database) {
   const probe = database.createClient();
@@ -43,9 +55,12 @@ describe("Production P4 PostgreSQL", () => {
     const source = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "10.000", capacityUnit: "KG" }, context);
     const middle = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "10.000", capacityUnit: "KG" }, context);
     const destination = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "10.000", capacityUnit: "KG" }, context);
-    await service.assignBatchToContainer({ batchId: batch.id, destinationContainerId: source.id, quantity: "6.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "assign" }, context);
-    await service.transferBatchBetweenContainers({ batchId: batch.id, sourceContainerId: source.id, destinationContainerId: middle.id, operationKey: `p4-total-${randomUUID()}`, requestHash: "total" }, context);
-    const result = await service.transferBatchPartiallyBetweenContainers({ batchId: batch.id, sourceContainerId: middle.id, destinationContainerId: destination.id, quantity: "2.000", childCode: `P4-CH-${randomUUID()}`, operationKey: `p4-partial-${randomUUID()}`, requestHash: "partial" }, context);
+    const assign = { batchId: batch.id, destinationContainerId: source.id, quantity: "6.000", operationKey: `p4-assign-${randomUUID()}` };
+    await service.assignBatchToContainer({ ...assign, requestHash: assignmentHash(assign) }, context);
+    const total = { batchId: batch.id, sourceContainerId: source.id, destinationContainerId: middle.id, operationKey: `p4-total-${randomUUID()}` };
+    await service.transferBatchBetweenContainers({ ...total, requestHash: transferHash(total) }, context);
+    const partial = { batchId: batch.id, sourceContainerId: middle.id, destinationContainerId: destination.id, quantity: "2.000", childCode: `P4-CH-${randomUUID()}`, operationKey: `p4-partial-${randomUUID()}` };
+    const result = await service.transferBatchPartiallyBetweenContainers({ ...partial, requestHash: partialHash(partial) }, context);
     assert.equal(result.source.quantity, "4.000");
     assert.equal(result.destination.quantity, "2.000");
     assert.equal(result.child.balance.available, "2.000");
@@ -59,17 +74,21 @@ describe("Production P4 PostgreSQL", () => {
     const other = await service.createBatch({ code: `P4-B-${randomUUID()}`, productionOrderId: orderId, articuloId: randomUUID(), unit: "L", quantity: "2.000", operationKey: `p4-create-${randomUUID()}`, requestHash: "p4" }, context);
     const occupied = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "2.000", capacityUnit: "L" }, context);
     const source = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "2.000", capacityUnit: "L" }, context);
-    await service.assignBatchToContainer({ batchId: other.id, destinationContainerId: occupied.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "assign" }, context);
-    await assert.rejects(service.assignBatchToContainer({ batchId: batch.id, destinationContainerId: occupied.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "assign" }, context), (error: any) => error.code === "CONTAINER_OCCUPIED");
+    const occupiedSeed = { batchId: other.id, destinationContainerId: occupied.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}` };
+    await service.assignBatchToContainer({ ...occupiedSeed, requestHash: assignmentHash(occupiedSeed) }, context);
+    const occupiedAttempt = { batchId: batch.id, destinationContainerId: occupied.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}` };
+    await assert.rejects(service.assignBatchToContainer({ ...occupiedAttempt, requestHash: assignmentHash(occupiedAttempt) }, context), (error: any) => error.code === "CONTAINER_OCCUPIED");
     await service.deactivateContainer(source.id, context);
-    await assert.rejects(service.assignBatchToContainer({ batchId: batch.id, destinationContainerId: source.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "assign" }, context), (error: any) => error.code === "CONTAINER_OUT_OF_SERVICE");
+    const outAttempt = { batchId: batch.id, destinationContainerId: source.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}` };
+    await assert.rejects(service.assignBatchToContainer({ ...outAttempt, requestHash: assignmentHash(outAttempt) }, context), (error: any) => error.code === "CONTAINER_OUT_OF_SERVICE");
   });
 
   it("protects open container allocations from P3 reductions", integrationOptions, async () => {
     assert.ok(service);
     const batch = await service.createBatch({ code: `P4-B-${randomUUID()}`, productionOrderId: orderId, articuloId: randomUUID(), unit: "KG", quantity: "5.000", operationKey: `p4-create-${randomUUID()}`, requestHash: "allocation" }, context);
     const container = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "5.000", capacityUnit: "KG" }, context);
-    await service.assignBatchToContainer({ batchId: batch.id, destinationContainerId: container.id, quantity: "3.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "allocation" }, context);
+    const allocation = { batchId: batch.id, destinationContainerId: container.id, quantity: "3.000", operationKey: `p4-assign-${randomUUID()}` };
+    await service.assignBatchToContainer({ ...allocation, requestHash: assignmentHash(allocation) }, context);
     await assert.rejects(service.consumeBatch({ batchId: batch.id, quantity: "3.000", unit: "KG", operationKey: `p4-consume-${randomUUID()}`, requestHash: "allocation" }, context), (error: any) => error.code === "INSUFFICIENT_BATCH_QUANTITY");
     await service.consumeBatch({ batchId: batch.id, quantity: "1.000", unit: "KG", operationKey: `p4-consume-${randomUUID()}`, requestHash: "allocation" }, context);
     await assert.rejects(service.splitBatch({ parentBatchId: batch.id, children: [{ code: `P4-CH-${randomUUID()}`, quantity: "2.000" }], operationKey: `p4-split-${randomUUID()}`, requestHash: "allocation" }, context), (error: any) => error.code === "INSUFFICIENT_BATCH_QUANTITY");
@@ -82,9 +101,11 @@ describe("Production P4 PostgreSQL", () => {
     const batch = await service.createBatch({ code: `P4-B-${randomUUID()}`, productionOrderId: orderId, articuloId: randomUUID(), unit: "KG", quantity: "5.000", operationKey: `p4-create-${randomUUID()}`, requestHash: "same-batch" }, context);
     const first = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "4.000", capacityUnit: "KG" }, context);
     const second = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "4.000", capacityUnit: "KG" }, context);
-    await service.assignBatchToContainer({ batchId: batch.id, destinationContainerId: first.id, quantity: "2.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "first" }, context);
-    await service.assignBatchToContainer({ batchId: batch.id, destinationContainerId: second.id, quantity: "2.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "second" }, context);
-    await service.assignBatchToContainer({ batchId: batch.id, destinationContainerId: first.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "reopen" }, context);
+    for (const move of [
+      { batchId: batch.id, destinationContainerId: first.id, quantity: "2.000", operationKey: `p4-assign-${randomUUID()}` },
+      { batchId: batch.id, destinationContainerId: second.id, quantity: "2.000", operationKey: `p4-assign-${randomUUID()}` },
+      { batchId: batch.id, destinationContainerId: first.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}` },
+    ]) await service.assignBatchToContainer({ ...move, requestHash: assignmentHash(move) }, context);
     const firstView = await service.getContainer(first.id);
     assert.equal(firstView.occupancies.filter((item) => item.closedAt === null).length, 1);
     assert.equal(firstView.occupancies.find((item) => item.closedAt === null)?.quantity, "3.000");
@@ -97,28 +118,36 @@ describe("Production P4 PostgreSQL", () => {
     const past = new Date(Date.now());
     const addBatch = await service.createBatch({ code: `P4-B-${randomUUID()}`, productionOrderId: orderId, articuloId: randomUUID(), unit: "KG", quantity: "4.000", operationKey: `p4-create-${randomUUID()}`, requestHash: "dates" }, context);
     const addContainer = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "4.000", capacityUnit: "KG" }, context);
-    await service.assignBatchToContainer({ batchId: addBatch.id, destinationContainerId: addContainer.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "dates", occurredAt: future }, context);
-    await assert.rejects(service.assignBatchToContainer({ batchId: addBatch.id, destinationContainerId: addContainer.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "dates", occurredAt: past }, context), (error: any) => error.code === "INVALID_CONTAINER_OPERATION");
+    const addFuture = { batchId: addBatch.id, destinationContainerId: addContainer.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}`, occurredAt: future };
+    await service.assignBatchToContainer({ ...addFuture, requestHash: assignmentHash(addFuture) }, context);
+    const addPast = { ...addFuture, operationKey: `p4-assign-${randomUUID()}`, occurredAt: past };
+    await assert.rejects(service.assignBatchToContainer({ ...addPast, requestHash: assignmentHash(addPast) }, context), (error: any) => error.code === "INVALID_CONTAINER_OPERATION");
     const totalBatch = await service.createBatch({ code: `P4-B-${randomUUID()}`, productionOrderId: orderId, articuloId: randomUUID(), unit: "KG", quantity: "4.000", operationKey: `p4-create-${randomUUID()}`, requestHash: "dates" }, context);
     const totalSource = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "4.000", capacityUnit: "KG" }, context);
     const totalDest = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "4.000", capacityUnit: "KG" }, context);
-    await service.assignBatchToContainer({ batchId: totalBatch.id, destinationContainerId: totalSource.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "dates", occurredAt: future }, context);
-    await assert.rejects(service.transferBatchBetweenContainers({ batchId: totalBatch.id, sourceContainerId: totalSource.id, destinationContainerId: totalDest.id, operationKey: `p4-total-${randomUUID()}`, requestHash: "dates", occurredAt: past }, context), (error: any) => error.code === "INVALID_CONTAINER_OPERATION");
+    const totalFuture = { batchId: totalBatch.id, destinationContainerId: totalSource.id, quantity: "1.000", operationKey: `p4-assign-${randomUUID()}`, occurredAt: future };
+    await service.assignBatchToContainer({ ...totalFuture, requestHash: assignmentHash(totalFuture) }, context);
+    const totalPast = { batchId: totalBatch.id, sourceContainerId: totalSource.id, destinationContainerId: totalDest.id, operationKey: `p4-total-${randomUUID()}`, occurredAt: past };
+    await assert.rejects(service.transferBatchBetweenContainers({ ...totalPast, requestHash: transferHash(totalPast) }, context), (error: any) => error.code === "INVALID_CONTAINER_OPERATION");
     const partialBatch = await service.createBatch({ code: `P4-B-${randomUUID()}`, productionOrderId: orderId, articuloId: randomUUID(), unit: "KG", quantity: "4.000", operationKey: `p4-create-${randomUUID()}`, requestHash: "dates" }, context);
     const partialSource = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "4.000", capacityUnit: "KG" }, context);
     const partialDest = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "4.000", capacityUnit: "KG" }, context);
-    await service.assignBatchToContainer({ batchId: partialBatch.id, destinationContainerId: partialSource.id, quantity: "2.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "dates", occurredAt: future }, context);
-    await assert.rejects(service.transferBatchPartiallyBetweenContainers({ batchId: partialBatch.id, sourceContainerId: partialSource.id, destinationContainerId: partialDest.id, quantity: "1.000", childCode: `P4-CH-${randomUUID()}`, operationKey: `p4-partial-${randomUUID()}`, requestHash: "dates", occurredAt: past }, context), (error: any) => error.code === "INVALID_CONTAINER_OPERATION");
+    const partialFuture = { batchId: partialBatch.id, destinationContainerId: partialSource.id, quantity: "2.000", operationKey: `p4-assign-${randomUUID()}`, occurredAt: future };
+    await service.assignBatchToContainer({ ...partialFuture, requestHash: assignmentHash(partialFuture) }, context);
+    const partialPast = { batchId: partialBatch.id, sourceContainerId: partialSource.id, destinationContainerId: partialDest.id, quantity: "1.000", childCode: `P4-CH-${randomUUID()}`, operationKey: `p4-partial-${randomUUID()}`, occurredAt: past };
+    await assert.rejects(service.transferBatchPartiallyBetweenContainers({ ...partialPast, requestHash: partialHash(partialPast) }, context), (error: any) => error.code === "INVALID_CONTAINER_OPERATION");
   });
 
   it("replays idempotent assignments, rejects conflicts, and protects historical facts", integrationOptions, async () => {
     assert.ok(service && prisma);
     const batch = await service.createBatch({ code: `P4-B-${randomUUID()}`, productionOrderId: orderId, articuloId: randomUUID(), unit: "KG", quantity: "3.000", operationKey: `p4-create-${randomUUID()}`, requestHash: "p4" }, context);
     const container = await service.createContainer({ code: `P4-C-${randomUUID()}`, capacity: "3.000", capacityUnit: "KG" }, context);
-    const input = { batchId: batch.id, destinationContainerId: container.id, quantity: "2.000", operationKey: `p4-idempotent-${randomUUID()}`, requestHash: "same" };
+    const inputData = { batchId: batch.id, destinationContainerId: container.id, quantity: "2.000", operationKey: `p4-idempotent-${randomUUID()}` };
+    const input = { ...inputData, requestHash: assignmentHash(inputData) };
     const first = await service.assignBatchToContainer(input, context);
     assert.deepEqual(await service.assignBatchToContainer(input, context), first);
-    await assert.rejects(service.assignBatchToContainer({ ...input, requestHash: "changed" }, context), (error: any) => error.code === "IDEMPOTENCY_CONFLICT");
+    const changedInput = { ...inputData, quantity: "1.000" };
+    await assert.rejects(service.assignBatchToContainer({ ...changedInput, requestHash: assignmentHash(changedInput) }, context), (error: any) => error.code === "IDEMPOTENCY_CONFLICT");
     await assert.rejects(service.updateContainer(container.id, { capacity: "1.000" }, context), (error: any) => error.code === "CONTAINER_CAPACITY_EXCEEDED");
     const movement = await prisma.productionBatchContainerMovement.findFirstOrThrow({ where: { operationKey: input.operationKey } });
     await assert.rejects(prisma.productionBatchContainerMovement.update({ where: { id: movement.id }, data: { quantity: "1.000" } }));
@@ -141,13 +170,15 @@ describe("Production P4 PostgreSQL", () => {
     assert.equal((await service.getContainer(statusContainer.id)).status, "DISPONIBLE");
     const batch = await service.createBatch({ code: `P4-B-${randomUUID()}`, productionOrderId: orderId, articuloId: randomUUID(), unit: "KG", quantity: "1.000", operationKey: `p4-create-${randomUUID()}`, requestHash: "audit" }, context);
     const movementContainer = await service.createContainer({ code: `P4-AUDIT-${randomUUID()}`, capacity: "1.000", capacityUnit: "KG" }, context);
-    await assert.rejects(failing.assign({ batchId: batch.id, destinationContainerId: movementContainer.id, quantity: "1.000", operationKey: `p4-audit-${randomUUID()}`, requestHash: "audit" }, context));
+    const auditMove = { batchId: batch.id, destinationContainerId: movementContainer.id, quantity: "1.000", operationKey: `p4-audit-${randomUUID()}` };
+    await assert.rejects(failing.assign({ ...auditMove, requestHash: assignmentHash(auditMove) }, context));
     assert.equal(await prisma.productionContainerOccupancy.count({ where: { containerId: movementContainer.id } }), 0);
     assert.equal(await prisma.productionBatchContainerMovement.count({ where: { destinationContainerId: movementContainer.id } }), 0);
     const partialBatch = await service.createBatch({ code: `P4-B-${randomUUID()}`, productionOrderId: orderId, articuloId: randomUUID(), unit: "KG", quantity: "3.000", operationKey: `p4-create-${randomUUID()}`, requestHash: "audit-partial" }, context);
     const partialSource = await service.createContainer({ code: `P4-AUDIT-${randomUUID()}`, capacity: "3.000", capacityUnit: "KG" }, context);
     const partialDestination = await service.createContainer({ code: `P4-AUDIT-${randomUUID()}`, capacity: "3.000", capacityUnit: "KG" }, context);
-    await service.assignBatchToContainer({ batchId: partialBatch.id, destinationContainerId: partialSource.id, quantity: "2.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "audit-partial" }, context);
+    const partialSeed = { batchId: partialBatch.id, destinationContainerId: partialSource.id, quantity: "2.000", operationKey: `p4-assign-${randomUUID()}` };
+    await service.assignBatchToContainer({ ...partialSeed, requestHash: assignmentHash(partialSeed) }, context);
     const partialOperationKey = `p4-audit-partial-${randomUUID()}`;
     const partialChildCode = `P4-AUDIT-CH-${randomUUID()}`;
     const sourceBefore = await prisma.productionContainerOccupancy.findFirstOrThrow({ where: { containerId: partialSource.id, closedAt: null } });
@@ -155,7 +186,8 @@ describe("Production P4 PostgreSQL", () => {
     const lineageCountBefore = await prisma.productionBatchLineage.count({ where: { parentBatchId: partialBatch.id } });
     const balanceBefore = await service.getBatchBalance(partialBatch.id);
     const auditCountBefore = await prisma.auditLog.count({ where: { actorUserId, action: "BATCH_CONTAINER_PARTIAL_TRANSFERRED" } });
-    await assert.rejects(failing.transferPartial({ batchId: partialBatch.id, sourceContainerId: partialSource.id, destinationContainerId: partialDestination.id, quantity: "1.000", childCode: partialChildCode, operationKey: partialOperationKey, requestHash: "audit-partial" }, context));
+    const auditPartial = { batchId: partialBatch.id, sourceContainerId: partialSource.id, destinationContainerId: partialDestination.id, quantity: "1.000", childCode: partialChildCode, operationKey: partialOperationKey };
+    await assert.rejects(failing.transferPartial({ ...auditPartial, requestHash: partialHash(auditPartial) }, context));
     assert.equal(await prisma.productionBatch.count({ where: { code: partialChildCode } }), 0);
     assert.equal(await prisma.productionBatchLedgerEntry.count({ where: { productionBatchId: partialBatch.id } }), ledgerCountBefore);
     assert.equal(await prisma.productionBatchLineage.count({ where: { parentBatchId: partialBatch.id } }), lineageCountBefore);
@@ -181,8 +213,7 @@ describe("Production P4 PostgreSQL", () => {
     const first = await makeBatch();
     const second = await makeBatch();
     const occupation = await Promise.allSettled([
-      service.assignBatchToContainer({ batchId: first.id, destinationContainerId: occupied.id, quantity: "2.000", operationKey: `p4-race-${randomUUID()}`, requestHash: "a" }, context),
-      service.assignBatchToContainer({ batchId: second.id, destinationContainerId: occupied.id, quantity: "2.000", operationKey: `p4-race-${randomUUID()}`, requestHash: "b" }, context),
+      ...[first, second].map(batch => { const move = { batchId: batch.id, destinationContainerId: occupied.id, quantity: "2.000", operationKey: `p4-race-${randomUUID()}` }; return service.assignBatchToContainer({ ...move, requestHash: assignmentHash(move) }, context); }),
     ]);
     assert.equal(occupation.filter((item) => item.status === "fulfilled").length, 1);
     assert.equal(occupation.filter((item) => item.status === "rejected").length, 1);
@@ -195,12 +226,12 @@ describe("Production P4 PostgreSQL", () => {
     const targetA = await makeContainer();
     const targetB = await makeContainer();
     const transferable = await makeBatch();
-    await service.assignBatchToContainer({ batchId: transferable.id, destinationContainerId: source.id, quantity: "3.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "source" }, context);
+    const sourceSeed = { batchId: transferable.id, destinationContainerId: source.id, quantity: "3.000", operationKey: `p4-assign-${randomUUID()}` };
+    await service.assignBatchToContainer({ ...sourceSeed, requestHash: assignmentHash(sourceSeed) }, context);
     const ledgerBefore = await prisma.productionBatchLedgerEntry.count({ where: { productionBatchId: transferable.id } });
     const balanceBefore = (await service.getBatchBalance(transferable.id)).available;
     const totals = await Promise.allSettled([
-      service.transferBatchBetweenContainers({ batchId: transferable.id, sourceContainerId: source.id, destinationContainerId: targetA.id, operationKey: `p4-total-${randomUUID()}`, requestHash: "a" }, context),
-      service.transferBatchBetweenContainers({ batchId: transferable.id, sourceContainerId: source.id, destinationContainerId: targetB.id, operationKey: `p4-total-${randomUUID()}`, requestHash: "b" }, context),
+      ...[targetA, targetB].map(destination => { const move = { batchId: transferable.id, sourceContainerId: source.id, destinationContainerId: destination.id, operationKey: `p4-total-${randomUUID()}` }; return service.transferBatchBetweenContainers({ ...move, requestHash: transferHash(move) }, context); }),
     ]);
     assert.equal(totals.filter((item) => item.status === "fulfilled").length, 1);
     assert.equal(totals.filter((item) => item.status === "rejected").length, 1);
@@ -215,12 +246,12 @@ describe("Production P4 PostgreSQL", () => {
 
     const capacity = await makeContainer("2.000");
     const capacityBatchA = await makeBatch();
-    await service.assignBatchToContainer({ batchId: capacityBatchA.id, destinationContainerId: capacity.id, quantity: "1.000", operationKey: `p4-capacity-seed-${randomUUID()}`, requestHash: "seed" }, context);
+    const capacitySeed = { batchId: capacityBatchA.id, destinationContainerId: capacity.id, quantity: "1.000", operationKey: `p4-capacity-seed-${randomUUID()}` };
+    await service.assignBatchToContainer({ ...capacitySeed, requestHash: assignmentHash(capacitySeed) }, context);
     const capacityKeyA = `p4-capacity-${randomUUID()}`;
     const capacityKeyB = `p4-capacity-${randomUUID()}`;
     const capacityRace = await Promise.allSettled([
-      service.assignBatchToContainer({ batchId: capacityBatchA.id, destinationContainerId: capacity.id, quantity: "0.750", operationKey: capacityKeyA, requestHash: "a" }, context),
-      service.assignBatchToContainer({ batchId: capacityBatchA.id, destinationContainerId: capacity.id, quantity: "0.750", operationKey: capacityKeyB, requestHash: "b" }, context),
+      ...[capacityKeyA, capacityKeyB].map(operationKey => { const move = { batchId: capacityBatchA.id, destinationContainerId: capacity.id, quantity: "0.750", operationKey }; return service.assignBatchToContainer({ ...move, requestHash: assignmentHash(move) }, context); }),
     ]);
     assert.equal(capacityRace.filter((item) => item.status === "fulfilled").length, 1);
     assert.equal(capacityRace.filter((item) => item.status === "rejected").length, 1);
@@ -234,15 +265,17 @@ describe("Production P4 PostgreSQL", () => {
     const partialSource = await makeContainer();
     const partialA = await makeContainer();
     const partialB = await makeContainer();
-    const partialBatch = await makeBatch();
-    await service.assignBatchToContainer({ batchId: partialBatch.id, destinationContainerId: partialSource.id, quantity: "4.000", operationKey: `p4-assign-${randomUUID()}`, requestHash: "partial-source" }, context);
+    // Leave unallocated batch quantity for the atomic split; allocation protection
+    // must not make both competing partial transfers fail before the race.
+    const partialBatch = await makeBatch("KG", "8.000");
+    const partialSourceSeed = { batchId: partialBatch.id, destinationContainerId: partialSource.id, quantity: "4.000", operationKey: `p4-assign-${randomUUID()}` };
+    await service.assignBatchToContainer({ ...partialSourceSeed, requestHash: assignmentHash(partialSourceSeed) }, context);
     const partialKeyA = `p4-partial-${randomUUID()}`;
     const partialKeyB = `p4-partial-${randomUUID()}`;
     const childCodeA = `P4-CH-${randomUUID()}`;
     const childCodeB = `P4-CH-${randomUUID()}`;
     const partials = await Promise.allSettled([
-      service.transferBatchPartiallyBetweenContainers({ batchId: partialBatch.id, sourceContainerId: partialSource.id, destinationContainerId: partialA.id, quantity: "2.000", childCode: childCodeA, operationKey: partialKeyA, requestHash: "a" }, context),
-      service.transferBatchPartiallyBetweenContainers({ batchId: partialBatch.id, sourceContainerId: partialSource.id, destinationContainerId: partialB.id, quantity: "2.000", childCode: childCodeB, operationKey: partialKeyB, requestHash: "b" }, context),
+      ...[[partialA, childCodeA, partialKeyA], [partialB, childCodeB, partialKeyB]].map(([destinationContainer, childCode, operationKey]) => { const move = { batchId: partialBatch.id, sourceContainerId: partialSource.id, destinationContainerId: (destinationContainer as any).id, quantity: "2.000", childCode: childCode!, operationKey: operationKey! }; return service.transferBatchPartiallyBetweenContainers({ ...move, requestHash: partialHash(move) }, context); }),
     ]);
     assert.equal(partials.filter((item) => item.status === "fulfilled").length, 1);
     assert.equal(partials.filter((item) => item.status === "rejected").length, 1);
@@ -253,7 +286,7 @@ describe("Production P4 PostgreSQL", () => {
     const child = children[0]!;
     assert.equal(await prisma.productionBatchLineage.count({ where: { childBatchId: child.id, operationKey: { in: [`${partialKeyA}:split:lineage`, `${partialKeyB}:split:lineage`] } } }), 1);
     assert.equal(await prisma.productionBatchLedgerEntry.count({ where: { productionBatchId: partialBatch.id, entryType: "SEPARATED", operationKey: { in: [`${partialKeyA}:split:separated`, `${partialKeyB}:split:separated`] } } }), 1);
-    assert.equal((await service.getBatchBalance(partialBatch.id)).available, "2.000");
+    assert.equal((await service.getBatchBalance(partialBatch.id)).available, "6.000");
     assert.equal((await service.getContainer(partialSource.id)).occupancies.find((item) => item.closedAt === null)?.quantity, "2.000");
     assert.equal(await prisma.productionContainerOccupancy.count({ where: { containerId: { in: [partialA.id, partialB.id] }, batchId: child.id, closedAt: null } }), 1);
   });

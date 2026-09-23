@@ -335,7 +335,7 @@ Endpoints aprobados:
 - `POST /api/v1/production/works/:id/corrections`;
 - `POST /api/v1/production/grape-receptions/:id/corrections`;
 - `POST /api/v1/production/measurements/:id/corrections`;
-- `GET /api/v1/production/batches/:id/trace`.
+- `GET /api/v1/production/batches/:batchId/trace`.
 
 Services `ProductionCorrectionService`, `ProductionTraceService` y
 repositories de correcciones/consultas. La traza devuelve origen, padres,
@@ -422,9 +422,60 @@ estructurados. Los comandos son atómicos en `SharedUnitOfWork`; Failure C
 revierte todos los efectos. No hay Inventory movement para traslados internos.
 El historial es inmutable: total admite traslado inverso sólo si el estado
 actual sigue compatible, no se inventa un unassign, y la reversión parcial se
-difiere a P5.5E como decisión de dominio.
+no es automática en el MVP: no hay merge-back ni reversión destructiva; la
+corrección requiere una nueva operación productiva válida.
 
 El frontend debe ofrecer listado (incluyendo ocupación actual), detalle,
 historial de ocupaciones y movimientos, alta/edición/activación, assign,
 traslado total y parcial; debe usar confirmación, bloquear doble submit e
 invalidar sólo las queries afectadas.
+
+## 16. Cierre P5.5E — BLOCKED y futura integración
+
+P5.5A–D son contratos entregados y alineados: WorkInput/Inventory usa
+`SharedUnitOfWork`, idempotencia y reversals compensatorios; containers exponen
+metadata, ocupaciones, `ASSIGNED`, `TRANSFERRED` y `PARTIAL_TRANSFERRED` con
+lineage; trace cubre backward/forward; release usa
+`PRODUCTO_ENVASADO`, hash canónico server-side y reversal completo con rechazo
+de estado inseguro. No existe reversión automática de traslado parcial en MVP.
+
+Las comprobaciones ejecutables y contractuales quedan **PASS**:
+P5.5A PostgreSQL **5/5**, P5.5B **6/6**, P5.5D **21/21**, P5.5E **1/1**,
+P10 Trace **10/10**, regresión completa de Production backend **236/236** con
+**0 skipped**, Vitest frontend **20/20**, typecheck/build backend y frontend
+**PASS**, `prisma validate`/`prisma generate` **PASS**, 33 migraciones aplicadas
+y status actualizado, datasource configurado frente a schema **`No difference
+detected`**, y `git diff --check` **PASS**.
+
+Se añadieron exactamente dos migraciones, sin editar migraciones existentes:
+`20260927000000_production_p55e_align_prisma_object_names` (alineación de
+metadata) y `20260927010000_production_p55e_eliminate_schema_drift`
+(eliminación de drift de `onUpdate` de FK y nombres de índices).
+
+La aceptación operativa E2E A–F es **PASS**: **A**, BARRICA dinámica sin
+cambios de código; **B**, WorkType dinámico; **C**, WorkInput estructurado y
+consumo mediante InventoryMovement; **D**, movimiento físico estructurado de
+recipientes; **E**, separación GrapeVariety/producto; **F**, observaciones sólo
+narrativas y hechos estructurados en sus campos/entidades correspondientes.
+Frontend login shell smoke **PASS** en 1440x1000 y 390x844, con consola limpia.
+El smoke autenticado de Production no es ejecutable porque faltan
+`WINTER_DATABASE_URL` y credenciales runtime Firebase; no se inventaron
+credenciales. Por ese único bloqueo, el cierre global P5.5E queda **BLOCKED**.
+Las pruebas frontend focalizadas cubren confirmaciones,
+permisos, errores, historial vacío, pending/double-submit e idempotencia;
+el UAT autenticado completo queda diferido. Fotos/evidencia:
+`Deferred to UAT / Hardening`.
+
+Entorno TEST autorizado: `LOCAL INTEGRATION TEST`, `127.0.0.1`,
+`winter_p55_test`, PostgreSQL local, destructivo/de integración, sin acceso
+productivo ni remoto; no se documentan secretos y `DATABASE_URL`/heliumdb no
+son destinos permitidos. El workflow Winter Backend tiene una limitación
+conocida por falta de `WINTER_DATABASE_URL` y Firebase; no se inventan
+credenciales y esto no invalida typecheck, build, Prisma validation ni
+integration tests.
+
+Plan futuro, no ejecutado: `main` → `integration/production-p5` →
+reconcile/cherry-pick backend, migrations, tests y contracts → PostgreSQL
+migration validation → backend regression → merge main → Render deploy →
+backend smoke tests → frontend integration/deploy. Despliegue: backup/check DB,
+migrations, backend, backend smoke tests, frontend y frontend smoke/UAT.
