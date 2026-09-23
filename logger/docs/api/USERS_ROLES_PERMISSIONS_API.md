@@ -32,6 +32,47 @@ Validación Zod produce `400 VALIDATION_ERROR`. Errores frecuentes son `401
 AUTH_MISSING_TOKEN`, `401 AUTH_INVALID_HEADER`, `403 AUTH_USER_NOT_REGISTERED`,
 `403 AUTH_USER_INACTIVE`, `403 AUTH_FORBIDDEN` y `404` del recurso indicado.
 
+## Audit logs
+
+### GET `/api/v1/audit-logs`
+
+- Objetivo: consultar registros de auditoría. Es una operación únicamente de
+  lectura; no existe API pública para crear, editar o eliminar registros.
+- Auth/permiso: Bearer + `audit:read`.
+- Query opcional:
+  `actorUserId` (UUID), `action`, `resourceType`, `resourceId`, `from` y `to`
+  (fechas ISO 8601), `page` (positivo, por defecto `1`) y `pageSize`
+  (positivo, por defecto `20`, máximo `100`).
+- `from` no puede ser posterior a `to`. Las consultas inválidas devuelven
+  `400 VALIDATION_ERROR`.
+- Orden: `createdAt DESC`.
+- Éxito: `200` con paginación:
+
+```json
+{
+  "data": [{
+    "id": "8d4a2b3e-4f1c-4b56-8f6b-111111111111",
+    "actorUserId": "9e5b3c4f-5a2d-4c67-9f7c-222222222222",
+    "action": "USER_CREATED",
+    "resourceType": "USER",
+    "resourceId": "7f6e5d4c-3b2a-4910-8111-333333333333",
+    "metadata": {"email": "operador@example.com"},
+    "ipAddress": "192.0.2.10",
+    "requestId": "11111111-1111-4111-8111-111111111111",
+    "createdAt": "2026-01-15T10:00:00.000Z"
+  }],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "total": 1,
+    "totalPages": 1
+  }
+}
+```
+
+El permiso `audit:read` se incorpora mediante el seed idempotente existente y
+se asigna al rol `admin`.
+
 ## Users
 
 Un User tiene un único rol (`role` nullable en la vista administrativa). Los
@@ -507,6 +548,7 @@ Response `200`:
 `code` y `name` son requeridos; `description` opcional, nullable, máximo 500.
 - Éxito: `201 { "data": PermissionModel }`.
 - Error: `409 PERMISSION_CODE_ALREADY_EXISTS`.
+- La operación y su evento `PERMISSION_CREATED` se confirman atómicamente.
 
 Request:
 
@@ -534,6 +576,7 @@ Response `201`:
 - Éxito: `200 { "data": PermissionModel }`.
 - Errores: `404 PERMISSION_NOT_FOUND`, `409
   PERMISSION_CODE_ALREADY_EXISTS`.
+- La operación y su evento `PERMISSION_UPDATED` se confirman atómicamente.
 
 Request:
 
@@ -557,7 +600,12 @@ Response `200`:
 - Auth/permiso: Bearer + `rbac:manage`.
 - Path: `id` UUID; sin body/query.
 - Éxito: `204 No Content`.
-- Error: `404 PERMISSION_NOT_FOUND`.
+- Errores: `404 PERMISSION_NOT_FOUND`, `409 PERMISSION_IN_USE` si el permiso
+  está asignado a uno o más roles. El mensaje es:
+  `el permiso no puede eliminarse mientras esté asignado a uno o más roles.`
+- La eliminación y su evento `PERMISSION_DELETED` se confirman atómicamente.
+  La operación bloquea el permiso durante la comprobación y no elimina
+  automáticamente relaciones `RolePermission`.
 
 Request:
 
@@ -581,6 +629,9 @@ Response `204 No Content`: cuerpo vacío.
   `409 USER_CANNOT_REMOVE_OWN_ADMIN`, `409 LAST_ADMIN_PROTECTED`.
 - Reglas: no se puede quitar el propio rol `admin`; tampoco degradar o
   suspender al último administrador activo.
+- La asignación de rol está permitida intencionalmente para usuarios
+  `PENDING`, `ACTIVE` y `SUSPENDED`. Cambiar el rol no cambia el estado del
+  usuario; las protecciones del último administrador activo se mantienen.
 
 Request:
 

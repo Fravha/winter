@@ -34,3 +34,31 @@ export interface AuditRecord {
   ipAddress?: string;
   requestId?: string;
 }
+
+export interface AuditLogQuery {
+  actorUserId?: string | undefined;
+  action?: string | undefined;
+  resourceType?: string | undefined;
+  resourceId?: string | undefined;
+  from?: Date | undefined;
+  to?: Date | undefined;
+  page: number;
+  pageSize: number;
+}
+
+export interface AuditLogRecord {
+  id: string;
+  actorUserId: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  metadata: unknown;
+  ipAddress: string | null;
+  requestId: string | null;
+  createdAt: Date;
+}
+
+export interface AuditLogPage {
+  items: AuditLogRecord[];
+  total: number;
+}

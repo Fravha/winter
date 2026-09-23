@@ -7,6 +7,7 @@ import type { UserRepository } from "../../core/users/user.repository.js";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import type { IdentityAdmin } from "./users/identity-admin.js";
 import { createAssignmentRouter } from "./assignments/assignment.routes.js";
+import { createAuditLogRouter } from "./audit-logs/audit-log.routes.js";
 import { createPermissionRouter } from "./permissions/permission.routes.js";
 import { createRoleRouter } from "./roles/role.routes.js";
 import { createUserAdminRouter } from "./users/user-admin.routes.js";
@@ -20,6 +21,11 @@ export function createAccessManagementRouter(
 ) {
   const router = Router();
   const auditService = new AuditService(new PrismaAuditRepository(client));
+
+  router.use(
+    "/audit-logs",
+    createAuditLogRouter(client, tokenVerifier, userRepository),
+  );
 
   router.use(
     "/users",
@@ -40,7 +46,7 @@ export function createAccessManagementRouter(
 
   router.use(
     "/permissions",
-    createPermissionRouter(client, tokenVerifier, userRepository),
+    createPermissionRouter(client, tokenVerifier, userRepository, auditService),
   );
 
   router.use(
