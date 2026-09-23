@@ -6,11 +6,15 @@
 - P1–P11 completados.
 - Limpieza legacy completada.
 - 33 migraciones oficiales.
-- Suite local verificada: P5.5A PostgreSQL **5/5**, P5.5B **6/6**, P5.5D
-  **21/21**, P5.5E **1/1**, P10 Trace **10/10** y regresión Production
-  backend **236/236**, con **0 skipped**, sobre PostgreSQL local.
+- Inventory regression: 13/13 PASS.
+- P5.5A: 10/10 PASS, 0 skips.
+- P5.5B: 12/12 PASS, 0 skips.
+- P5.5D: 24/24 PASS, 0 skips.
+- P5.5E: 1/1 PASS, 0 skips.
+- Trace/P10: 13/13 PASS, 0 skips.
+- Production P1–P10: 168/168 PASS, 0 skips.
+- Backend completo: 341/341 PASS, 0 failures, 0 skips.
 - Drift validado en cero.
-- El frontend aún no forma parte de este repositorio de entrega.
 
 La documentación API en [`docs/api/`](./api/README.md) es el contrato técnico
 para el frontend. Los módulos históricos retirados no son APIs ni permisos
