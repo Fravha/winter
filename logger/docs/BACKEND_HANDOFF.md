@@ -305,7 +305,7 @@ automática en MVP: no hay merge-back ni reversal destructivo. El frontend debe
 cubrir lista/detalle, ocupación actual e histórica, movements, assign, total y
 parcial, con confirmación y bloqueo de doble envío.
 
-## P5.5E — cierre documental BLOCKED
+## P5.5E — cierre documental PASS / CLOSED
 
 El contrato vigente incluye release
 `POST /api/v1/production/batches/:batchId/release-to-inventory` y reversal
@@ -354,12 +354,20 @@ confirmaciones de trace/release/reversal, estados de permisos, errores,
 historial vacío, estado pending/double-submit e idempotencia.
 
 El login shell frontend pasa en desktop **1440x1000** y mobile **390x844**, con
-consola del navegador limpia. El smoke autenticado de la página Production no
-es ejecutable en este entorno porque Winter Backend carece de
-`WINTER_DATABASE_URL` y credenciales runtime de Firebase; no se inventaron
-credenciales. Por ello el cierre P5.5E global queda **BLOCKED**, únicamente
-por el smoke manual autenticado de Production que no pudo ejecutarse. El UAT
-autenticado completo queda diferido. Fotos/evidencia quedan `Deferred to UAT /
+consola limpia. El smoke autenticado PASS cubrió navegación Production, Orders,
+Reception, Batches, Works, Measurements, Transformations, Containers, Batch
+Trace, Release, Reversal, permisos, loading/empty, errores visibles con
+`requestId`, confirmaciones y protección contra doble envío. Cinco variables
+runtime requeridas estuvieron presentes; el target fue
+`runner@127.0.0.1/winter_p55_test`, con DB remota **NO**. El reinicio del
+workspace reinitializó el PostgreSQL local efímero y aplicó las mismas 33
+migraciones existentes, sin generar migración; migrate status quedó al día,
+drift `No difference detected` y `GET /health` devolvió **200**. Identidades
+temporales y datos de prueba fueron limpiados; no hubo DB remota ni credenciales
+persistidas/reportadas. Se corrigieron cuatro defectos demostrados (crash
+Reception, balance embebido ausente en batches, pageSize 500 en trace y crash
+Transformation). El cierre global es **PASS / CLOSED**:
+**BLOCK 5 — PRODUCTION: CLOSED**. Fotos/evidencia quedan `Deferred to UAT /
 Hardening`. El reporte obligatorio y su matriz DoD están en
 `P5.5E_PRODUCTION_BLOCK_CLOSURE.md`.
 

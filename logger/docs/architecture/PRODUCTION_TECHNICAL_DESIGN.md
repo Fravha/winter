@@ -983,12 +983,23 @@ recipientes; **E**, separación GrapeVariety/producto; **F**, observaciones sól
 narrativas y hechos estructurados en sus campos/entidades correspondientes.
 Login shell
 frontend **PASS** en desktop 1440x1000 y mobile 390x844, con consola limpia.
-El smoke autenticado de Production no es ejecutable por falta de
-`WINTER_DATABASE_URL` y credenciales runtime Firebase; no se inventaron
-credenciales. Las pruebas frontend focalizadas cubren trace/release/reversal,
+El smoke autenticado PASS cubrió las páginas y estados
+Production, Orders, Reception, Batches, Works, Measurements, Transformations,
+Containers, Batch Trace, Release y Reversal, además de permisos,
+loading/empty, errores `requestId`, confirmaciones y double-submit. Se
+corrigieron cuatro defectos demostrados: crashes FormControl/FormItem de
+Reception y Transformation, balance embebido ausente en batches y pageSize 500
+de trace sobre max 100. Cinco variables runtime estuvieron presentes; target
+`runner@127.0.0.1/winter_p55_test`, DB remota NO; las mismas 33 migraciones
+existentes se reaplicaron tras reinicio sin generar migración, status al día,
+drift `No difference detected`, health 200, identidades/datos temporales
+limpiados y sin credenciales persistidas/reportadas. Las pruebas frontend
+focalizadas cubren trace/release/reversal,
 permisos, errores, historial vacío, pending/double-submit e idempotencia;
-UAT autenticado completo queda diferido. Por ello el cierre global P5.5E queda
-**BLOCKED**, únicamente por el smoke manual autenticado no ejecutable.
+La aceptación frontend autenticada requerida queda PASS por este smoke. El
+cierre global P5.5E es
+**PASS / CLOSED**: **BLOCK 5 — PRODUCTION: CLOSED**. La revisión final de
+arquitectura permanece pendiente hasta la revisión final.
 Fotografías/evidencia quedan
 `Deferred to UAT / Hardening`.
 

@@ -887,7 +887,7 @@ completa, append-only, rechaza estados inseguros y nunca autoriza stock negativo
 Estas decisiones prevalecen sobre cualquier texto histórico que diga que P5 no
 está implementado o que P5.5B/P5.5D están diferidos.
 
-## 34. Cierre P5.5E BLOCKED y trabajo futuro
+## 34. Cierre P5.5E PASS / CLOSED y trabajo futuro
 
 Los checks ejecutables y contractuales quedan **PASS**: P5.5A
 PostgreSQL **5/5**, P5.5B **6/6**, P5.5D **21/21**, P5.5E **1/1**, P10 Trace
@@ -909,12 +909,23 @@ recipientes; **E**, separación GrapeVariety/producto; **F**, observaciones sól
 narrativas y hechos estructurados en sus campos/entidades correspondientes.
 Login shell
 frontend **PASS** en 1440x1000 y 390x844 con consola limpia. El smoke
-autenticado de Production no es ejecutable por falta de `WINTER_DATABASE_URL`
-y credenciales runtime Firebase; no se inventaron credenciales. Las pruebas
+autenticado de Production es **PASS** con runtime temporal; no se documentan
+credenciales. Las pruebas
 frontend focalizadas cubren trace/release/reversal, permisos, errores,
-historial vacío, pending/double-submit e idempotencia; UAT autenticado completo
-queda diferido. Por ello el cierre global P5.5E queda **BLOCKED**, únicamente
-por el smoke manual autenticado no ejecutable. Fotografías/evidencia quedan
+historial vacío, pending/double-submit e idempotencia; la aceptación frontend
+autenticada requerida queda PASS por este smoke. El smoke autenticado cubrió
+desktop 1440x1000 y mobile 390x844:
+Production, Orders, Reception, Batches, Works, Measurements,
+Transformations, Containers, Batch Trace, Release, Reversal, permisos,
+loading/empty, errores `requestId`, confirmaciones y double-submit. Se
+corrigieron cuatro defectos demostrados: dos crashes FormControl/FormItem
+(Reception y Transformation), balance embebido de batch ausente y pageSize 500
+de trace sobre max 100. Cinco variables runtime estuvieron presentes; target
+`runner@127.0.0.1/winter_p55_test`, DB remota NO; 33 migraciones existentes
+reaplicadas tras reinicio, sin migración generada, status al día, drift
+`No difference detected`, health 200. Identidades/datos temporales limpiados,
+sin credenciales persistidas/reportadas. El cierre global es **PASS / CLOSED**:
+**BLOCK 5 — PRODUCTION: CLOSED**. Fotografías/evidencia quedan
 `Deferred to UAT / Hardening`.
 
 El entorno autorizado para la validación es `LOCAL INTEGRATION TEST`, host

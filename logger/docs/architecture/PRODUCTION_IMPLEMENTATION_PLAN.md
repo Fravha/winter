@@ -430,7 +430,7 @@ historial de ocupaciones y movimientos, alta/edición/activación, assign,
 traslado total y parcial; debe usar confirmación, bloquear doble submit e
 invalidar sólo las queries afectadas.
 
-## 16. Cierre P5.5E — BLOCKED y futura integración
+## 16. Cierre P5.5E — PASS / CLOSED y futura integración
 
 P5.5A–D son contratos entregados y alineados: WorkInput/Inventory usa
 `SharedUnitOfWork`, idempotencia y reversals compensatorios; containers exponen
@@ -458,20 +458,28 @@ consumo mediante InventoryMovement; **D**, movimiento físico estructurado de
 recipientes; **E**, separación GrapeVariety/producto; **F**, observaciones sólo
 narrativas y hechos estructurados en sus campos/entidades correspondientes.
 Frontend login shell smoke **PASS** en 1440x1000 y 390x844, con consola limpia.
-El smoke autenticado de Production no es ejecutable porque faltan
-`WINTER_DATABASE_URL` y credenciales runtime Firebase; no se inventaron
-credenciales. Por ese único bloqueo, el cierre global P5.5E queda **BLOCKED**.
-Las pruebas frontend focalizadas cubren confirmaciones,
+El smoke autenticado PASS cubrió navegación, Orders, Reception,
+Batches, Works, Measurements, Transformations, Containers, Batch Trace,
+Release, Reversal, permisos, loading/empty, errores `requestId`,
+confirmaciones y double-submit. Se corrigieron cuatro defectos demostrados:
+crash de Reception, balance embebido ausente en batches, pageSize 500 en trace
+y crash de Transformation. Cinco variables runtime estuvieron presentes; el
+target fue `runner@127.0.0.1/winter_p55_test`, DB remota NO; tras reinicio se
+reaplicaron las mismas 33 migraciones existentes, sin generar migración,
+status al día, drift `No difference detected` y health 200. Identidades
+temporales/datos de prueba fueron limpiados, sin credenciales persistidas o
+reportadas. Las pruebas frontend focalizadas cubren confirmaciones,
 permisos, errores, historial vacío, pending/double-submit e idempotencia;
-el UAT autenticado completo queda diferido. Fotos/evidencia:
+la aceptación frontend autenticada requerida queda demostrada por este smoke.
+El cierre global
+es **PASS / CLOSED**: **BLOCK 5 — PRODUCTION: CLOSED**. Fotos/evidencia:
 `Deferred to UAT / Hardening`.
 
 Entorno TEST autorizado: `LOCAL INTEGRATION TEST`, `127.0.0.1`,
 `winter_p55_test`, PostgreSQL local, destructivo/de integración, sin acceso
 productivo ni remoto; no se documentan secretos y `DATABASE_URL`/heliumdb no
-son destinos permitidos. El workflow Winter Backend tiene una limitación
-conocida por falta de `WINTER_DATABASE_URL` y Firebase; no se inventan
-credenciales y esto no invalida typecheck, build, Prisma validation ni
+son destinos permitidos. El runtime temporal no dejó credenciales persistidas
+ni reportadas; esto no invalida typecheck, build, Prisma validation ni
 integration tests.
 
 Plan futuro, no ejecutado: `main` → `integration/production-p5` →

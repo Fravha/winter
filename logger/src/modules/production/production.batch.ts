@@ -98,7 +98,13 @@ export class ProductionBatchRepository {
     const page = filters.page ?? 1; const pageSize = filters.pageSize ?? 20;
     const where = { ...(filters.articuloId ? { articuloId: filters.articuloId } : {}), ...(filters.productionOrderId ? { productionOrderId: filters.productionOrderId } : {}) };
     return Promise.all([
-      this.db.productionBatch.findMany({ where, skip: (page - 1) * pageSize, take: pageSize, orderBy: [{ createdAt: "desc" }, { code: "asc" }] }),
+      this.db.productionBatch.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: [{ createdAt: "desc" }, { code: "asc" }],
+        include: { balance: true },
+      }),
       this.db.productionBatch.count({ where }),
     ]).then(([items, total]) => ({ items, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } }));
   }
@@ -350,7 +356,15 @@ export class ProductionBatchService {
   }
   async listBatches(filters: BatchListFilters) {
     const result = await new ProductionBatchRepository(this.prisma).list(filters);
-    return { items: result.items.map(mapBatch), pagination: result.pagination };
+    return {
+      items: result.items.map(item => {
+        if (!item.balance) {
+          throw new AppError("BATCH_BALANCE_NOT_FOUND", "Production batch balance not found", 500);
+        }
+        return { ...mapBatch(item), balance: mapBalance(item.balance) };
+      }),
+      pagination: result.pagination,
+    };
   }
   async getBatch(id: string): Promise<BatchDetailDto> {
     const batch = await new ProductionBatchRepository(this.prisma).find(id);
