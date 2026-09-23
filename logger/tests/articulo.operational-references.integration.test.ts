@@ -155,17 +155,17 @@ describeWithDatabase("Articulo operational references integration", () => {
         await prisma.compraItem.deleteMany({
           where: { articuloId: articulo.id },
         });
-        await prisma.productionWorkInput.deleteMany({
-          where: { articuloId: articulo.id },
-        });
-        // ProductionWork and its parent order are immutable historical records.
+        // ProductionWorkInput, ProductionWork, its parent order, and the
+        // referenced Articulo are immutable historical records.
         if (compraId) {
           await prisma.compra.delete({ where: { id: compraId } });
         }
         if (warehouseId) {
           await prisma.warehouse.delete({ where: { id: warehouseId } });
         }
-        await prisma.articulo.delete({ where: { id: articulo.id } });
+        if (consumer !== "production") {
+          await prisma.articulo.delete({ where: { id: articulo.id } });
+        }
       }
     });
   }
