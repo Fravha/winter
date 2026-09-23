@@ -16,6 +16,7 @@ import {
   canonicalContainerTransferRequest,
 } from "../src/modules/production/production.container.js";
 import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
+import { resetProductionTestDatabase } from "./helpers/reset-production-test-database.js";
 
 const url = getTemporaryProductionDatabaseUrl("P55B_DATABASE_URL");
 const run = url ? describe : describe.skip;
@@ -34,6 +35,7 @@ run("P5.5B container PostgreSQL integration", () => {
   const batchIds: string[] = [], containerIds: string[] = [], operationKeys: string[] = [];
 
   before(async () => {
+    await resetProductionTestDatabase(prisma);
     await prisma.user.create({ data: { id: actor, firebaseUid: `p55b-${actor}`, email: `${actor}@p55b.test`, status: "ACTIVE" } });
     articleId = (await articles.createArticulo({ codigo: `P55B-${randomUUID()}`, nombre: "Vino base", clasificacion: "PRODUCTO_TERMINADO", unidadMedida: "L" }, context)).id;
     const order = await service.createOrder({ code: `P55B-${randomUUID()}`, startDate: new Date() }, context);
@@ -47,27 +49,8 @@ run("P5.5B container PostgreSQL integration", () => {
   after(async () => {
     try {
       await dropFailureTrigger();
-      await prisma.$executeRawUnsafe("ALTER TABLE production_batch_container_movements DISABLE TRIGGER production_batch_container_movements_append_only");
-      await prisma.$executeRawUnsafe("ALTER TABLE production_container_operations DISABLE TRIGGER production_container_operations_append_only");
-      await prisma.productionBatchContainerMovement.deleteMany({ where: { OR: [{ sourceContainerId: { in: containerIds } }, { destinationContainerId: { in: containerIds } }] } });
-      await prisma.productionContainerOperation.deleteMany({ where: { operationKey: { in: operationKeys } } });
-      await prisma.productionContainerOccupancy.deleteMany({ where: { containerId: { in: containerIds } } });
-      await prisma.productionContainer.deleteMany({ where: { id: { in: containerIds } } });
-      await prisma.$executeRawUnsafe("ALTER TABLE production_container_operations ENABLE TRIGGER production_container_operations_append_only");
-      await prisma.$executeRawUnsafe("ALTER TABLE production_batch_container_movements ENABLE TRIGGER production_batch_container_movements_append_only");
-      await prisma.productionBatchLedgerEntry.deleteMany({ where: { productionBatchId: { in: batchIds } } });
-      await prisma.productionBatch.deleteMany({ where: { id: { in: batchIds } } });
-      if (secondWorkId) await prisma.productionWork.delete({ where: { id: secondWorkId } });
-      if (workId) await prisma.productionWork.delete({ where: { id: workId } });
-      if (secondOrderId) await prisma.productionOrder.delete({ where: { id: secondOrderId } });
-      if (orderId) await prisma.productionOrder.delete({ where: { id: orderId } });
-      if (typeId) await prisma.workType.delete({ where: { id: typeId } });
-      if (articleId) await prisma.articulo.delete({ where: { id: articleId } });
-      await prisma.auditLog.deleteMany({ where: { actorUserId: actor } });
-      await prisma.user.delete({ where: { id: actor } });
+      await resetProductionTestDatabase(prisma);
     } finally {
-      await prisma.$executeRawUnsafe("ALTER TABLE production_container_operations ENABLE TRIGGER production_container_operations_append_only").catch(() => {});
-      await prisma.$executeRawUnsafe("ALTER TABLE production_batch_container_movements ENABLE TRIGGER production_batch_container_movements_append_only").catch(() => {});
       await prisma.$disconnect();
     }
   });
@@ -156,7 +139,10 @@ run("P5.5B container PostgreSQL integration", () => {
     await assertNoEffects(beforeCap, [capBatch]);
     const unitBatch = await batch(), unitDest = await container("T-14", "2000.000", "KG");
     const beforeUnit = { movement: await prisma.productionBatchContainerMovement.count(), operation: await prisma.productionContainerOperation.count(), occupancy: await prisma.productionContainerOccupancy.count(), audit: await prisma.auditLog.count({ where: { actorUserId: actor } }) };
-    await assert.rejects(service.assignBatchToContainer({ ...assignData(unitBatch), destinationContainerId: unitDest }, context), (error: any) => /UNIT|unit/i.test(error.code ?? error.message));
+    await assert.rejects(
+      service.assignBatchToContainer({ ...assignData(unitBatch), destinationContainerId: unitDest }, context),
+      (error: any) => error.code === "INVALID_CONTAINER_OPERATION" && /unit does not match/i.test(error.message),
+    );
     await assertNoEffects(beforeUnit, [unitBatch]);
     const sourceBatch = await batch(), occupiedBatch = await batch(), occupiedSource = await container("T-15"), occupiedDest = await container("T-16");
     await service.assignBatchToContainer({ ...assignData(occupiedBatch), destinationContainerId: occupiedDest }, context);
