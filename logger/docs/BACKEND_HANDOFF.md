@@ -252,9 +252,22 @@ npm run build
 git diff --check
 ```
 
-Las suites de integración requieren sus variables de base aislada cuando están
-configuradas. No se afirma ejecución de P5.5A/P5.5B PostgreSQL porque sus URLs
-no están disponibles.
+Inventory regression: 13/13 PASS
+P5.5A: 10/10 PASS, 0 skips
+P5.5B: 12/12 PASS, 0 skips
+P5.5D: 24/24 PASS, 0 skips
+P5.5E: 1/1 PASS, 0 skips
+Trace/P10: 13/13 PASS, 0 skips
+Production P1-P10: 168/168 PASS, 0 skips
+Backend completo: 341/341 PASS, 0 failures, 0 skips
+
+Prisma migrations: 33/33
+Prisma status: up to date
+Schema drift: No difference detected
+Typecheck: PASS
+Build: PASS
+Architecture review: PASS
+git diff --check: PASS
 
 ## 13. Decisiones diferidas
 
