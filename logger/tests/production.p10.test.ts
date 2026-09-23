@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, describe, it } from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
@@ -12,6 +12,8 @@ import { PrismaArticuloUnitOfWork } from "../src/modules/articulos/prisma-articu
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { InventoryService } from "../src/modules/inventory/inventory.service.js";
 import { createTrustedIntermoduleContext } from "../src/modules/inventory/inventory.model.js";
+import { canonicalContainerAssignmentRequest } from "../src/modules/production/production.container.js";
+import { canonicalProductionWorkInputRequest, canonicalProductionWorkInputReversalRequest } from "../src/modules/production/production.work.js";
 
 const database = createTemporaryProductionDatabaseResource("P10_DATABASE_URL", connectionString => ({ connectionString, createClient: () => new PrismaClient({ adapter: new PrismaPg({ connectionString }) }) }));
 const prisma = database?.createClient();
@@ -170,9 +172,15 @@ describe("Production P10 corrections and trace acceptance", () => {
     const merged = await rich.mergeBatches({ parentBatches: split.children.map(child => ({ batchId: child.id, quantity: "1.000" })), code: `P10-M-${randomUUID()}`, articuloId: f.article.id, unit: "KG", productionOrderId: f.order.id, operationKey: `p10-merge-${randomUUID()}`, requestHash: "graph" }, context);
     const outputArticle = await articles.createArticulo({ codigo: `P10-OUT-${randomUUID()}`, nombre: "Graph output", clasificacion: "PRODUCTO_TERMINADO", unidadMedida: "KG" }, context);
     const transformed = await rich.createTransformation({ productionOrderId: f.order.id, performedAt: new Date("2025-01-03T00:00:00.000Z"), operationKey: `p10-transform-${randomUUID()}`, requestHash: "graph", inputs: [{ productionBatchId: merged.id, quantity: "1.000" }], outputs: [{ articuloId: outputArticle.id, quantity: "1.000", unit: "KG" }], losses: [{ productionBatchId: merged.id, quantity: "0.100", unit: "KG", operationKey: `p10-loss-${randomUUID()}`, requestHash: "graph" }] }, context);
+    const stable = (value: unknown): string => value === null || typeof value !== "object"
+      ? JSON.stringify(value)
+      : Array.isArray(value) ? `[${value.map(stable).join(",")}]`
+        : `{${Object.keys(value as object).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`;
     const container = await rich.createContainer({ code: `P10-C-${randomUUID()}`, capacity: "2.000", capacityUnit: "KG" }, context);
     const workedBatchId = split.children[0]!.id;
-    await rich.assignBatchToContainer({ batchId: workedBatchId, destinationContainerId: container.id, quantity: "1.000", operationKey: `p10-occ-${randomUUID()}`, requestHash: "graph" }, context);
+    const assignment = { batchId: workedBatchId, destinationContainerId: container.id, quantity: "1.000", operationKey: `p10-occ-${randomUUID()}`, requestHash: "" };
+    assignment.requestHash = createHash("sha256").update(stable(canonicalContainerAssignmentRequest(assignment))).digest("hex");
+    await rich.assignBatchToContainer(assignment, context);
     const workType = await rich.create("work-types", { code: `P10-WT-${randomUUID()}`, name: "Graph work" }, context);
     const work = await rich.createWork({ productionOrderId: f.order.id, workTypeId: workType.id, performedAt: new Date("2025-01-04T00:00:00.000Z"), batchIds: [workedBatchId], containerIds: [container.id], participants: [{ participantId: f.participant.id, role: "operator" }] }, context);
     await rich.correctWork(work.id, { field: "observations", newValue: "corrected", reason: "graph" }, context);
@@ -181,17 +189,41 @@ describe("Production P10 corrections and trace acceptance", () => {
     const direct = await rich.createMeasurement({ measurementTypeId: f.type.id, productionBatchId: workedBatchId, value: "1.000000", unit: "KG", measuredAt: new Date(), observations: "direct" }, context);
     const workMeasurement = await rich.createMeasurement({ measurementTypeId: f.type.id, productionWorkId: work.id, value: "2.000000", unit: "KG", measuredAt: new Date() }, context);
     const containerMeasurement = await rich.createMeasurement({ measurementTypeId: f.type.id, productionContainerId: container.id, value: "3.000000", unit: "KG", measuredAt: new Date() }, context);
+    const unrelatedBatch = await rich.createBatch({ code: `P10-UNRELATED-${randomUUID()}`, productionOrderId: f.order.id, articuloId: f.article.id, unit: "KG", quantity: "0.250", operationKey: `p10-unrelated-${randomUUID()}`, requestHash: "graph" }, context);
+    const graphOccupancy = await prisma.productionContainerOccupancy.findFirstOrThrow({ where: { containerId: container.id, batchId: workedBatchId } });
+    await prisma.$executeRaw`UPDATE production_container_occupancies SET closed_at = NOW(), version = version + 1 WHERE id = ${graphOccupancy.id}::uuid`;
+    const unrelatedContainerMeasurement = await rich.createMeasurement({ measurementTypeId: f.type.id, productionContainerId: container.id, value: "4.000000", unit: "KG", measuredAt: new Date() }, context);
+    await prisma.productionContainerOccupancy.create({ data: { containerId: container.id, batchId: unrelatedBatch.id, quantity: "0.250", unit: "KG", openedAt: new Date() } });
+    await prisma.productionBatchContainerMovement.create({ data: { movementType: "ASSIGNED", destinationContainerId: container.id, sourceBatchId: unrelatedBatch.id, quantity: "0.250", unit: "KG", operationKey: `p10-unrelated-container-${randomUUID()}`, requestHash: "graph", occurredAt: new Date(), actorUserId: actor } });
     await rich.correctMeasurement(direct.id, { field: "observations", newValue: "corrected", reason: "graph", operationKey: `p10-trace-correction-${randomUUID()}` }, context);
     const warehouse = await prisma.warehouse.create({ data: { codigo: `P10-W-${randomUUID()}`, nombre: "Graph warehouse" } });
     const release = await rich.releaseBatchToInventory({ productionBatchId: transformed.outputs[0]!.productionBatchId, quantity: "1.000", warehouseId: warehouse.id, operationKey: `p10-inventory-${randomUUID()}`, lotCode: `P10-LOT-${randomUUID()}`, classification: "PRODUCTO_ENVASADO", fechaIngreso: new Date("2025-01-05T00:00:00.000Z") }, context);
+    const workInput = { articuloId: outputArticle.id, warehouseId: warehouse.id, inventoryLotId: release.inventoryLotId, quantity: "0.500", unit: "KG" as const, operationKey: `p10-work-input-${randomUUID()}`, requestHash: "" };
+    workInput.requestHash = createHash("sha256").update(stable(canonicalProductionWorkInputRequest(workInput))).digest("hex");
+    const createdInput = await rich.createWorkInput(work.id, workInput, context);
+    const reversal = { reason: "graph reversal", operationKey: `p10-work-input-reversal-${randomUUID()}`, requestHash: "" };
+    reversal.requestHash = createHash("sha256").update(stable(canonicalProductionWorkInputReversalRequest(reversal))).digest("hex");
+    const reversedInput = await rich.reverseWorkInput(work.id, createdInput.id, reversal, context);
     const trace = await rich.getBatchTrace(merged.id);
     assert.ok(trace.lineage.some(edge => edge.parentBatchId === f.batch.id)); assert.ok(trace.lineage.some(edge => edge.childBatchId === merged.id));
     assert.equal(new Set(trace.lineage.map(edge => edge.id)).size, trace.lineage.length); assert.ok(trace.lineage.every(edge => edge.parentBatchId !== edge.childBatchId));
-    assert.ok(trace.transformations.some(row => row.id === transformed.id && row.inputs.length && row.outputs.length && row.losses.length));
+    assert.ok(trace.transformations.some(row => row.id === transformed.id && row.productionOrderId === f.order.id && row.transformationOrderId === null && row.productionWorkId === null && row.actorUserId === actor && row.operationKey === transformed.operationKey && row.inputs.length && row.outputs.length && row.losses.length));
     assert.ok(trace.transformations.some(row => row.id === workTransformation.id)); assert.ok(trace.losses.some(row => row.id === workLoss.id));
     assert.ok(trace.losses.some(row => transformed.losses.some(loss => loss.id === row.id))); assert.ok(trace.works.some(row => row.id === work.id)); assert.ok(trace.containers.some(row => row.id === container.id));
-    assert.ok(trace.measurements.some(row => row.id === direct.id)); assert.ok(trace.measurements.some(row => row.id === workMeasurement.id)); assert.ok(trace.measurements.some(row => row.id === containerMeasurement.id));
-    assert.ok(trace.inventory.lots.some(row => row.id === release.inventoryLotId)); assert.ok(trace.inventory.movements.some(row => row.inventoryLotId === release.inventoryLotId));
+    assert.ok(trace.measurements.some(row => row.id === direct.id)); assert.ok(trace.measurements.some(row => row.id === workMeasurement.id)); assert.ok(trace.measurements.some(row => row.id === containerMeasurement.id)); assert.equal(trace.measurements.some(row => row.id === unrelatedContainerMeasurement.id), false);
+    const traceContainerForScope = trace.containers.find(row => row.id === container.id);
+    assert.ok(traceContainerForScope); assert.equal(traceContainerForScope?.occupancies.some(row => row.batchId === unrelatedBatch.id), false); assert.equal(traceContainerForScope?.movements.some(row => row.sourceBatchId === unrelatedBatch.id || row.destinationBatchId === unrelatedBatch.id), false);
+    assert.ok(trace.inventory.lots.some(row => row.id === release.inventoryLotId)); const releaseMovement = trace.inventory.movements.find(row => row.inventoryLotId === release.inventoryLotId); assert.ok(releaseMovement); assert.equal(releaseMovement?.reason, null);
+    assert.ok(releaseMovement?.article); assert.equal(releaseMovement?.article?.id, outputArticle.id); assert.ok(releaseMovement?.warehouse); assert.equal(releaseMovement?.warehouse?.id, warehouse.id);
+    const traceContainer = trace.containers.find(row => row.id === container.id);
+    assert.ok(traceContainer); assert.equal(traceContainer?.name, null); assert.equal(traceContainer?.type, null); assert.equal(traceContainer?.location, null); assert.equal(traceContainer?.material, null);
+    const assignedMovement = traceContainer?.movements.find(row => row.movementType === "ASSIGNED");
+    assert.ok(assignedMovement); assert.equal(assignedMovement?.sourceContainerId, null); assert.equal(assignedMovement?.destinationContainerId, container.id); assert.equal(assignedMovement?.productionWorkId, null); assert.equal(assignedMovement?.actorUserId, actor); assert.equal(typeof assignedMovement?.createdAt, "string");
+    const tracedWork = trace.works.find(row => row.id === work.id);
+    const tracedInput = tracedWork?.inputs.find(row => row.id === createdInput.id);
+    assert.ok(tracedInput); assert.equal(tracedInput?.status, "REVERSED"); assert.equal(tracedInput?.reversalInventoryMovementId, reversedInput.reversalInventoryMovementId); assert.equal(tracedInput?.article?.id, outputArticle.id); assert.equal(tracedInput?.warehouse?.id, warehouse.id);
+    assert.ok(trace.inventory.movements.some(row => row.id === createdInput.inventoryMovementId));
+    assert.ok(trace.inventory.movements.some(row => row.id === reversedInput.reversalInventoryMovementId));
     assert.ok(trace.lineage.every(row => typeof row.createdAt === "string")); assert.ok(trace.measurements.every(row => typeof row.value === "string")); assert.equal(JSON.stringify(trace).includes("requestHash"), false);
     assert.equal(createTrustedIntermoduleContext(context).actorUserId, context.actorUserId);
   });
