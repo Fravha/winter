@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "../src/generated/prisma/client.js";
@@ -12,9 +12,18 @@ import { AttachmentService } from "../src/modules/attachments/attachment.service
 import type { AttachmentStorageProvider } from "../src/modules/attachments/attachment.storage.js";
 import { InventoryService } from "../src/modules/inventory/inventory.service.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
+import {
+  canonicalContainerAssignmentRequest,
+  canonicalContainerPartialTransferRequest,
+  canonicalContainerTransferRequest,
+} from "../src/modules/production/production.container.js";
 import { getTemporaryProductionDatabaseUrl } from "./helpers/production-test-database.js";
 
 const databaseUrl = getTemporaryProductionDatabaseUrl("P11_E2E_DATABASE_URL");
+const stable = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
+  : Array.isArray(value) ? `[${value.map(stable).join(",")}]`
+    : `{${Object.keys(value as object).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`;
+const digest = (value: unknown) => createHash("sha256").update(stable(value)).digest("hex");
 
 class FakeStorage implements AttachmentStorageProvider {
   readonly objects = new Map<string, Buffer>();
@@ -97,19 +106,26 @@ test("P11 cross-module E2E preserves domain, quantities, trace, audit and attach
       participants: [{ participantId: participant.id, role: "operador" }],
       observations: "E2E principal",
     }, context);
-    await production.assignBatchToContainer({
+    const assignment = {
       batchId: inputBatchId, destinationContainerId: sourceContainer.id, quantity: "2.000",
-      operationKey: `p11-assign-${randomUUID()}`, requestHash: "assign",
+      operationKey: `p11-assign-${randomUUID()}`,
+    };
+    await production.assignBatchToContainer({
+      ...assignment, requestHash: digest(canonicalContainerAssignmentRequest(assignment)),
     }, context);
     const partialMoveInput = {
       batchId: inputBatchId, sourceContainerId: sourceContainer.id, destinationContainerId: destinationContainer.id,
       quantity: "1.000", childCode: `P11-CHILD-${randomUUID()}`,
-      operationKey: `p11-partial-${randomUUID()}`, requestHash: "partial",
+      operationKey: `p11-partial-${randomUUID()}`, requestHash: "",
     };
+    partialMoveInput.requestHash = digest(canonicalContainerPartialTransferRequest(partialMoveInput));
     const partialMove = await production.transferBatchPartiallyBetweenContainers(partialMoveInput, context);
     assert.deepEqual(await production.transferBatchPartiallyBetweenContainers(partialMoveInput, context), partialMove);
     await assert.rejects(
-      production.transferBatchPartiallyBetweenContainers({ ...partialMoveInput, requestHash: "changed" }, context),
+      production.transferBatchPartiallyBetweenContainers({
+        ...partialMoveInput, observations: "changed",
+        requestHash: digest(canonicalContainerPartialTransferRequest({ ...partialMoveInput, observations: "changed" })),
+      }, context),
       (error: any) => error.code === "IDEMPOTENCY_CONFLICT",
     );
     assert.equal(partialMove.child.balance.available, "1.000");
@@ -120,18 +136,25 @@ test("P11 cross-module E2E preserves domain, quantities, trace, audit and attach
     }, context);
     const totalSource = await production.createContainer({ code: `P11-C-${randomUUID()}`, capacity: "2.000", capacityUnit: "KG" }, context);
     const totalDestination = await production.createContainer({ code: `P11-C-${randomUUID()}`, capacity: "2.000", capacityUnit: "KG" }, context);
-    await production.assignBatchToContainer({
+    const totalAssignment = {
       batchId: totalBatch.id, destinationContainerId: totalSource.id, quantity: "2.000",
-      operationKey: `p11-total-assign-${randomUUID()}`, requestHash: "total-assign",
+      operationKey: `p11-total-assign-${randomUUID()}`,
+    };
+    await production.assignBatchToContainer({
+      ...totalAssignment, requestHash: digest(canonicalContainerAssignmentRequest(totalAssignment)),
     }, context);
     const totalMoveInput = {
       batchId: totalBatch.id, sourceContainerId: totalSource.id, destinationContainerId: totalDestination.id,
-      operationKey: `p11-total-${randomUUID()}`, requestHash: "total",
+      operationKey: `p11-total-${randomUUID()}`, requestHash: "",
     };
+    totalMoveInput.requestHash = digest(canonicalContainerTransferRequest(totalMoveInput));
     const totalMove = await production.transferBatchBetweenContainers(totalMoveInput, context);
     assert.deepEqual(await production.transferBatchBetweenContainers(totalMoveInput, context), totalMove);
     await assert.rejects(
-      production.transferBatchBetweenContainers({ ...totalMoveInput, requestHash: "changed" }, context),
+      production.transferBatchBetweenContainers({
+        ...totalMoveInput, observations: "changed",
+        requestHash: digest(canonicalContainerTransferRequest({ ...totalMoveInput, observations: "changed" })),
+      }, context),
       (error: any) => error.code === "IDEMPOTENCY_CONFLICT",
     );
 

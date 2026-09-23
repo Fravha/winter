@@ -427,32 +427,25 @@ Tiene exactamente el mismo núcleo aprobado que `Producer`:
 
 ### 4.15 `GrapeReception`
 
-Toda recepción pertenece a una `ProductionOrder`, corresponde a un productor y
-contiene uno o más items.
+Toda recepción pertenece a una `ProductionOrder`, puede referenciar un productor
+y contiene uno o más items.
 
 | Campo | Tipo | Null | Regla |
 |---|---|---:|---|
 | `id` | Id | no | PK |
-| `code` | String | no | unique, estable |
 | `productionOrderId` | Id | no | FK |
-| `producerId` | Id | no | FK |
+| `producerId` | Id | sí | referencia opaca opcional |
 | `receivedAt` | Timestamp | no | fecha/hora efectiva |
-| `requestedWeight` | Decimal | sí | peso solicitado |
-| `receivedWeight` | Decimal | sí | peso recibido |
-| `weightUnit` | Enum `Unit` existente | sí | unidad capturada |
 | `status` | `ACCEPTED \| ACCEPTED_WITH_OBSERVATIONS` | no | estados aprobados |
 | `observations` | String | sí | observación |
 | `actorUserId` | Id externo | no | contexto autenticado |
 | `createdAt` | Timestamp | no | registro |
 | `updatedAt` | Timestamp | no | actualización técnica |
 
-Índices `(productionOrderId, receivedAt)`, `(producerId)`, `(status)`;
-unique `code`. `GrapeReception 1:N GrapeReceptionItem`, mínimo un item.
+Índices `(productionOrderId, receivedAt)`, `(producerId)`, `(status)`.
+`GrapeReception 1:N GrapeReceptionItem`, mínimo un item.
 Una recepción confirmada no se elimina. Una recepción rechazada no se
 persiste. Correcciones son explícitas.
-
-`weightUnit` se limita al enum `Unit` existente y no se convierte a otra
-unidad.
 
 ### 4.16 `GrapeReceptionItem`
 
@@ -461,6 +454,7 @@ unidad.
 | `id` | Id | no | PK |
 | `receptionId` | Id | no | FK |
 | `grapeVarietyId` | Id | no | FK |
+| `articuloId` | Id externo | no | referencia opaca a Articulos |
 | `quantity` | Decimal | no | `> 0` |
 | `unit` | Enum `Unit` existente | no | unidad capturada |
 | `createdAt` | Timestamp | no | creación |
@@ -475,12 +469,16 @@ con identidad y unidad capturada.
 
 ### 4.17 `Transformation`
 
-Operación atómica de una `TransformationOrder`.
+Operación atómica del ciclo productivo de una `ProductionOrder`, con una
+`TransformationOrder` opcional y un `ProductionWork` opcional como contexto
+operativo.
 
 | Campo | Tipo | Null | Regla |
 |---|---|---:|---|
 | `id` | Id | no | PK |
-| `transformationOrderId` | Id | no | FK |
+| `productionOrderId` | Id | no | FK a `ProductionOrder` |
+| `transformationOrderId` | Id | sí | FK opcional; si se informa, debe pertenecer a `productionOrderId` y estar `OPEN` |
+| `productionWorkId` | Id | sí | FK opcional a `ProductionWork`; si se informa, debe existir y ser compatible con el contexto productivo según las reglas vigentes |
 | `performedAt` | Timestamp | no | fecha real |
 | `actorUserId` | Id externo | no | contexto autenticado |
 | `observations` | String | sí | observación |
@@ -488,7 +486,8 @@ Operación atómica de una `TransformationOrder`.
 | `requestHash` | String | no | detección de conflicto |
 | `createdAt` | Timestamp | no | registro |
 
-Índices `(transformationOrderId, performedAt)`, `(operationKey)`;
+Índices `(productionOrderId, performedAt)`, `(transformationOrderId, performedAt)`,
+`(productionWorkId)`, `(operationKey)`;
 unique `operationKey`. `Transformation 1:N Input`, `1:N Output`; una
 transformación productiva debe tener inputs y outputs coherentes con la
 operación antes de quedar completa. No se elimina.
@@ -562,7 +561,9 @@ extensión de integración y no debe confundirse con transformación de producto
 
 Índices por `productionOrderId`, `transformationOrderId`, `transformationId`,
 `productionWorkId`, `productionBatchId`, y `(occurredAt)`. Unique
-`operationKey`.
+`operationKey`. Cuando la pérdida pertenece a una `Transformation`, esta
+clave se conserva como identificador interno/persistido y no constituye un
+replay HTTP independiente.
 
 Debe pertenecer a una `Transformation` o `ProductionWork`. Puede no conocer
 el batch exacto. Si lo conoce, inserta `LOSS` en su ledger dentro de la misma
@@ -614,7 +615,7 @@ Articulo. No se elimina; toda corrección conserva valor original.
 | Campo | Tipo | Null | Regla |
 |---|---|---:|---|
 | `id` | Id | no | PK |
-| `entityType` | Enum | no | `Producer`, `GrapeVariety`, `GrapeReception` |
+| `entityType` | Enum | no | `PRODUCER`, `GRAPE_VARIETY`, `GRAPE_RECEPTION` |
 | `code` | String | no | estable |
 | `label` | String | no | etiqueta |
 | `dataType` | Enum | no | `TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE`, `SELECT` |
@@ -707,7 +708,7 @@ matriz conservadora aplicable es:
 | Crear batch inicial de recepción | Solo un Articulo activo cuya clasificación vigente de Articulos haya sido aprobada explícitamente para materia prima; de lo contrario, rechazar |
 | Input de transformación | Solo batch existente y trazable; no se valida por `articuloId` directo |
 | Output de transformación | Articulo activo cuya clasificación vigente de Articulos haya sido aprobada explícitamente para producto en proceso |
-| Producto enviado a Inventory | Articulo activo validado por Articulos e Inventory; clasificación final la decide Inventory |
+| Producto enviado a Inventory | Articulo activo validado por Articulos e Inventory; clasificación inicial exclusivamente `PRODUCTO_ENVASADO` y las transiciones posteriores las decide Inventory |
 | Insumo auxiliar de trabajo | Articulo activo aprobado para insumo/material por Articulos; se consume por Inventory, no como input de transformación |
 | Container, Producer, GrapeVariety | No son Articulos |
 
@@ -736,19 +737,19 @@ excede. Un recipiente no tiene dos batches independientes simultáneos.
 
 ## 8. Idempotencia
 
-Requieren idempotencia recepción, transformación, consumos, outputs, pérdidas
-con efecto cuantitativo, movimientos entre recipientes y salida
-Production→Inventory.
+Requieren idempotencia recepción, transformación, consumos, outputs, movimientos
+entre recipientes y salida Production→Inventory. Las pérdidas registradas
+dentro de una transformación no tienen un replay HTTP independiente.
 
-Cada operación guarda `operationKey` unique y `requestHash`. Repetir la misma
-clave con el mismo hash devuelve el resultado persistido; repetirla con
-payload distinto produce `IDEMPOTENCY_CONFLICT`. Las claves estables incluyen:
+Cada comando idempotente guarda `operationKey` unique y `requestHash`. Repetir
+la misma clave con el mismo hash devuelve el resultado persistido; repetirla
+con payload distinto produce `IDEMPOTENCY_CONFLICT`. En `Transformation`, la
+clave identifica la transformación completa, incluidas sus pérdidas; no se
+reintenta una pérdida mediante API separada. Las claves estables incluyen:
 
 ```text
 production-reception:{receptionId}
 production-transformation:{transformationId}
-production-output:{transformationId}:{outputId}
-production-loss:{lossId}
 ```
 
 Nunca se genera un UUID distinto al reintentar.
@@ -781,8 +782,8 @@ POST /api/v1/production/transformation-orders
 POST /api/v1/production/transformation-orders/:id/close
 POST /api/v1/production/works
 POST /api/v1/production/works/:id/corrections
-POST /api/v1/production/receptions
-POST /api/v1/production/receptions/:id/corrections
+POST /api/v1/production/grape-receptions
+POST /api/v1/production/grape-receptions/:id/corrections
 POST /api/v1/production/transformations
 POST /api/v1/production/measurements
 POST /api/v1/production/measurements/:id/corrections
@@ -791,7 +792,7 @@ POST /api/v1/production/measurements/:id/corrections
 Query explícita de trazabilidad:
 
 ```text
-GET /api/v1/production/batches/:id/trace
+GET /api/v1/production/batches/:batchId/trace
 ```
 
 La respuesta tipada reconstruye origen, padres, hijos, transformaciones,
@@ -916,3 +917,95 @@ ningún endpoint nuevo de Inventory.
    implemente división parcial.
 
 Ningún bloqueante se resuelve por inferencia durante la implementación.
+
+P5.5A: `ProductionWorkInput` stores the Inventory movement provenance and
+nullable legacy rows remain non-reversible. Production calls trusted Inventory
+primitives inside the shared unit of work; Inventory owns stock mutation,
+negative-stock authorization and movement audit.
+
+## 15. P5.5B — diseño vigente
+
+La extensión de recipientes es aditiva: `type` es nullable para filas legacy,
+sin backfill ni tipos supuestos; `name`, `location` y `material` también son
+nullable. Las nuevas altas API exigen `TANQUE|BARRICA|OTRO`. El listado expone
+`currentOccupancy` como resumen nullable. El Movement DTO contiene
+`productionWorkId`, `observations`, `actorUserId` y `occurredAt`, pero no
+`requestHash`.
+
+Se conservan las rutas administrativas y de lectura, y se publican assign,
+transfer total y transfer partial con permisos dedicados
+`production:container_assign` y `production:container_transfer`; el maestro
+usa `production:container_manage`. Los cuerpos exactos están en
+`PRODUCTION_API.md`. El hash canónico es SHA-256 de JSON con claves ordenadas,
+opcionales normalizados a `null`, excluyendo `operationKey`/`requestHash`.
+Work es opcional pero debe pertenecer a la ProductionOrder del batch.
+`SharedUnitOfWork` cubre movimiento, ocupación, estados, idempotencia y
+auditoría; Failure C revierte todo, incluido split/lineage/ledger.
+
+Los movimientos históricos son inmutables. Total puede compensarse con un
+traslado inverso nuevo si el estado actual sigue compatible; no se inventa
+un unassign destructivo. La reversión parcial no es automática en el MVP: no
+hay merge-back ni reversión destructiva; la corrección requiere una nueva
+operación productiva válida. El traslado interno no crea InventoryMovement.
+
+## 16. Cierre P5.5A–D y criterios de validación
+
+P5.5A–D están reflejados en el diseño vigente: `ProductionWorkInput` usa
+primitives confiables de Inventory dentro de `SharedUnitOfWork`, con consumo,
+reversal compensatorio, idempotencia y política de stock negativo propiedad de
+Inventory. Containers conservan metadata, ocupaciones y movimientos
+`ASSIGNED`, `TRANSFERRED` y `PARTIAL_TRANSFERRED`; el traslado parcial crea
+batch hijo y lineage.
+
+P5.5C expone trace backward/forward con límites, warnings y enlaces de release.
+P5.5D usa las rutas públicas de release y reversal, permisos dedicados,
+clasificación inicial fija `PRODUCTO_ENVASADO`, hash canónico server-side,
+reversión completa, rechazo de estado inseguro e historia append-only.
+
+Las comprobaciones ejecutables y contractuales quedan **PASS**:
+P5.5A PostgreSQL **5/5**, P5.5B **6/6**, P5.5D **21/21**, P5.5E **1/1**,
+P10 Trace **10/10**, Production backend **236/236** con **0 skipped**, Vitest
+frontend **20/20**, typecheck/build backend y frontend **PASS**, Prisma
+validate/generate **PASS**, 33 migraciones aplicadas/status actualizado,
+`No difference detected` entre datasource configurado y schema, y
+`git diff --check` **PASS**.
+
+Las migraciones nuevas son `20260927000000_production_p55e_align_prisma_object_names`
+(alineación de metadata) y
+`20260927010000_production_p55e_eliminate_schema_drift` (eliminación de drift
+de `onUpdate` de FK y nombres de índices); no se editó ninguna migración
+existente.
+
+La aceptación operativa E2E A–F es **PASS**: **A**, BARRICA dinámica sin
+cambios de código; **B**, WorkType dinámico; **C**, WorkInput estructurado y
+consumo mediante InventoryMovement; **D**, movimiento físico estructurado de
+recipientes; **E**, separación GrapeVariety/producto; **F**, observaciones sólo
+narrativas y hechos estructurados en sus campos/entidades correspondientes.
+Login shell
+frontend **PASS** en desktop 1440x1000 y mobile 390x844, con consola limpia.
+El smoke autenticado PASS cubrió las páginas y estados
+Production, Orders, Reception, Batches, Works, Measurements, Transformations,
+Containers, Batch Trace, Release y Reversal, además de permisos,
+loading/empty, errores `requestId`, confirmaciones y double-submit. Se
+corrigieron cuatro defectos demostrados: crashes FormControl/FormItem de
+Reception y Transformation, balance embebido ausente en batches y pageSize 500
+de trace sobre max 100. Cinco variables runtime estuvieron presentes; target
+`runner@127.0.0.1/winter_p55_test`, DB remota NO; las mismas 33 migraciones
+existentes se reaplicaron tras reinicio sin generar migración, status al día,
+drift `No difference detected`, health 200, identidades/datos temporales
+limpiados y sin credenciales persistidas/reportadas. Las pruebas frontend
+focalizadas cubren trace/release/reversal,
+permisos, errores, historial vacío, pending/double-submit e idempotencia;
+La aceptación frontend autenticada requerida queda PASS por este smoke. El
+cierre global P5.5E es
+**PASS / CLOSED**: **BLOCK 5 — PRODUCTION: CLOSED**. La revisión final de
+arquitectura permanece pendiente hasta la revisión final.
+Fotografías/evidencia quedan
+`Deferred to UAT / Hardening`.
+
+La validación destructiva usa exclusivamente `LOCAL INTEGRATION TEST`,
+`127.0.0.1`, `winter_p55_test`, PostgreSQL local, sin acceso productivo/remoto y
+sin credenciales documentadas. `DATABASE_URL`/heliumdb no están autorizados.
+La limitación del workflow Winter Backend por ausencia de
+`WINTER_DATABASE_URL`/Firebase no invalida typecheck, build, Prisma validation o
+tests de integración.

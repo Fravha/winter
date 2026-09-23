@@ -46,6 +46,8 @@ export class ProductionReceptionService {
   async create(data: ReceptionInput, context: AuthenticatedAuditContext): Promise<ReceptionResult> {
     if (!uuidPattern.test(context.actorUserId) || !uuidPattern.test(data.productionOrderId) || (data.producerId !== undefined && !uuidPattern.test(data.producerId))) throw new AppError("VALIDATION_ERROR", "Reception identifiers must be UUIDs", 400);
     if (!["ACCEPTED", "ACCEPTED_WITH_OBSERVATIONS"].includes(data.status) || !(data.receivedAt instanceof Date) || Number.isNaN(data.receivedAt.getTime())) throw new AppError("VALIDATION_ERROR", "Invalid reception status or receivedAt", 400);
+    if (data.observations !== undefined && (typeof data.observations !== "string" || data.observations.length > 2000)) throw new AppError("VALIDATION_ERROR", "Observations must be at most 2000 characters", 400);
+    if (data.status === "ACCEPTED_WITH_OBSERVATIONS" && !data.observations?.trim()) throw new AppError("RECEPTION_OBSERVATIONS_REQUIRED", "This status requires observations", 400);
     if (!data.operationKey.trim() || !data.requestHash.trim()) throw new AppError("IDEMPOTENCY_KEY_REQUIRED", "Operation key and request hash are required", 400);
     if (!data.items.length) throw new AppError("INVALID_RECEPTION_ITEMS", "At least one reception item is required", 400);
     for (const item of data.items) {
@@ -115,12 +117,21 @@ export class ProductionReceptionService {
   async get(id: string) {
     const row = await this.prisma.grapeReception.findUnique({ where: { id }, include: { items: true, corrections: { orderBy: { toVersion: "asc" } } } });
     if (!row) return null;
-    const result = mapReception(row);
-    return row.corrections.length === 0 ? result : {
-      ...result,
+    const customValues = await this.prisma.customFieldValue.findMany({ where: { entityId: id, entityType: "GRAPE_RECEPTION" }, include: { definition: true } });
+    return {
+      ...mapReception(row),
       corrections: row.corrections.map(correction => ({ id: correction.id, field: correction.field, previousValue: correction.previousValue, newValue: correction.newValue, reason: correction.reason, correctedAt: correction.correctedAt.toISOString(), actorUserId: correction.actorUserId, fromVersion: correction.fromVersion, toVersion: correction.toVersion })),
+      customFields: customValues.map(mapCustomField),
     };
   }
+}
+function mapCustomField(value: any) {
+  const definition = value.definition;
+  const column: Record<string, string> = { TEXT: "textValue", INTEGER: "integerValue", DECIMAL: "decimalValue", BOOLEAN: "booleanValue", DATE: "dateValue", SELECT: "selectValue" };
+  let scalar = value[column[definition.dataType]!];
+  if (definition.dataType === "DATE" && scalar instanceof Date) scalar = scalar.toISOString();
+  if (scalar && typeof scalar === "object" && typeof scalar.toString === "function") scalar = scalar.toString();
+  return { definitionId: value.definitionId, entityType: value.entityType, value: scalar };
 }
 function mapReception(row: any) {
   return { id: row.id, productionOrderId: row.productionOrderId, producerId: row.producerId, receivedAt: row.receivedAt.toISOString(), status: row.status, observations: row.observations, actorUserId: row.actorUserId, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), version: row.version, items: row.items.map((item: any) => ({ id: item.id, grapeVarietyId: item.grapeVarietyId, articuloId: item.articuloId, quantity: new Prisma.Decimal(item.quantity).toFixed(3), unit: item.unit, productionBatchId: item.productionBatchId })) };

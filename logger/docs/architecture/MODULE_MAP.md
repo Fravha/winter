@@ -1690,3 +1690,40 @@ salida es atómica mediante `SharedUnitOfWork`: reducción del batch, output,
 `InventoryLot.originProductionBatchId`, `InventoryMovement`,
 `InventoryStock` y auditorías se confirman o revierten juntos. El producto en
 proceso dentro de recipientes no es stock de Inventory.
+
+# 39. Production P5.5A–D — mapa vigente
+
+Production owns `ProductionOrder`, `TransformationOrder`, `ProductionBatch`,
+ledger/lineage, `Container`/occupancy, `ProductionWork`,
+`ProductionWorkInput`, `Transformation`, losses, measurements, receptions,
+catalogs and custom fields. Inventory owns `InventoryLot`, `InventoryMovement`,
+`InventoryStock` and warehouse operations; Articulos owns `Articulo`; Core owns
+authentication, RBAC and audit infrastructure. Production never writes
+Inventory tables directly.
+
+The public commands and permissions are:
+
+```text
+POST /api/v1/production/works/:id/inputs
+  production:work_input_create
+POST /api/v1/production/works/:workId/inputs/:inputId/reverse
+  production:work_input_reverse
+POST /api/v1/production/containers/:id/assign
+  production:container_assign
+POST /api/v1/production/containers/:sourceId/transfers
+POST /api/v1/production/containers/:sourceId/transfers/partial
+  production:container_transfer
+POST /api/v1/production/batches/:batchId/release-to-inventory
+  production:inventory_release
+POST /api/v1/production/batches/:batchId/releases/:releaseId/reverse
+  production:inventory_release_reverse
+```
+
+`GET /api/v1/production/batches/:batchId/trace` is the public trace query and
+includes releases/reversals and Inventory links. Partial transfer creates child
+batch/lineage; the MVP has no automatic merge-back or destructive partial
+reversal. Corrections use a new valid production operation. All cross-module
+commands use `SharedUnitOfWork`; hashes/idempotency, RBAC, authenticated actor,
+audit and non-negative stock rules remain mandatory. The initial release
+classification is always `PRODUCTO_ENVASADO`; Inventory owns later
+classification transitions.

@@ -154,7 +154,7 @@ export class ProductionTransformationService {
       }
       for (let i = 0; i < (data.losses ?? []).length; i++) {
         const loss = data.losses![i]!;
-        const amount = decimal(loss.quantity); const lossKey = loss.operationKey ?? `${data.operationKey}:loss:${i}`;
+        const amount = decimal(loss.quantity); const lossKey = `${data.operationKey}:loss:${i}`;
         const lossRow = await tx.productionLoss.create({ data: { productionOrderId: data.productionOrderId, ...(data.transformationOrderId ? { transformationOrderId: data.transformationOrderId } : {}), transformationId: row.id, ...(data.productionWorkId ? { productionWorkId: data.productionWorkId } : {}), ...(loss.productionBatchId ? { productionBatchId: loss.productionBatchId } : {}), quantity: amount, unit: loss.unit, occurredAt: data.performedAt, actorUserId: context.actorUserId, ...(loss.observations ? { observations: loss.observations.trim() } : {}), operationKey: lossKey, requestHash: digest } });
         if (loss.productionBatchId) {
           await new BatchLedgerService(tx, true).append(loss.productionBatchId, "LOSS", amount, loss.unit, `${lossKey}:ledger`, context.actorUserId, data.performedAt, undefined, { transformationId: row.id, productionLossId: lossRow.id });

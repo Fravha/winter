@@ -219,8 +219,8 @@ una orden y productor, uno o más items, estados únicamente `ACCEPTED` y
 `ACCEPTED_WITH_OBSERVATIONS`. Cada item aceptado genera atómicamente su batch
 inicial y hecho `GENERATED`.
 
-Endpoints aprobados: `POST /api/v1/production/receptions` y
-`POST /api/v1/production/receptions/:id/corrections` (corrección se completa en
+Endpoints aprobados: `POST /api/v1/production/grape-receptions` y
+`POST /api/v1/production/grape-receptions/:id/corrections` (corrección se completa en
 P10); query paginada de recepciones/items con `production:read`.
 
 Services: `GrapeReceptionService`, `GrapeReceptionItemService`,
@@ -279,8 +279,10 @@ corresponda al contrato, con `production:loss_create`.
 Services: `TransformationService`, `TransformationInputService`,
 `TransformationOutputService`, `ProductionLossService`; repositories
 correspondientes. UoW atómica: lock de inputs, ledger `CONSUMED`/`GENERATED` o
-`LOSS`, lineage, idempotencia y auditoría. APIs ArticulosApi valida clasificación
-activa; Core/Auth/Audit. Permisos `production:transformation_create` y
+`LOSS`, idempotencia de la Transformation completa y auditoría. Las pérdidas se
+registran dentro de ese command y no tienen retry HTTP independiente. APIs
+ArticulosApi valida clasificación activa; Core/Auth/Audit. Permisos
+`production:transformation_create` y
 `production:loss_create`, además de lectura.
 
 Pruebas de uno o varios inputs/outputs, cantidades parciales, cambio de
@@ -331,9 +333,9 @@ generan hechos compensatorios tipados.
 Endpoints aprobados:
 
 - `POST /api/v1/production/works/:id/corrections`;
-- `POST /api/v1/production/receptions/:id/corrections`;
+- `POST /api/v1/production/grape-receptions/:id/corrections`;
 - `POST /api/v1/production/measurements/:id/corrections`;
-- `GET /api/v1/production/batches/:id/trace`.
+- `GET /api/v1/production/batches/:batchId/trace`.
 
 Services `ProductionCorrectionService`, `ProductionTraceService` y
 repositories de correcciones/consultas. La traza devuelve origen, padres,
@@ -381,8 +383,107 @@ abierto.
 ## 14. Bloqueos explícitos antes de cerrar fases
 
 Permanecen bloqueantes, sin resolución inferida: valores reales y matriz de
-`Articulo.clasificacion`; enum `Unit`; tensión recepción/Harvest; enum del
+`Articulo.clasificacion` (salvo la clasificación inicial de la salida
+Production → Inventory, resuelta como `PRODUCTO_ENVASADO`); enum `Unit`;
+tensión recepción/Harvest; enum del
 ledger; estrategia de correcciones; decisión sobre `ProductionWorkInput`;
 contrato transaccional y resultado de Inventory; repetición de variedad; y
 semántica de `SEPARATED`. Las fases que los requieren deben reportarlos como
 bloqueo, no sustituirlos con valores locales.
+
+P5.5A is implemented as backend-only work-input consumption/reversal. The
+operation key is globally advisory-locked and requestHash is the canonical
+SHA-256 of the semantic payload (excluding operationKey/requestHash).
+
+## 15. P5.5B — entregado y alineado al código
+
+P5.5B añade metadata operativa de forma aditiva: `type` es nullable para
+contenedores legacy (sin backfill inventado), mientras las altas nuevas lo
+requieren; `name`, `location` y `material` son nullable. El listado devuelve
+`currentOccupancy` resumida. Se mantienen las rutas administrativas y de
+consulta existentes y se exponen:
+
+- `POST /api/v1/production/containers/:id/assign`;
+- `POST /api/v1/production/containers/:sourceId/transfers`;
+- `POST /api/v1/production/containers/:sourceId/transfers/partial`.
+
+Los permisos dedicados son `production:container_assign` y
+`production:container_transfer`; `production:container_manage` queda para el
+maestro. Assign y total reciben `batchId` y el contexto opcional
+`productionWorkId`, `observations`, `occurredAt`, más `operationKey` y
+`requestHash`; parcial añade `quantity` y `childCode`, y total no recibe
+quantity. El DTO de lectura omite `requestHash` y contiene
+`productionWorkId`, `observations`, `actorUserId`, `occurredAt`.
+
+El requestHash es SHA-256 del payload canónico (claves ordenadas, opcionales
+normalizados, sin operationKey/requestHash). Work se valida por existencia y
+ProductionOrder compatible; actor/fecha efectiva/observaciones quedan
+estructurados. Los comandos son atómicos en `SharedUnitOfWork`; Failure C
+revierte todos los efectos. No hay Inventory movement para traslados internos.
+El historial es inmutable: total admite traslado inverso sólo si el estado
+actual sigue compatible, no se inventa un unassign, y la reversión parcial se
+no es automática en el MVP: no hay merge-back ni reversión destructiva; la
+corrección requiere una nueva operación productiva válida.
+
+El frontend debe ofrecer listado (incluyendo ocupación actual), detalle,
+historial de ocupaciones y movimientos, alta/edición/activación, assign,
+traslado total y parcial; debe usar confirmación, bloquear doble submit e
+invalidar sólo las queries afectadas.
+
+## 16. Cierre P5.5E — PASS / CLOSED y futura integración
+
+P5.5A–D son contratos entregados y alineados: WorkInput/Inventory usa
+`SharedUnitOfWork`, idempotencia y reversals compensatorios; containers exponen
+metadata, ocupaciones, `ASSIGNED`, `TRANSFERRED` y `PARTIAL_TRANSFERRED` con
+lineage; trace cubre backward/forward; release usa
+`PRODUCTO_ENVASADO`, hash canónico server-side y reversal completo con rechazo
+de estado inseguro. No existe reversión automática de traslado parcial en MVP.
+
+Las comprobaciones ejecutables y contractuales quedan **PASS**:
+P5.5A PostgreSQL **5/5**, P5.5B **6/6**, P5.5D **21/21**, P5.5E **1/1**,
+P10 Trace **10/10**, regresión completa de Production backend **236/236** con
+**0 skipped**, Vitest frontend **20/20**, typecheck/build backend y frontend
+**PASS**, `prisma validate`/`prisma generate` **PASS**, 33 migraciones aplicadas
+y status actualizado, datasource configurado frente a schema **`No difference
+detected`**, y `git diff --check` **PASS**.
+
+Se añadieron exactamente dos migraciones, sin editar migraciones existentes:
+`20260927000000_production_p55e_align_prisma_object_names` (alineación de
+metadata) y `20260927010000_production_p55e_eliminate_schema_drift`
+(eliminación de drift de `onUpdate` de FK y nombres de índices).
+
+La aceptación operativa E2E A–F es **PASS**: **A**, BARRICA dinámica sin
+cambios de código; **B**, WorkType dinámico; **C**, WorkInput estructurado y
+consumo mediante InventoryMovement; **D**, movimiento físico estructurado de
+recipientes; **E**, separación GrapeVariety/producto; **F**, observaciones sólo
+narrativas y hechos estructurados en sus campos/entidades correspondientes.
+Frontend login shell smoke **PASS** en 1440x1000 y 390x844, con consola limpia.
+El smoke autenticado PASS cubrió navegación, Orders, Reception,
+Batches, Works, Measurements, Transformations, Containers, Batch Trace,
+Release, Reversal, permisos, loading/empty, errores `requestId`,
+confirmaciones y double-submit. Se corrigieron cuatro defectos demostrados:
+crash de Reception, balance embebido ausente en batches, pageSize 500 en trace
+y crash de Transformation. Cinco variables runtime estuvieron presentes; el
+target fue `runner@127.0.0.1/winter_p55_test`, DB remota NO; tras reinicio se
+reaplicaron las mismas 33 migraciones existentes, sin generar migración,
+status al día, drift `No difference detected` y health 200. Identidades
+temporales/datos de prueba fueron limpiados, sin credenciales persistidas o
+reportadas. Las pruebas frontend focalizadas cubren confirmaciones,
+permisos, errores, historial vacío, pending/double-submit e idempotencia;
+la aceptación frontend autenticada requerida queda demostrada por este smoke.
+El cierre global
+es **PASS / CLOSED**: **BLOCK 5 — PRODUCTION: CLOSED**. Fotos/evidencia:
+`Deferred to UAT / Hardening`.
+
+Entorno TEST autorizado: `LOCAL INTEGRATION TEST`, `127.0.0.1`,
+`winter_p55_test`, PostgreSQL local, destructivo/de integración, sin acceso
+productivo ni remoto; no se documentan secretos y `DATABASE_URL`/heliumdb no
+son destinos permitidos. El runtime temporal no dejó credenciales persistidas
+ni reportadas; esto no invalida typecheck, build, Prisma validation ni
+integration tests.
+
+Plan futuro, no ejecutado: `main` → `integration/production-p5` →
+reconcile/cherry-pick backend, migrations, tests y contracts → PostgreSQL
+migration validation → backend regression → merge main → Render deploy →
+backend smoke tests → frontend integration/deploy. Despliegue: backup/check DB,
+migrations, backend, backend smoke tests, frontend y frontend smoke/UAT.

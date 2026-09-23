@@ -6,16 +6,26 @@ import { AuditService } from "../../core/audit/audit.service.js";
 import { PrismaAuditRepository } from "../../core/audit/prisma-audit.repository.js";
 import type { AuthenticatedAuditContext } from "../../core/audit/audit.types.js";
 import { AppError } from "../../shared/errors/app-error.js";
+import { createHash } from "node:crypto";
+import type { InventoryApi } from "../inventory/inventory.api.js";
+import { createTrustedIntermoduleContext } from "../inventory/inventory.model.js";
 
 type Db = PrismaClient | SharedTransactionContext;
 export type WorkParticipantInput = { participantId: string; role?: string | undefined };
 export type WorkCreateInput = { productionOrderId: string; transformationOrderId?: string | undefined; workTypeId: string; performedAt: Date; observations?: string | undefined; batchIds?: string[] | undefined; containerIds?: string[] | undefined; participants?: WorkParticipantInput[] | undefined };
 export type WorkCorrectionInput = { field: "performedAt" | "workTypeId" | "transformationOrderId" | "observations"; newValue: string | null; reason: string };
+export type WorkInputCreate = { articuloId: string; warehouseId: string; inventoryLotId?: string | undefined; quantity: string; unit: "KG"|"G"|"L"|"M"|"UNIDAD"; operationKey: string; requestHash: string; observations?: string | undefined; authorizeNegativeStock?: boolean | undefined; negativeStockReason?: string | undefined };
+export type WorkInputReverse = { reason: string; operationKey: string; requestHash: string };
 const iso = (value: Date) => value.toISOString();
 const json = (value: unknown): Prisma.InputJsonValue => value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? value as Prisma.InputJsonValue : Array.isArray(value) ? value.map(json) as Prisma.InputJsonValue : Object.fromEntries(Object.entries(value as object).map(([k, v]) => [k, json(v)])) as Prisma.InputJsonValue;
 const requiredText = (value: string, name: string) => { if (!value.trim()) throw new AppError("INVALID_PRODUCTION_WORK", `${name} is required`, 400); };
 const uuid = (value: string, name: string) => { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw new AppError("INVALID_PRODUCTION_WORK", `${name} must be a UUID`, 400); };
 const unique = (values: string[], name: string) => { const seen = new Set<string>(); for (const value of values) { uuid(value, name); if (seen.has(value)) throw new AppError("INVALID_PRODUCTION_WORK", `${name} contains duplicate ids`, 400); seen.add(value); } return values; };
+const canonical = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value) : Array.isArray(value) ? `[${value.map(canonical).join(",")}]` : `{${Object.keys(value as object).sort().map(k => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`).join(",")}}`;
+export const canonicalProductionWorkInputRequest = (data: WorkInputCreate) => ({ articuloId: data.articuloId, warehouseId: data.warehouseId, inventoryLotId: data.inventoryLotId ?? null, quantity: data.quantity, unit: data.unit, observations: data.observations?.trim() || null, authorizeNegativeStock: data.authorizeNegativeStock ?? false, negativeStockReason: data.negativeStockReason?.trim() || null });
+export const canonicalProductionWorkInputReversalRequest = (data: WorkInputReverse) => ({ reason: data.reason.trim() });
+const inputHash = (data: WorkInputCreate) => createHash("sha256").update(canonical(canonicalProductionWorkInputRequest(data))).digest("hex");
+const reversalHash = (data: WorkInputReverse) => createHash("sha256").update(canonical(canonicalProductionWorkInputReversalRequest(data))).digest("hex");
 
 function mapWork(row: any) {
   return {
@@ -26,7 +36,11 @@ function mapWork(row: any) {
     containerIds: row.containers?.map((x: any) => x.productionContainerId) ?? [],
     participants: row.participants?.map((x: any) => ({ participantId: x.productionParticipantId, role: x.role })) ?? [],
     corrections: row.corrections?.map((x: any) => ({ id: x.id, field: x.field, previousValue: x.previousValue, newValue: x.newValue, reason: x.reason, correctedAt: iso(x.correctedAt), actorUserId: x.actorUserId, fromVersion: x.fromVersion, toVersion: x.toVersion })) ?? [],
+    inputs: row.inputs?.map((x: any) => ({ ...mapWorkInput(x) })) ?? [],
   };
+}
+function mapWorkInput(row: any) {
+  return { id: row.id, productionWorkId: row.productionWorkId, articuloId: row.articuloId, warehouseId: row.warehouseId, inventoryLotId: row.inventoryLotId, quantity: row.quantity.toString(), unit: row.unit, inventoryMovementId: row.inventoryMovementId, observations: row.observations, operationKey: row.operationKey, requestHash: row.requestHash, createdByUserId: row.createdByUserId, createdAt: iso(row.createdAt), status: row.reversedAt ? "REVERSED" : "ACTIVE", reversedAt: row.reversedAt ? iso(row.reversedAt) : null, reversalInventoryMovementId: row.reversalInventoryMovementId, reversalOperationKey: row.reversalOperationKey, reversalRequestHash: row.reversalRequestHash, reversedByUserId: row.reversedByUserId, reversalReason: row.reversalReason };
 }
 
 async function lock(tx: SharedTransactionContext, table: string, ids: string[], label: string) {
@@ -34,9 +48,9 @@ async function lock(tx: SharedTransactionContext, table: string, ids: string[], 
 }
 
 export class ProductionWorkService {
-  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, private readonly auditFactory: (tx: SharedTransactionContext) => AuditService = (tx) => new AuditService(new PrismaAuditRepository(tx))) {}
+  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, private readonly inventory?: InventoryApi, private readonly auditFactory: (tx: SharedTransactionContext) => AuditService = (tx) => new AuditService(new PrismaAuditRepository(tx))) {}
   private auditIn(tx: SharedTransactionContext) { return this.auditFactory(tx); }
-  private include = { batches: true, containers: true, participants: true, corrections: { orderBy: { correctedAt: "asc" as const } } };
+  private include = { batches: true, containers: true, participants: true, corrections: { orderBy: { correctedAt: "asc" as const } }, inputs: { orderBy: { createdAt: "asc" as const } } };
 
   async list(filters: { page?: number | undefined; pageSize?: number | undefined; productionOrderId?: string | undefined; workTypeId?: string | undefined }) {
     const page = filters.page ?? 1; const pageSize = filters.pageSize ?? 20;
@@ -71,6 +85,50 @@ export class ProductionWorkService {
       const row = await tx.productionWork.create({ data: { productionOrderId: data.productionOrderId, ...(data.transformationOrderId ? { transformationOrderId: data.transformationOrderId } : {}), workTypeId: data.workTypeId, performedAt: data.performedAt, ...(data.observations !== undefined ? { observations: data.observations.trim() } : {}), createdByUserId: context.actorUserId, batches: { create: batchIds.map(productionBatchId => ({ productionBatch: { connect: { id: productionBatchId } } })), }, containers: { create: containerIds.map(productionContainerId => ({ productionContainer: { connect: { id: productionContainerId } } })) }, participants: { create: participants.map(x => ({ productionParticipant: { connect: { id: x.participantId } }, ...(x.role !== undefined ? { role: x.role.trim() } : {}) })) } }, include: this.include });
       await this.auditIn(tx).record(context, { action: "PRODUCTION_WORK_CREATED", resourceType: "production.work", resourceId: row.id, metadata: { productionOrderId: row.productionOrderId } });
       return mapWork(row);
+    });
+  }
+  async createInput(workId: string, data: WorkInputCreate, context: AuthenticatedAuditContext) {
+    const inventoryApi = this.inventory;
+    if (!inventoryApi) throw new AppError("INVENTORY_API_UNAVAILABLE", "InventoryApi is required", 500);
+    uuid(workId, "Work id"); uuid(data.articuloId, "Articulo id"); uuid(data.warehouseId, "Warehouse id");
+    return new SharedUnitOfWork(this.prisma).execute(async tx => {
+      await tx.$queryRaw`SELECT 1::int FROM pg_advisory_xact_lock(hashtext(${data.operationKey}))`;
+      await lock(tx, "production_works", [workId], "Work id");
+      if (data.requestHash !== inputHash(data)) throw new AppError("INVALID_REQUEST_HASH", "requestHash does not match the canonical payload", 400);
+      const work = await tx.productionWork.findUnique({ where: { id: workId } });
+      if (!work) throw new AppError("PRODUCTION_WORK_NOT_FOUND", "Production work not found", 404);
+      const prior = await tx.productionWorkInput.findUnique({ where: { operationKey: data.operationKey } });
+      if (prior) {
+        if (prior.requestHash !== data.requestHash || prior.productionWorkId !== workId) throw new AppError("IDEMPOTENCY_CONFLICT", "Operation key was used with a different request", 409);
+        return mapWorkInput(prior);
+      }
+      const inventory = await inventoryApi.consumeProductionInput({ articuloId: data.articuloId, warehouseId: data.warehouseId, ...(data.inventoryLotId ? { inventoryLotId: data.inventoryLotId } : {}), quantity: data.quantity, unit: data.unit, source: "PRODUCTION_CONSUMPTION", idempotencyKey: `${data.operationKey}:inventory`, ...(data.authorizeNegativeStock === undefined ? {} : { authorizeNegativeStock: data.authorizeNegativeStock }), ...(data.negativeStockReason?.trim() ? { negativeStockReason: data.negativeStockReason.trim() } : {}) }, createTrustedIntermoduleContext(context), tx);
+      const row = await tx.productionWorkInput.create({ data: { productionWorkId: workId, articuloId: data.articuloId, warehouseId: data.warehouseId, inventoryLotId: data.inventoryLotId ?? null, quantity: data.quantity, unit: data.unit, inventoryMovementId: inventory.movementId, observations: data.observations?.trim() || null, operationKey: data.operationKey, requestHash: data.requestHash, createdByUserId: context.actorUserId } });
+      await this.auditIn(tx).record(context, { action: "PRODUCTION_WORK_INPUT_CREATED", resourceType: "production.work.input", resourceId: row.id, metadata: { workId, operationKey: data.operationKey } });
+      return mapWorkInput(row);
+    });
+  }
+  async reverseInput(workId: string, inputId: string, data: WorkInputReverse, context: AuthenticatedAuditContext) {
+    const inventoryApi = this.inventory;
+    if (!inventoryApi) throw new AppError("INVENTORY_API_UNAVAILABLE", "InventoryApi is required", 500);
+    uuid(workId, "Work id"); uuid(inputId, "Input id");
+    return new SharedUnitOfWork(this.prisma).execute(async tx => {
+      await tx.$queryRaw`SELECT 1::int FROM pg_advisory_xact_lock(hashtext(${data.operationKey}))`;
+      await lock(tx, "production_works", [workId], "Work id");
+      if (data.requestHash !== reversalHash(data)) throw new AppError("INVALID_REQUEST_HASH", "requestHash does not match the canonical payload", 400);
+      const input = await tx.productionWorkInput.findUnique({ where: { id: inputId } });
+      if (!input || input.productionWorkId !== workId) throw new AppError("PRODUCTION_WORK_INPUT_NOT_FOUND", "Production work input not found", 404);
+      const prior = await tx.productionWorkInput.findUnique({ where: { reversalOperationKey: data.operationKey } });
+      if (prior) {
+        if (prior.reversalRequestHash !== data.requestHash || prior.id !== inputId) throw new AppError("IDEMPOTENCY_CONFLICT", "Reversal operation key was used with a different request", 409);
+        return mapWorkInput(prior);
+      }
+      if (input.reversedAt) throw new AppError("PRODUCTION_WORK_INPUT_ALREADY_REVERSED", "Production work input is already reversed", 409);
+      if (!input.warehouseId || !input.inventoryMovementId || !input.operationKey || !input.requestHash) throw new AppError("PRODUCTION_WORK_INPUT_LEGACY_PROVENANCE", "Legacy work input lacks inventory provenance and cannot be reversed", 409);
+      const movement = await inventoryApi.reverseProductionInputConsumption({ articuloId: input.articuloId, warehouseId: input.warehouseId, ...(input.inventoryLotId ? { inventoryLotId: input.inventoryLotId } : {}), quantity: input.quantity.toString(), unit: input.unit, source: "PRODUCTION_CONSUMPTION_REVERSAL", reason: data.reason, idempotencyKey: `${data.operationKey}:inventory` }, createTrustedIntermoduleContext(context), tx);
+      const row = await tx.productionWorkInput.update({ where: { id: inputId }, data: { reversedAt: new Date(), reversalInventoryMovementId: movement.movementId, reversalOperationKey: data.operationKey, reversalRequestHash: data.requestHash, reversedByUserId: context.actorUserId, reversalReason: data.reason } });
+      await this.auditIn(tx).record(context, { action: "PRODUCTION_WORK_INPUT_REVERSED", resourceType: "production.work.input", resourceId: inputId, metadata: { operationKey: data.operationKey, reason: data.reason } });
+      return mapWorkInput(row);
     });
   }
   async correct(id: string, data: WorkCorrectionInput, context: AuthenticatedAuditContext) {

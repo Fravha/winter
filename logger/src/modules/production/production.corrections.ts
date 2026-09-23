@@ -17,6 +17,10 @@ const digest = (targetId: string, data: CorrectionInput, value: unknown) => crea
 const lock = async (tx: Tx, table: string, id: string) => { await tx.$queryRawUnsafe(`SELECT id FROM "${table}" WHERE id = $1::uuid FOR UPDATE`, id); };
 const operationLock = async (tx: Tx, key: string) => { await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`; };
 const canonicalDate = (value: unknown) => { const d = new Date(String(value)); if (Number.isNaN(d.valueOf())) throw new AppError("VALIDATION_ERROR", "Date is invalid", 400); return d; };
+const isoDate = (value: unknown) => {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) throw new AppError("VALIDATION_ERROR", "receivedAt must be an ISO datetime", 400);
+  return canonicalDate(value);
+};
 const decimal6 = (value: unknown) => { const s = String(value).trim(); if (!/^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(s)) throw new AppError("VALIDATION_ERROR", "Value must have at most six decimals", 400); return new Prisma.Decimal(s); };
 
 export class ProductionCorrectionService {
@@ -49,18 +53,22 @@ export class ProductionCorrectionService {
 
   async correctReception(id: string, data: CorrectionInput, context: AuthenticatedAuditContext) {
     uuid(id, "Reception id"); if (!data.reason?.trim() || !data.operationKey?.trim()) throw new AppError("VALIDATION_ERROR", "Reason and operationKey are required", 400);
+    if (data.reason.trim().length > 2000 || data.operationKey.trim().length > 100 || !["receivedAt", "producerId", "observations", "status"].includes(data.field)) throw new AppError("VALIDATION_ERROR", "Invalid reception correction", 400);
+    const value = data.field === "receivedAt" ? isoDate(data.newValue) : data.field === "producerId" ? (typeof data.newValue === "string" ? data.newValue : (() => { throw new AppError("VALIDATION_ERROR", "Producer id is required", 400); })()) : data.field === "observations" ? (data.newValue === null ? null : typeof data.newValue === "string" && data.newValue.length <= 2000 ? data.newValue : (() => { throw new AppError("VALIDATION_ERROR", "Observations must be at most 2000 characters", 400); })()) : data.field === "status" && (data.newValue === "ACCEPTED" || data.newValue === "ACCEPTED_WITH_OBSERVATIONS") ? data.newValue : (() => { throw new AppError("VALIDATION_ERROR", "Field is not correctable", 400); })();
+    const nextJson = value instanceof Date ? value.toISOString() : value;
+    const hash = digest(id, data, nextJson);
     return new SharedUnitOfWork(this.prisma).execute(async tx => {
-      await operationLock(tx, data.operationKey); await lock(tx, "grape_receptions", id);
+      await operationLock(tx, data.operationKey);
+      const existing = await tx.grapeReceptionCorrection.findUnique({ where: { operationKey: data.operationKey } }); if (existing) { if (existing.requestHash !== hash) throw new AppError("IDEMPOTENCY_CONFLICT", "Operation key was used with a different request", 409); return existing.result; }
+      const crossType = await tx.productionMeasurementCorrection.findUnique({ where: { operationKey: data.operationKey } }); if (crossType) throw new AppError("IDEMPOTENCY_CONFLICT", "Operation key is already used by a measurement correction", 409);
+      await lock(tx, "grape_receptions", id);
       const old = await tx.grapeReception.findUnique({ where: { id }, include: { items: { include: { productionBatch: { include: { ledger: { where: { entryType: "GENERATED" }, orderBy: { occurredAt: "asc" }, take: 1 } } } } }, corrections: { orderBy: { toVersion: "asc" } } } });
       if (!old) throw new AppError("GRAPE_RECEPTION_NOT_FOUND", "Grape reception not found", 404);
-      const value = data.field === "receivedAt" ? canonicalDate(data.newValue) : data.field === "producerId" ? (data.newValue == null ? null : String(data.newValue)) : data.field === "observations" ? (data.newValue == null ? null : String(data.newValue).trim() || null) : data.field === "status" && (data.newValue === "ACCEPTED" || data.newValue === "ACCEPTED_WITH_OBSERVATIONS") ? data.newValue : (() => { throw new AppError("VALIDATION_ERROR", "Field is not correctable", 400); })();
       if (data.field === "producerId" && value) { uuid(value as string, "Producer id"); await lock(tx, "production_producers", value as string); const p = await tx.producer.findUnique({ where: { id: value as string } }); if (!p) throw new AppError("PRODUCER_NOT_FOUND", "Producer not found", 404); if (!p.active) throw new AppError("PRODUCER_INACTIVE", "Producer is inactive", 409); }
       if (data.field === "status" && value === "ACCEPTED_WITH_OBSERVATIONS" && !String(old.observations ?? "").trim()) throw new AppError("RECEPTION_OBSERVATIONS_REQUIRED", "This status requires observations", 409);
       if (data.field === "observations" && old.status === "ACCEPTED_WITH_OBSERVATIONS" && !String(value ?? "").trim()) throw new AppError("RECEPTION_OBSERVATIONS_REQUIRED", "Observations cannot be cleared for this status", 409);
       if (data.field === "receivedAt") { const generated = old.items.flatMap((item: any) => item.productionBatch.ledger).map((x: any) => x.occurredAt).sort((a: Date, b: Date) => a.valueOf() - b.valueOf())[0]; if (generated && value instanceof Date && value > generated) throw new AppError("RECEPTION_DATE_AFTER_BATCH", "Received date cannot be after generated batch", 409); }
-      const previous = (old as any)[data.field]; const previousJson = previous instanceof Date ? previous.toISOString() : previous; const nextJson = value instanceof Date ? value.toISOString() : value; const hash = digest(id, data, nextJson);
-      const existing = await tx.grapeReceptionCorrection.findUnique({ where: { operationKey: data.operationKey } }); if (existing) { if (existing.requestHash !== hash) throw new AppError("IDEMPOTENCY_CONFLICT", "Operation key was used with a different request", 409); return existing.result; }
-      const crossType = await tx.productionMeasurementCorrection.findUnique({ where: { operationKey: data.operationKey } }); if (crossType) throw new AppError("IDEMPOTENCY_CONFLICT", "Operation key is already used by a measurement correction", 409);
+      const previous = (old as any)[data.field]; const previousJson = previous instanceof Date ? previous.toISOString() : previous;
       if (JSON.stringify(previousJson) === JSON.stringify(nextJson)) throw new AppError("CORRECTION_NOOP", "Correction does not change the value", 409);
       const correctionId = randomUUID(); const result = { id, field: data.field, value: nextJson, version: old.version + 1, correctionId };
       const correction = await tx.grapeReceptionCorrection.create({ data: { id: correctionId, grapeReceptionId: id, field: data.field, previousValue: json(previousJson), newValue: json(nextJson), reason: data.reason.trim(), correctedAt: new Date(), actorUserId: context.actorUserId, fromVersion: old.version, toVersion: old.version + 1, operationKey: data.operationKey, requestHash: hash, result: json(result) } });

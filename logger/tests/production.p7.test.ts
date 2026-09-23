@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
@@ -10,6 +10,7 @@ import { PrismaArticuloRepository } from "../src/modules/articulos/prisma-articu
 import { PrismaArticuloUnitOfWork } from "../src/modules/articulos/prisma-articulo.unit-of-work.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { ProductionMeasurementService } from "../src/modules/production/production.measurement.js";
+import { canonicalContainerAssignmentRequest } from "../src/modules/production/production.container.js";
 import { createTemporaryProductionDatabaseResource } from "./helpers/production-test-database.js";
 
 const database = createTemporaryProductionDatabaseResource("P7_DATABASE_URL", connectionString => ({ connectionString, createClient: () => new PrismaClient({ adapter: new PrismaPg({ connectionString }) }) }));
@@ -19,6 +20,10 @@ if (prisma) { try { await prisma.$queryRaw`SELECT 1 FROM production_measurements
 if (database && !available) throw new Error("P7_DATABASE_URL was supplied but the P7 migration/database is unavailable");
 const options = available ? {} : { skip: "requires P7_DATABASE_URL with P7 migration applied" };
 const actor = randomUUID();
+const stable = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value)
+  : Array.isArray(value) ? `[${value.map(stable).join(",")}]`
+    : `{${Object.keys(value as object).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`;
+const digest = (value: unknown) => createHash("sha256").update(stable(value)).digest("hex");
 const context = { actorUserId: actor, requestId: randomUUID() };
 
 describe("Production P7 PostgreSQL", () => {
@@ -115,6 +120,12 @@ describe("Production P7 PostgreSQL", () => {
   });
   it("does not deadlock against a concurrent container assignment", options, async () => {
     assert.ok(prisma); const f = await fixture();
+    const assignment = {
+      batchId: f.batch.id,
+      destinationContainerId: f.container.id,
+      quantity: "1.000",
+      operationKey: `p7-container-${randomUUID()}`,
+    };
     const results = await Promise.allSettled([
       f.service.create({
         measurementTypeId: f.type.id,
@@ -127,9 +138,9 @@ describe("Production P7 PostgreSQL", () => {
       f.production.assignBatchToContainer({
         batchId: f.batch.id,
         destinationContainerId: f.container.id,
-        quantity: "1.000",
-        operationKey: `p7-container-${randomUUID()}`,
-        requestHash: "p7-container-race",
+        quantity: assignment.quantity,
+        operationKey: assignment.operationKey,
+        requestHash: digest(canonicalContainerAssignmentRequest(assignment)),
       }, context),
     ]);
     assert.deepEqual(results.map(result => result.status), ["fulfilled", "fulfilled"]);

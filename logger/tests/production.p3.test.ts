@@ -58,6 +58,10 @@ describe("Production P3 PostgreSQL", () => {
     batchId = created.id;
     assert.equal(created.balance.generated, "10.125");
     assert.equal(created.balance.available, "10.125");
+    const listed = await service.listBatches({ productionOrderId: orderId });
+    const listedBatch = listed.items.find(item => item.id === batchId);
+    assert.equal(listedBatch?.balance.generated, "10.125");
+    assert.equal(listedBatch?.balance.available, "10.125");
     assert.equal((await service.getBatchBalance(batchId)).available, "10.125");
     await prisma?.productionBatchBalance.update({ where: { productionBatchId: batchId }, data: { available: new Prisma.Decimal("99.999"), ledgerVersion: 0 } });
     assert.equal((await service.getBatchBalance(batchId)).available, "10.125");

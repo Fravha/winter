@@ -805,9 +805,8 @@ con `production:work_type_manage` o `production:measurement_type_manage`,
 respectivamente. Son catálogos, no comandos históricos, y no tienen seed.
 `GrapeReception` debe referenciarlos por ID. Una recepción puede contener una o
 varias variedades con sus cantidades; no se aceptan como texto libre ni como
-Articulo. Los campos exactos y los contracts de administración de estos
-catálogos deben quedar definidos en Production antes de implementar esta
-sección; la IA no debe inventarlos.
+Articulo. Los campos exactos de la recepción y sus endpoints HTTP se definen
+en `docs/api/PRODUCTION_API.md`, que es la autoridad de wire.
 
 ## `createGrapeReception`
 
@@ -815,31 +814,31 @@ Entrada conceptual:
 
 ``` ts
 {
-  harvestId: string
-  producerId: string
-  varieties: [
+  productionOrderId: string
+  producerId?: string
+  receivedAt: string
+  status: "ACCEPTED" | "ACCEPTED_WITH_OBSERVATIONS"
+  observations?: string
+  items: [
     {
       grapeVarietyId: string
+      articuloId: string
       quantity: DecimalString
-      unit: string
+      unit: "KG" | "G" | "L" | "M" | "UNIDAD"
     }
   ]
-  dateTime: string
-
-  requestedWeight: DecimalString
-  receivedWeight: DecimalString
-
-  brix?: DecimalString
-  alcoholDegree?: DecimalString
-  quality?: string
-
-  status: "ACCEPTED" | "ACCEPTED_WITH_OBSERVATIONS"
-
-  observations?: string
+  customFields?: [{ definitionId: string, value: string | number | boolean }]
+  operationKey: string
+  requestHash: string
 }
 ```
 
-No se acepta un estado `REJECTED`.
+`observations` admite hasta 2000 caracteres y es obligatoria cuando el estado es
+`ACCEPTED_WITH_OBSERVATIONS`; `producerId` y `customFields` son opcionales.
+No se acepta un estado `REJECTED`. La respuesta de creación es un
+`ReceptionResult` con `reception`, `items` y `batchIds`; el detalle HTTP usa
+`GET /api/v1/production/grape-receptions/:id` e incluye items, correcciones y
+los valores públicos de custom fields, sin relaciones humanas anidadas.
 
 Los campos adicionales de `Producer`, `GrapeVariety` y `GrapeReception` se
 gestionan como `CUSTOM_FIELDS`, separados de los `CORE_FIELDS` contractuales.
@@ -863,12 +862,8 @@ Filtros:
 
 ``` ts
 {
-  harvestId?: string
-  producerId?: string
-  grapeVarietyId?: string
-  from?: string
-  to?: string
-  status?: string
+  page: number
+  pageSize: number
 }
 ```
 
@@ -1253,79 +1248,23 @@ Filtros:
 
 # 21. Production API --- Ocupación
 
-## `occupyContainer`
-
-Entrada:
-
-``` ts
-{
-  productionBatchId: string
-  containerId: string
-  entryDate: string
-  volume: DecimalString
-  unit: string
-}
-```
-
-Debe validar capacidad disponible.
-
-------------------------------------------------------------------------
-
-## `releaseContainerQuantity`
-
-Permite retirar una parte del contenido sin eliminar necesariamente la
-ocupación restante.
-
-Entrada:
-
-``` ts
-{
-  productionBatchId: string
-  containerId: string
-  quantity: DecimalString
-  dateTime: string
-  workId?: string
-  reason: string
-}
-```
-
-------------------------------------------------------------------------
-
-## `closeContainerOccupancy`
-
-Cierra la ocupación cuando el lote ya no está en el recipiente.
+La API pública actual permite consultar las ocupaciones de un recipiente y
+expone los comandos HTTP `POST /api/v1/production/containers/:id/assign`,
+`POST /api/v1/production/containers/:sourceId/transfers` y
+`POST /api/v1/production/containers/:sourceId/transfers/partial`. Usan,
+respectivamente, `production:container_assign` y
+`production:container_transfer`; validan capacidad, unidad, ocupación y
+lineage dentro de `SharedUnitOfWork`.
 
 ------------------------------------------------------------------------
 
 # 22. Production API --- Movimientos de proceso
 
-## `moveProcessProduct`
-
-Entrada:
-
-``` ts
-{
-  productionBatchId: string
-  workId: string
-
-  originContainerId: string
-  destinationContainerId: string
-
-  quantity: DecimalString
-  unit: string
-
-  dateTime: string
-  reason: string
-  observations?: string
-}
-```
-
-La operación debe validar:
-
--   que el origen tenga cantidad suficiente;
--   que el destino tenga capacidad;
--   que el movimiento sea coherente con el estado del batch;
--   que las ocupaciones resultantes sean consistentes.
+La API pública actual permite consultar los movimientos asociados a un
+recipiente y mover producto entre recipientes mediante los tres comandos
+anteriores. El traslado total conserva el batch; el parcial crea batch hijo y
+lineage. No existe merge-back ni reversión destructiva automática de un
+traslado parcial en el MVP.
 
 ------------------------------------------------------------------------
 
@@ -1337,41 +1276,45 @@ Entrada:
 
 ``` ts
 {
-  transformationOrderId: string
-  transformationTypeId: string
-  dateTime: string
+  productionOrderId: string
+  transformationOrderId?: string
+  performedAt: string
   observations?: string
+  operationKey: string
+  requestHash: string
+  inputs: TransformationInput[]
+  outputs: TransformationOutput[]
+  losses?: ProductionLossInput[]
 }
 ```
 
+`productionOrderId` es obligatorio. `transformationOrderId` es opcional; si se
+envía, debe existir, pertenecer a `productionOrderId` y estar `OPEN`. Inputs,
+outputs y pérdidas se registran como parte del comando atómico de la
+Transformation; no existen comandos HTTP independientes para pérdidas.
+
 ------------------------------------------------------------------------
 
-## `addTransformationInput`
-
-Entrada:
+### `TransformationInput`
 
 ``` ts
 {
-  transformationId: string
   productionBatchId: string
   quantity: DecimalString
-  unit: string
 }
 ```
 
 Todo input de una `Transformation` es uno o varios `ProductionBatch` trazables;
-no se aceptan inputs identificados únicamente por `articuloId`.
+no se aceptan inputs identificados únicamente por `articuloId`. Los inputs se
+envían dentro de `createTransformation`; no se agregan posteriormente mediante
+un comando HTTP independiente.
 
 ------------------------------------------------------------------------
 
-## `addTransformationOutput`
-
-Entrada:
+### `TransformationOutput`
 
 ``` ts
 {
-  transformationId: string
-  productionBatchId: string
   articuloId: string
   quantity: DecimalString
   unit: string
@@ -1381,6 +1324,8 @@ Entrada:
 Todo output reutilizable se representa mediante `ProductionBatch`; este
 contrato conceptual no implica una entidad persistida independiente de output.
 La transformación completa, incluidos consumos, outputs y pérdidas, es atómica.
+Los outputs se envían dentro de `createTransformation`; no se agregan mediante
+un comando HTTP independiente.
 
 ------------------------------------------------------------------------
 
@@ -1401,48 +1346,17 @@ mermas asociadas
 
 # 24. Production API --- Mermas
 
-## `recordProductionLoss`
+No existe una operación HTTP pública independiente para registrar o listar
+`ProductionLoss`.
 
-Entrada:
+Las pérdidas se envían exclusivamente dentro de
+`POST /api/v1/production/transformations` y forman parte del mismo comando
+atómico e idempotente que sus inputs y outputs. La `operationKey` pública
+identifica la transformación completa; las claves persistidas por pérdida son
+identificadores internos y no habilitan reintentos independientes.
 
-``` ts
-{
-  productionOrderId: string
-  transformationOrderId?: string
-  productionBatchId?: string
-  workId?: string
-
-  lossTypeId: string
-
-  quantity: DecimalString
-  unit: string
-
-  dateTime: string
-  observations?: string
-}
-```
-
-Debe existir suficiente contexto para conocer dónde se produjo la
-pérdida.
-
+Cada pérdida debe conservar suficiente contexto para conocer dónde se produjo.
 La merma no es un sustituto para ocultar diferencias no explicadas.
-
-------------------------------------------------------------------------
-
-## `listProductionLosses`
-
-Filtros:
-
-``` ts
-{
-  productionOrderId?: string
-  productionBatchId?: string
-  workId?: string
-  lossTypeId?: string
-  from?: string
-  to?: string
-}
-```
 
 ------------------------------------------------------------------------
 
@@ -1629,20 +1543,11 @@ createContainer
 updateContainer
 getContainer
 listContainers
-
-occupyContainer
-releaseContainerQuantity
-closeContainerOccupancy
-
-moveProcessProduct
+getContainerOccupancies
+getContainerMovements
 
 createTransformation
-addTransformationInput
-addTransformationOutput
 getTransformation
-
-recordProductionLoss
-listProductionLosses
 
 closeProductionOrder
 
@@ -1745,9 +1650,7 @@ Especialmente:
 receivePurchase
 registerInbound
 registerOutbound
-registerProductionConsumption
-registerProductionOutput
-moveProcessProduct
+createTransformation
 ```
 
 La implementación concreta de la clave idempotente seguirá las
@@ -1807,17 +1710,7 @@ addWorkInput
 recordMeasurement
 recordProductionDecision
 
-occupyContainer
-releaseContainerQuantity
-closeContainerOccupancy
-
-moveProcessProduct
-
 createTransformation
-addTransformationInput
-addTransformationOutput
-
-recordProductionLoss
 closeProductionOrder
 
 receivePurchase
@@ -2222,8 +2115,10 @@ para simplificar la implementación interna.
 
 ### P9 production inventory release
 
-Production exposes only `POST /api/v1/production/batches/:id/release-to-inventory`
-for this command, protected by `production:inventory_release`. Its command
+Production exposes `POST /api/v1/production/batches/:batchId/release-to-inventory`
+and `POST /api/v1/production/batches/:batchId/releases/:releaseId/reverse`,
+protected by `production:inventory_release` and
+`production:inventory_release_reverse`. Its release command
 contains the positive decimal quantity, warehouse, operation key and existing
 Inventory lot fields. It is allowed for OPEN and CLOSED orders. Production
 coordinates a single Serializable transaction with the trusted Inventory API;
@@ -2232,3 +2127,44 @@ Production never writes Inventory tables directly. The output lot must be
 unchanged lot metadata. The operation rejects consumption of open container
 allocations, persists a canonical idempotent result, appends the explicit
 transfer ledger fact, rebuilds balance and records the release audit atomically.
+
+P5.5A work inputs are owned by Production while Inventory exclusively writes
+stock and movements. Create and reversal share one serializable transaction,
+canonical request hashes and globally locked operation keys; reversal is a
+compensating INBOUND and never edits the original input fact.
+
+## P5.5B — contrato vigente de recipientes y movimientos
+
+La migración es aditiva: `ProductionContainer.type` es nullable para no
+inventar tipos en recipientes legacy; `name`, `location` y `material` también
+son nullable. Las altas nuevas requieren `type` (`TANQUE|BARRICA|OTRO`).
+El listado incluye `currentOccupancy` como resumen nullable, evitando N+1.
+El DTO de movimiento incluye `productionWorkId`, `observations`, `actorUserId`
+y `occurredAt`, pero nunca `requestHash`.
+
+Las rutas vigentes son `POST /containers/:id/assign`,
+`POST /containers/:sourceId/transfers` y
+`POST /containers/:sourceId/transfers/partial`, además de las rutas
+administrativas y de consulta existentes. Sus permisos son respectivamente
+`production:container_assign` y `production:container_transfer`; administrar
+el maestro sigue usando `production:container_manage`. Los bodies exactos,
+incluidos `batchId`, `destinationContainerId` cuando aplica, `quantity` sólo
+en parcial, `childCode` sólo en parcial, `operationKey`, `requestHash` y los
+opcionales `productionWorkId`, `observations`, `occurredAt`, están definidos
+en `PRODUCTION_API.md`.
+
+El hash es SHA-256 del objeto canónico ordenado de campos semánticos,
+normalizando opcionales como `null` y excluyendo `operationKey`/`requestHash`.
+`actorUserId` proviene de autenticación. Work, cuando se informa, debe existir
+y pertenecer a la misma ProductionOrder del batch. El movimiento interno
+conserva batch/ocupación y no crea `InventoryMovement`.
+
+Los hechos históricos son inmutables. Una transferencia total puede
+representarse por un traslado inverso nuevo sólo si el destino permanece
+intacto y el estado actual sigue siendo compatible; no se inventa un
+`unassign` destructivo. La reversión de una transferencia parcial no es
+automática en MVP: no se hace merge inverso ni reversión destructiva, y se
+corrige con una nueva operación productiva válida. Assign, total y parcial se
+ejecutan en
+`SharedUnitOfWork`; Failure C revierte movement, ocupaciones, estados,
+split/lineage/ledger y auditoría conjuntamente.

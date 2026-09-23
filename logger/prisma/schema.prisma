@@ -22,6 +22,9 @@ model User {
   grapeReceptionsCreated GrapeReception[] @relation("GrapeReceptionActor")
   productionMeasurementsCreated ProductionMeasurement[] @relation("ProductionMeasurementActor")
   productionWorkCorrections ProductionWorkCorrection[] @relation("ProductionWorkCorrectionActor")
+  productionWorkInputsCreated ProductionWorkInput[] @relation("ProductionWorkInputCreator")
+  productionWorkInputsReversed ProductionWorkInput[] @relation("ProductionWorkInputReverser")
+  productionContainerMovements ProductionBatchContainerMovement[] @relation("ProcessMovementActor")
   productionMeasurementCorrections ProductionMeasurementCorrection[] @relation("ProductionMeasurementCorrectionActor")
   grapeReceptionCorrections GrapeReceptionCorrection[] @relation("GrapeReceptionCorrectionActor")
   transformations Transformation[]
@@ -184,6 +187,7 @@ enum ProductionBatchLedgerEntryType {
   SEPARATED
   LOSS
   TRANSFERRED_TO_INVENTORY
+  INVENTORY_RELEASE_RESTORED
 }
 
 model ProductionBatch {
@@ -209,11 +213,45 @@ model ProductionBatch {
   transformationInputs TransformationInput[]
   transformationOutputs TransformationOutput[]
   productionLosses ProductionLoss[]
+  inventoryReleases ProductionInventoryRelease[]
 
   @@index([productionOrderId])
   @@index([articuloId])
   @@index([createdAt])
   @@map("production_batches")
+}
+
+model ProductionInventoryRelease {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productionBatchId  String   @map("production_batch_id") @db.Uuid
+  quantity           Decimal  @db.Decimal(18, 3)
+  unit               String
+  warehouseId        String   @map("warehouse_id") @db.Uuid
+  inventoryLotId     String   @map("inventory_lot_id") @db.Uuid
+  inventoryMovementId String  @map("inventory_movement_id") @db.Uuid
+  operationKey       String   @map("operation_key")
+  actorUserId        String   @map("actor_user_id") @db.Uuid
+  occurredAt         DateTime @map("occurred_at")
+  observations       String?
+  productionBatch    ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  warehouse          Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  inventoryLot       InventoryLot @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reversal           ProductionInventoryReversal?
+  @@index([productionBatchId, occurredAt, id], map: "production_inventory_releases_batch_occurred_id_idx")
+  @@unique([operationKey])
+  @@map("production_inventory_releases")
+}
+
+model ProductionInventoryReversal {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  releaseId          String   @unique @map("release_id") @db.Uuid
+  operationKey       String   @unique @map("operation_key")
+  reason             String
+  actorUserId        String   @map("actor_user_id") @db.Uuid
+  occurredAt         DateTime @map("occurred_at")
+  inventoryMovementId String   @map("inventory_movement_id") @db.Uuid
+  release             ProductionInventoryRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  @@map("production_inventory_reversals")
 }
 
 model ProductionBatchLedgerEntry {
@@ -291,6 +329,12 @@ enum ProductionContainerStatus {
   FUERA_DE_SERVICIO
 }
 
+enum ProductionContainerType {
+  TANQUE
+  BARRICA
+  OTRO
+}
+
 enum ProductionBatchContainerMovementType {
   ASSIGNED
   TRANSFERRED
@@ -300,6 +344,10 @@ enum ProductionBatchContainerMovementType {
 model ProductionContainer {
   id          String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code        String                   @unique
+  name        String?
+  type        ProductionContainerType?
+  location    String?
+  material    String?
   capacity    Decimal                  @db.Decimal(18, 3)
   capacityUnit String                  @map("capacity_unit")
   status      ProductionContainerStatus @default(DISPONIBLE)
@@ -349,16 +397,21 @@ model ProductionBatchContainerMovement {
   requestHash        String                               @map("request_hash")
   occurredAt         DateTime                             @map("occurred_at")
   actorUserId        String                               @map("actor_user_id") @db.Uuid
+  productionWorkId   String?                              @map("production_work_id") @db.Uuid
+  observations       String?
   metadata           Json?
   createdAt          DateTime                             @default(now()) @map("created_at")
   sourceContainer    ProductionContainer? @relation("ContainerMovementSource", fields: [sourceContainerId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_source_container_fkey")
   destinationContainer ProductionContainer @relation("ContainerMovementDestination", fields: [destinationContainerId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_destination_container_fkey")
   sourceBatch        ProductionBatch @relation("ContainerMovementSourceBatch", fields: [sourceBatchId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_source_batch_fkey")
   destinationBatch   ProductionBatch? @relation("ContainerMovementDestinationBatch", fields: [destinationBatchId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_destination_batch_fkey")
+  productionWork     ProductionWork? @relation("ProcessMovementWork", fields: [productionWorkId], references: [id], onDelete: Restrict)
+  actor              User             @relation("ProcessMovementActor", fields: [actorUserId], references: [id], onDelete: Restrict)
 
   @@unique([operationKey])
   @@index([destinationContainerId, occurredAt], map: "production_batch_container_movements_destination_idx")
   @@index([sourceBatchId, occurredAt], map: "production_batch_container_movements_source_batch_idx")
+  @@index([productionWorkId, occurredAt], map: "production_batch_container_movements_work_idx")
   @@map("production_batch_container_movements")
 }
 
@@ -415,6 +468,7 @@ model ProductionWork {
   inputs            ProductionWorkInput[]
   batches           ProductionWorkBatch[]
   containers        ProductionWorkContainer[]
+  processMovements  ProductionBatchContainerMovement[] @relation("ProcessMovementWork")
   participants      ProductionWorkParticipant[]
   corrections       ProductionWorkCorrection[]
   measurements      ProductionMeasurement[]
@@ -562,11 +616,32 @@ model ProductionWorkInput {
   articuloId       String         @map("articulo_id") @db.Uuid
   quantity         Decimal        @db.Decimal(18, 3)
   unit             ArticuloUnit
+  warehouseId      String?        @map("warehouse_id") @db.Uuid
+  inventoryLotId   String?        @map("inventory_lot_id") @db.Uuid
+  inventoryMovementId String?      @unique @map("inventory_movement_id") @db.Uuid
+  observations     String?
+  operationKey     String?        @unique @map("operation_key")
+  requestHash      String?        @map("request_hash")
+  createdByUserId  String?        @map("created_by_user_id") @db.Uuid
+  reversedAt       DateTime?      @map("reversed_at")
+  reversalInventoryMovementId String? @unique @map("reversal_inventory_movement_id") @db.Uuid
+  reversalOperationKey String?    @unique @map("reversal_operation_key")
+  reversalRequestHash String?     @map("reversal_request_hash")
+  reversedByUserId String?        @map("reversed_by_user_id") @db.Uuid
+  reversalReason   String?        @map("reversal_reason")
   createdAt        DateTime       @default(now()) @map("created_at")
   productionWork   ProductionWork @relation(fields: [productionWorkId], references: [id], onDelete: Restrict)
   articulo         Articulo       @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  warehouse        Warehouse?     @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  inventoryLot     InventoryLot?  @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
+  inventoryMovement InventoryMovement? @relation("ProductionWorkInputMovement", fields: [inventoryMovementId], references: [id], onDelete: Restrict)
+  reversalInventoryMovement InventoryMovement? @relation("ProductionWorkInputReversalMovement", fields: [reversalInventoryMovementId], references: [id], onDelete: Restrict)
+  createdBy        User?          @relation("ProductionWorkInputCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reversedBy       User?          @relation("ProductionWorkInputReverser", fields: [reversedByUserId], references: [id], onDelete: Restrict)
 
   @@index([articuloId])
+  @@index([productionWorkId, createdAt], map: "production_work_inputs_work_created_idx")
+  @@index([warehouseId, articuloId, inventoryLotId], map: "production_work_inputs_position_idx")
   @@map("production_work_inputs")
 }
 
@@ -822,8 +897,10 @@ model Warehouse {
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
   stocks          InventoryStock[]
+  productionWorkInputs ProductionWorkInput[]
   sourceMovements InventoryMovement[] @relation("InventoryMovementSourceWarehouse")
   destinationMovements InventoryMovement[] @relation("InventoryMovementDestinationWarehouse")
+  productionInventoryReleases ProductionInventoryRelease[]
   manager         User?               @relation("WarehouseManager", fields: [encargadoUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "warehouses_manager_user_id_fkey")
 
   @@map("warehouses")
@@ -841,6 +918,8 @@ model InventoryLot {
   updatedAt               DateTime                   @updatedAt @map("updated_at")
   stocks                  InventoryStock[]
   movements               InventoryMovement[]
+  productionWorkInputs ProductionWorkInput[]
+  productionInventoryReleases ProductionInventoryRelease[]
   articulo                Articulo                   @relation(fields: [articuloId], references: [id], onDelete: Restrict)
 
   @@unique([articuloId, lotCode])
@@ -888,6 +967,8 @@ model InventoryMovement {
   actor                         User?                 @relation("InventoryMovementActor", fields: [actorUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "inventory_movements_actor_user_id_fkey")
   negativeStockAuthorizer       User?                 @relation("InventoryMovementAuthorizer", fields: [negativeStockAuthorizerUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "inventory_movements_authorizer_user_id_fkey")
   compraMovementRefs            CompraInventoryMovementReference[]
+  productionWorkInputMovement ProductionWorkInput? @relation("ProductionWorkInputMovement")
+  productionWorkInputReversal ProductionWorkInput? @relation("ProductionWorkInputReversalMovement")
 
   @@index([articuloId, warehouseId, inventoryLotId, createdAt], map: "inventory_movements_position_idx")
   @@map("inventory_movements")

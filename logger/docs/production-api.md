@@ -1,17 +1,18 @@
 ## P10 trace and historical corrections
 
-`GET /api/v1/production/batches/:id/trace` reconstructs bounded batch lineage and related reception, work, transformation, loss, container, measurement and Inventory facts with `production:read`.
+`GET /api/v1/production/batches/:batchId/trace` reconstructs bounded batch lineage and related reception, work, transformation, loss, container, measurement and Inventory facts with `production:read`.
 
 Historical corrections are append-only commands:
 
 - `POST /api/v1/production/measurements/:id/corrections` (`production:measurement_correct`)
 - `POST /api/v1/production/grape-receptions/:id/corrections` (`production:reception_correct`)
 
-Each command requires `field`, `newValue`, `reason`, and stable `operationKey`. Original facts, actors, batches, ledger and inventory movements remain immutable. Reception corrections are limited to `receivedAt`, `producerId`, `observations`, and `status`; quantities, articles, varieties, units and generated batches are not correctable.
+Each command requires `field`, `newValue`, `reason`, and stable `operationKey`. Original facts, actors, batches, ledger and inventory movements remain immutable. Reception corrections are limited to `receivedAt`, `producerId`, `observations`, and `status`, with field-specific `newValue` types and no public `requestHash`; quantities, articles, varieties, units and generated batches are not correctable. Corrections are append-only, reject no-ops, preserve the same result on an identical replay, and reject a changed payload with `IDEMPOTENCY_CONFLICT`.
 # Production P2/P3/P6 API
 
-Base URL: `/api/v1/production`. All endpoints require authentication. List
-queries use `page`, `pageSize`, `search` and `active`.
+Base URL: `/api/v1/production`. All endpoints require authentication. La
+paginación y los filtros de los listados son específicos de cada endpoint; no
+todos soportan `search` o `active`.
 
 ## Catalogs
 
@@ -57,8 +58,8 @@ ledger, balance, lineage, operation-key and audit writes atomically.
 The read-only endpoints require `production:read`:
 
 * `GET /batches?page=1&pageSize=20&productionOrderId=...&articuloId=...`
-* `GET /batches/:id`
-* `GET /batches/:id/balance`
+* `GET /batches/:batchId`
+* `GET /batches/:batchId/balance`
 
 All quantities are decimal strings with exactly three supported fractional
 places and all units must match exactly. Batches have no status and remain
@@ -137,10 +138,15 @@ JSON number), INTEGER is a safe integer, and TEXT/SELECT/BOOLEAN use their
 
 ## Grape receptions (P6)
 
-`GET /grape-receptions` and `GET /grape-receptions/:id` require
-`production:read`; `POST /grape-receptions` requires
+`GET /api/v1/production/grape-receptions` and `GET /api/v1/production/grape-receptions/:id` require
+`production:read`. El listado `GET /api/v1/production/grape-receptions` admite únicamente
+`page` y `pageSize`; no admite `search` ni `active`. `POST /api/v1/production/grape-receptions` requires
 `production:reception_create`, a stable `operationKey` and `requestHash`.
-Each item creates exactly one initial ProductionBatch through P3 primitives.
+`producerId` and `observations` are optional; observations are capped at 2000
+characters and are required when status is `ACCEPTED_WITH_OBSERVATIONS`. Each
+item has `grapeVarietyId`, `articuloId`, positive decimal-string `quantity` and
+unit `KG|G|L|M|UNIDAD`; each optional custom field is
+`{definitionId: UUID, value: string|number|boolean}`. Each item creates exactly one initial ProductionBatch through P3 primitives.
 Articles are validated through ArticulosApi and units must match exactly. The
 contractual classification matrix does not currently exist, so no
 classification restriction is invented or enforced. Receptions have no PATCH
@@ -176,7 +182,8 @@ work, so those checks remain explicit gaps.
 
 ## Release production to Inventory (P9)
 
-`POST /batches/:id/release-to-inventory` requires `production:inventory_release`.
+`POST /batches/:batchId/release-to-inventory` requires `production:inventory_release`.
+
 The body contains `quantity`, `warehouseId`, `operationKey`, `lotCode`,
 `classification`, `fechaIngreso` and optional `observations`. Releases are
 allowed for OPEN and CLOSED orders, while the order and batch are locked.

@@ -5,10 +5,16 @@
 - Backend MVP completado.
 - P1–P11 completados.
 - Limpieza legacy completada.
-- 25 migraciones oficiales.
-- Línea base validada: 279/279 tests, 0 fallos y 0 skips.
+- 33 migraciones oficiales.
+- Inventory regression: 13/13 PASS.
+- P5.5A: 10/10 PASS, 0 skips.
+- P5.5B: 12/12 PASS, 0 skips.
+- P5.5D: 24/24 PASS, 0 skips.
+- P5.5E: 1/1 PASS, 0 skips.
+- Trace/P10: 13/13 PASS, 0 skips.
+- Production P1–P10: 168/168 PASS, 0 skips.
+- Backend completo: 341/341 PASS, 0 failures, 0 skips.
 - Drift validado en cero.
-- El frontend aún no forma parte de este repositorio de entrega.
 
 La documentación API en [`docs/api/`](./api/README.md) es el contrato técnico
 para el frontend. Los módulos históricos retirados no son APIs ni permisos
@@ -250,10 +256,22 @@ npm run build
 git diff --check
 ```
 
-Las suites de integración requieren sus variables de base aislada cuando están
-configuradas. Hay cobertura de contratos HTTP, servicios, PostgreSQL,
-concurrencia, producción, RBAC y Storage mediante providers controlados. La
-línea base de este handoff es 279/279, sin fallos ni skips.
+Inventory regression: 13/13 PASS
+P5.5A: 10/10 PASS, 0 skips
+P5.5B: 12/12 PASS, 0 skips
+P5.5D: 24/24 PASS, 0 skips
+P5.5E: 1/1 PASS, 0 skips
+Trace/P10: 13/13 PASS, 0 skips
+Production P1-P10: 168/168 PASS, 0 skips
+Backend completo: 341/341 PASS, 0 failures, 0 skips
+
+Prisma migrations: 33/33
+Prisma status: up to date
+Schema drift: No difference detected
+Typecheck: PASS
+Build: PASS
+Architecture review: PASS
+git diff --check: PASS
 
 ## 13. Decisiones diferidas
 
@@ -273,3 +291,133 @@ El frontend no debe deducir rutas desde documentos históricos, modelos Prisma o
 implementaciones internas. Debe respetar autenticación, permisos, enums,
 representación decimal/fecha, paginación e idempotencia indicados por cada
 documento.
+
+The P5.5A endpoints are `/production/works/:id/inputs` and
+`/production/works/:workId/inputs/:inputId/reverse`. Production never writes
+Inventory tables directly: both commands use trusted Inventory primitives,
+atomic shared transactions, idempotent replay/conflict handling and explicit
+compensating reversal.
+
+## P5.5B — handoff de recipientes
+
+La migración es aditiva: `type` permanece nullable en contenedores legacy y no
+se inventa un backfill; las altas nuevas requieren `TANQUE|BARRICA|OTRO`.
+`name`, `location` y `material` son nullable. El listado incluye
+`currentOccupancy` resumida sin N+1. Se mantienen las rutas administrativas y
+de lectura y se publican assign, transferencia total y parcial, con
+`production:container_assign`/`production:container_transfer` separados de
+`production:container_manage`. Los bodies exactos están en
+`PRODUCTION_API.md`; total no recibe quantity y parcial exige quantity y
+childCode.
+
+Movement DTO incluye `productionWorkId`, `observations`, `actorUserId` y
+`occurredAt`, nunca `requestHash`. Work se valida por orden compatible, el
+actor viene de autenticación y el hash canónico SHA-256 excluye las claves de
+idempotencia. `SharedUnitOfWork` y Failure C garantizan rollback de todos los
+efectos. Traslados internos no escriben InventoryMovement.
+
+El historial es inmutable. Total admite traslado inverso sólo si el estado
+permanece compatible; no se inventa un unassign. La compensación parcial no es
+automática en MVP: no hay merge-back ni reversal destructivo. El frontend debe
+cubrir lista/detalle, ocupación actual e histórica, movements, assign, total y
+parcial, con confirmación y bloqueo de doble envío.
+
+## P5.5E — cierre documental PASS / CLOSED
+
+El contrato vigente incluye release
+`POST /api/v1/production/batches/:batchId/release-to-inventory` y reversal
+`POST /api/v1/production/batches/:batchId/releases/:releaseId/reverse`, con
+`production:inventory_release` y `production:inventory_release_reverse`.
+La clasificación inicial es `PRODUCTO_ENVASADO`; el hash es canónico y
+server-side; la reversión es completa, append-only, rechaza estados inseguros y
+no autoriza stock negativo. `PRODUCTION_API.md` es la lista pública completa de
+rutas, permisos, DTOs y errores.
+
+### Entorno y limitación operativa
+
+La regresión destructiva usa `LOCAL INTEGRATION TEST` en `127.0.0.1`, base
+`winter_p55_test`, PostgreSQL local, sin acceso a producción/remoto. No se
+guardan valores de `P55A_DATABASE_URL`, `P55B_DATABASE_URL` ni otras
+credenciales; `DATABASE_URL`/heliumdb no son destinos autorizados. El workflow
+Winter Backend no inicia sin `WINTER_DATABASE_URL` y configuración Firebase.
+No se inventan credenciales; esto no invalida typecheck, build, Prisma
+validation ni integration tests.
+
+### Evidencia de cierre y bloqueo
+
+Las comprobaciones ejecutables/backend contractuales quedan **PASS** con esta evidencia
+auditable: P5.5A PostgreSQL **5/5**, P5.5B **6/6**, P5.5D **21/21**, P5.5E
+**1/1**, P10 Trace **10/10**, regresión completa de Production backend
+**236/236**, **0 skipped**, Vitest frontend **20/20**, typecheck y build de
+backend/frontend **PASS**, y `prisma validate`/`prisma generate` **PASS**.
+Se aplicaron **33 migraciones** y el estado está actualizado; la comparación
+del datasource configurado contra el schema devuelve exactamente **`No
+difference detected`**. `git diff --check` **PASS**.
+
+Se aplicaron dos migraciones nuevas, sin editar ninguna migración existente:
+`20260927000000_production_p55e_align_prisma_object_names` (alineación de
+nombres de metadata) y `20260927010000_production_p55e_eliminate_schema_drift`
+(eliminación del drift de `onUpdate` de FK y nombres de índices).
+
+### Aceptación operativa
+
+Las aserciones E2E dejan A–F en **PASS**: **A**, BARRICA dinámica sin cambios
+de código; **B**, WorkType dinámico; **C**, WorkInput estructurado y consumo
+mediante InventoryMovement; **D**, movimiento físico estructurado de
+recipientes; **E**, separación GrapeVariety/producto; **F**, observaciones sólo
+narrativas mientras los hechos estructurados viven en sus campos/entidades
+correspondientes. Las pruebas frontend focalizadas cubren
+confirmaciones de trace/release/reversal, estados de permisos, errores,
+historial vacío, estado pending/double-submit e idempotencia.
+
+El login shell frontend pasa en desktop **1440x1000** y mobile **390x844**, con
+consola limpia. El smoke autenticado PASS cubrió navegación Production, Orders,
+Reception, Batches, Works, Measurements, Transformations, Containers, Batch
+Trace, Release, Reversal, permisos, loading/empty, errores visibles con
+`requestId`, confirmaciones y protección contra doble envío. Cinco variables
+runtime requeridas estuvieron presentes; el target fue
+`runner@127.0.0.1/winter_p55_test`, con DB remota **NO**. El reinicio del
+workspace reinitializó el PostgreSQL local efímero y aplicó las mismas 33
+migraciones existentes, sin generar migración; migrate status quedó al día,
+drift `No difference detected` y `GET /health` devolvió **200**. Identidades
+temporales y datos de prueba fueron limpiados; no hubo DB remota ni credenciales
+persistidas/reportadas. Se corrigieron cuatro defectos demostrados (crash
+Reception, balance embebido ausente en batches, pageSize 500 en trace y crash
+Transformation). El cierre global es **PASS / CLOSED**:
+**BLOCK 5 — PRODUCTION: CLOSED**. Fotos/evidencia quedan `Deferred to UAT /
+Hardening`. El reporte obligatorio y su matriz DoD están en
+`P5.5E_PRODUCTION_BLOCK_CLOSURE.md`.
+
+El inventario se clasificó revisando los archivos modificados de cada commit:
+
+| Orden | Commit | Clasificación | Evidencia de archivos |
+|---:|---|---|---|
+| 1 | `09c0a26` | FRONTEND | `artifacts/sistema-produccion/src/features/inventory/**`, navegación y tipos Inventory |
+| 2 | `86b7117` | MIXED | docs/contracts, `logger/src/modules/production/**`, tests |
+| 3 | `721fdc8` | FRONTEND | `artifacts/sistema-produccion/src/features/production/**` catalogs/orders |
+| 4 | `13f7886` | MIXED | docs, production reception code, schemas and tests |
+| 5 | `15d6608` | FRONTEND | frontend receptions/batches API, hooks, schemas and types |
+| 6 | `b9ea32c` | FRONTEND | frontend works/measurements API, views, schemas and types |
+| 7 | `0c78f59` | MIXED | frontend transformations plus Production docs/backend schema/code |
+| 8 | `5a9ca01` | MIXED | frontend work inputs plus Prisma, Inventory and Production backend |
+| 9 | `9465139` | MIXED | frontend containers plus migrations, Prisma and Production backend |
+| 10 | `ef0a01b` | TEST | integration-test fixtures and P5.5A/P5.5B tests only |
+| 11 | `54a9cef` | MIXED | frontend trace plus Production trace code/tests and lockfile |
+| 12 | `58c67ad` | MIXED | frontend release UI/tests plus migrations, Prisma and Inventory backend |
+
+Chronological dependency order is exactly the table order. `09c0a26` supplies
+the Inventory frontend/API context; `86b7117` establishes the reconciled
+Production contract; `721fdc8` depends on that contract; reception hardening
+(`13f7886`) precedes its frontend (`15d6608`), followed by works/measurements
+(`b9ea32c`), transformations (`0c78f59`), work-input Inventory integration
+(`5a9ca01`), containers (`9465139`), fixture corrections (`ef0a01b`), trace
+(`54a9cef`) and release/reversal (`58c67ad`) last. Do not reorder migrations
+or cherry-pick P5.5D before its backend prerequisites.
+
+Plan no ejecutado: `main` → `integration/production-p5` → reconcile/cherry-pick
+backend, migrations, tests and contracts → PostgreSQL migration validation →
+backend regression → merge main → Render deploy → backend smoke tests →
+frontend integration/deploy. Frontend MUST NOT deploy before Render/backend
+supports every P5 contract used by the frontend; deployment order is
+backup/check DB, migrations, backend, backend smoke tests, frontend, then
+frontend smoke/UAT.

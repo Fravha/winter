@@ -3,6 +3,7 @@ import { z } from "zod";
 const code = z.string().trim().min(1).max(100);
 const name = z.string().trim().min(1).max(200);
 export const idParamsSchema = z.object({ id: z.string().uuid() }).strict();
+export const sourceContainerParamsSchema = z.object({ sourceId: z.string().uuid() }).strict();
 export const catalogInputSchema = z.object({ code, name, userId: z.string().uuid().optional() }).strict();
 export const administrativeCatalogInputSchema = z.object({ code, name }).strict();
 export const catalogUpdateSchema = z.object({ name: name.optional() }).strict();
@@ -46,14 +47,35 @@ const quantity = z.string().regex(/^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/);
 const positiveQuantity = quantity.refine(value => Number(value) > 0, "Quantity must be positive");
 export const releaseBatchSchema = z.object({
   quantity: positiveQuantity, warehouseId: z.string().uuid(), operationKey: code,
-  lotCode: code, classification: z.enum(["PRODUCTO_ENVASADO", "PRODUCTO_TERMINADO", "PRODUCTO_TERMINADO_EXPORTACION"]),
+  lotCode: code, classification: z.literal("PRODUCTO_ENVASADO"),
   fechaIngreso: z.coerce.date(), observations: z.string().max(2000).optional(),
-  requestHash: z.string().optional(),
+}).strict();
+export const reverseReleaseSchema = z.object({ operationKey: code, reason: z.string().trim().min(1).max(2000) }).strict();
+export const grapeReceptionListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
 }).strict();
 const measurementValue = z.string().trim().regex(/^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/);
-export const containerCreateSchema = z.object({ code: code, capacity: quantity, capacityUnit: z.string().trim().min(1).max(30), observations: z.string().max(2000).optional() }).strict();
-export const containerUpdateSchema = z.object({ capacity: quantity.optional(), observations: z.string().max(2000).optional() }).strict();
-export const containerMoveSchema = z.object({ batchId: z.string().uuid(), sourceContainerId: z.string().uuid().optional(), destinationContainerId: z.string().uuid(), quantity: quantity.optional(), childCode: code.optional(), operationKey: code, requestHash: z.string().trim().min(1).max(500), occurredAt: z.coerce.date().optional() }).strict();
+const containerType = z.enum(["TANQUE", "BARRICA", "OTRO"]);
+const containerMetadata = {
+  name: z.string().trim().min(1).max(200).optional(),
+  type: containerType,
+  location: z.string().trim().min(1).max(200).optional(),
+  material: z.string().trim().min(1).max(200).optional(),
+};
+export const containerCreateSchema = z.object({ code, ...containerMetadata, capacity: positiveQuantity, capacityUnit: z.string().trim().min(1).max(30), observations: z.string().max(2000).optional() }).strict();
+export const containerUpdateSchema = z.object({ name: containerMetadata.name, type: containerType.optional(), location: containerMetadata.location, material: containerMetadata.material, capacity: positiveQuantity.optional(), observations: z.string().max(2000).optional() }).strict();
+const movementCommon = {
+  batchId: z.string().uuid(),
+  productionWorkId: z.string().uuid().optional(),
+  observations: z.string().max(2000).optional(),
+  operationKey: code,
+  requestHash: z.string().trim().length(64),
+  occurredAt: z.coerce.date().optional(),
+};
+export const containerAssignSchema = z.object({ ...movementCommon, quantity: positiveQuantity }).strict();
+export const containerTransferSchema = z.object({ ...movementCommon, destinationContainerId: z.string().uuid() }).strict();
+export const containerPartialTransferSchema = z.object({ ...movementCommon, destinationContainerId: z.string().uuid(), quantity: positiveQuantity, childCode: code }).strict();
 export const workListSchema = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20), productionOrderId: z.string().uuid().optional(), workTypeId: z.string().uuid().optional() }).strict();
 export const workParticipantSchema = z.object({ participantId: z.string().uuid(), role: z.string().trim().min(1).max(100).optional() }).strict();
 export const workCreateSchema = z.object({
@@ -67,6 +89,14 @@ export const workCorrectionSchema = z.object({
   newValue: z.string().nullable(),
   reason: z.string().trim().min(1).max(2000),
 }).strict();
+export const workInputSchema = z.object({
+  articuloId: z.string().uuid(), warehouseId: z.string().uuid(), inventoryLotId: z.string().uuid().optional(),
+  quantity: positiveQuantity, unit: z.enum(["KG", "G", "L", "M", "UNIDAD"]),
+  operationKey: z.string().trim().min(1).max(200), requestHash: z.string().trim().min(1).max(500),
+  observations: z.string().max(2000).optional(), authorizeNegativeStock: z.boolean().optional(),
+  negativeStockReason: z.string().max(2000).optional(),
+}).strict().refine(v => !v.authorizeNegativeStock || Boolean(v.negativeStockReason?.trim()), { message: "negativeStockReason is required when authorizing negative stock", path: ["negativeStockReason"] });
+export const workInputReversalSchema = z.object({ reason: z.string().trim().min(1).max(2000), operationKey: z.string().trim().min(1).max(200), requestHash: z.string().trim().min(1).max(500) }).strict();
 export const correctionSchema = z.object({
   field: z.string().trim().min(1).max(40),
   newValue: z.union([z.string(), z.number(), z.boolean(), z.null()]),
@@ -74,7 +104,16 @@ export const correctionSchema = z.object({
   operationKey: code,
 }).strict();
 export const measurementCorrectionSchema = correctionSchema.extend({ field: z.enum(["value", "unit", "measuredAt", "participantId", "observations"]) }).strict();
-export const receptionCorrectionSchema = correctionSchema.extend({ field: z.enum(["receivedAt", "producerId", "observations", "status"]) }).strict();
+const receptionCorrectionCommon = {
+  reason: z.string().trim().min(1).max(2000),
+  operationKey: code,
+};
+export const receptionCorrectionSchema = z.discriminatedUnion("field", [
+  z.object({ field: z.literal("receivedAt"), newValue: z.string().datetime({ offset: true }), ...receptionCorrectionCommon }).strict(),
+  z.object({ field: z.literal("producerId"), newValue: z.string().uuid(), ...receptionCorrectionCommon }).strict(),
+  z.object({ field: z.literal("observations"), newValue: z.union([z.string().max(2000), z.null()]), ...receptionCorrectionCommon }).strict(),
+  z.object({ field: z.literal("status"), newValue: z.enum(["ACCEPTED", "ACCEPTED_WITH_OBSERVATIONS"]), ...receptionCorrectionCommon }).strict(),
+]);
 export const grapeReceptionSchema = z.object({
   productionOrderId: z.string().uuid(), producerId: z.string().uuid().optional(),
   receivedAt: z.coerce.date(), status: z.enum(["ACCEPTED", "ACCEPTED_WITH_OBSERVATIONS"]),
@@ -82,7 +121,10 @@ export const grapeReceptionSchema = z.object({
   items: z.array(z.object({ grapeVarietyId: z.string().uuid(), articuloId: z.string().uuid(), quantity, unit: z.enum(["KG","G","L","M","UNIDAD"]) }).strict()).min(1),
   customFields: z.array(z.object({ definitionId: z.string().uuid(), value: z.union([z.string(), z.number(), z.boolean()]) }).strict()).optional(),
   operationKey: z.string().trim().min(1).max(200), requestHash: z.string().trim().min(1).max(500),
-}).strict();
+}).strict().refine(
+  value => value.status !== "ACCEPTED_WITH_OBSERVATIONS" || Boolean(value.observations?.trim()),
+  { message: "observations is required for ACCEPTED_WITH_OBSERVATIONS", path: ["observations"] },
+);
 export const measurementCreateSchema = z.object({
   measurementTypeId: z.string().uuid(), productionBatchId: z.string().uuid().optional(),
   productionContainerId: z.string().uuid().optional(), productionWorkId: z.string().uuid().optional(),
@@ -100,7 +142,7 @@ export const measurementListSchema = z.object({
 }).strict();
 const transformationInputSchema = z.object({ productionBatchId: z.string().uuid(), quantity: positiveQuantity }).strict();
 const transformationOutputSchema = z.object({ articuloId: z.string().uuid(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), observations: z.string().max(2000).optional() }).strict();
-const transformationLossSchema = z.object({ productionBatchId: z.string().uuid().optional(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), operationKey: z.string().trim().min(1).max(200).optional(), requestHash: z.string().trim().min(1).max(500).optional(), observations: z.string().max(2000).optional() }).strict();
+const transformationLossSchema = z.object({ productionBatchId: z.string().uuid().optional(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), observations: z.string().max(2000).optional() }).strict();
 export const transformationCreateSchema = z.object({
   productionOrderId: z.string().uuid(), transformationOrderId: z.string().uuid().optional(), productionWorkId: z.string().uuid().optional(),
   performedAt: z.coerce.date(), observations: z.string().max(2000).optional(),

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
@@ -11,6 +11,7 @@ import { PrismaArticuloUnitOfWork } from "../src/modules/articulos/prisma-articu
 import { InventoryService } from "../src/modules/inventory/inventory.service.js";
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { ProductionReleaseService } from "../src/modules/production/production.release.js";
+import { canonicalContainerAssignmentRequest } from "../src/modules/production/production.container.js";
 import { createTrustedIntermoduleContext } from "../src/modules/inventory/inventory.model.js";
 import { createTemporaryProductionDatabaseResource } from "./helpers/production-test-database.js";
 
@@ -20,6 +21,7 @@ let available = false;
 if (prisma) { try { await prisma.$queryRaw`SELECT 1 FROM inventory_lots LIMIT 1`; available = true; } catch { available = false; } }
 if (database && !available) throw new Error("P9_DATABASE_URL was supplied but the P9 migration/database is unavailable");
 const options = available ? {} : { skip: "requires P9_DATABASE_URL with P9 migration applied" };
+const stable = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value) : Array.isArray(value) ? `[${value.map(stable).join(",")}]` : `{${Object.keys(value as object).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`;
 
 describe("Production P9 release to inventory", () => {
   const actor = randomUUID();
@@ -162,7 +164,8 @@ describe("Production P9 release to inventory", () => {
     assert.ok(service && prisma);
     const f = await fixture("10.000");
     const container = await service.createContainer({ code: `P9-C-${randomUUID()}`, capacity: "6.000", capacityUnit: "KG" }, context);
-    await service.assignBatchToContainer({ batchId: f.batch.id, destinationContainerId: container.id, quantity: "6.000", operationKey: `p9-container-${randomUUID()}`, requestHash: "fixture" }, context);
+    const assignment = { batchId: f.batch.id, destinationContainerId: container.id, quantity: "6.000", operationKey: `p9-container-${randomUUID()}` };
+    await service.assignBatchToContainer({ ...assignment, requestHash: createHash("sha256").update(stable(canonicalContainerAssignmentRequest(assignment))).digest("hex") }, context);
     const before = { lots: await prisma.inventoryLot.count(), movements: await prisma.inventoryMovement.count(), stocks: await prisma.inventoryStock.count(), idempotency: await prisma.inventoryIdempotency.count() };
     const first = await service.releaseBatchToInventory(command(f, { quantity: "4.000" }), context);
     assert.equal(first.remainingProductionQuantity, "6.000");
@@ -173,7 +176,8 @@ describe("Production P9 release to inventory", () => {
     assert.equal(await prisma.inventoryIdempotency.count(), before.idempotency + 1);
     const full = await fixture("5.000");
     const fullContainer = await service.createContainer({ code: `P9-C-${randomUUID()}`, capacity: "5.000", capacityUnit: "KG" }, context);
-    await service.assignBatchToContainer({ batchId: full.batch.id, destinationContainerId: fullContainer.id, quantity: "5.000", operationKey: `p9-container-${randomUUID()}`, requestHash: "fixture" }, context);
+    const fullAssignment = { batchId: full.batch.id, destinationContainerId: fullContainer.id, quantity: "5.000", operationKey: `p9-container-${randomUUID()}` };
+    await service.assignBatchToContainer({ ...fullAssignment, requestHash: createHash("sha256").update(stable(canonicalContainerAssignmentRequest(fullAssignment))).digest("hex") }, context);
     const counts = await prisma.inventoryMovement.count();
     await assert.rejects(service.releaseBatchToInventory(command(full, { quantity: "1.000" }), context), (e: any) => e.code === "INSUFFICIENT_BATCH_QUANTITY");
     assert.equal(await prisma.inventoryMovement.count(), counts);

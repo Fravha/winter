@@ -24,11 +24,13 @@ IDs de path son UUID; cuerpos strict de Zod rechazan campos desconocidos.
 `production:measurement_type_manage`, `production:order_create`,
 `production:order_close`, `production:transformation_order_create`,
 `production:transformation_order_close`, `production:container_manage`,
+`production:container_assign`, `production:container_transfer`,
 `production:work_create`, `production:work_correct`,
 `production:reception_create`, `production:measurement_create`,
 `production:transformation_create`, `production:loss_create`,
 `production:inventory_release`, `production:measurement_correct`,
-`production:reception_correct`.
+`production:reception_correct`, `production:work_input_create`,
+`production:work_input_reverse`, `production:inventory_release_reverse`.
 
 `code` tiene 1--100 caracteres; `name` y `label`, 1--200. Las cantidades
 son strings no negativas con hasta tres decimales; cantidades de operación
@@ -320,47 +322,77 @@ transferredToInventory,available,ledgerVersion,updatedAt}}`.
 Permiso `production:read`; query `page,pageSize,articuloId,productionOrderId`;
 200 devuelve `data` de detalles con la forma anterior y `meta`.
 
-### `GET /api/v1/production/batches/:id`
+### `GET /api/v1/production/batches/:batchId`
 
 Permiso `production:read`; path UUID; 200 devuelve un detalle completo con
 balance embebido; el controller delega inexistencia al servicio.
 
-### `GET /api/v1/production/batches/:id/trace`
+### `GET /api/v1/production/batches/:batchId/trace`
 
 Permiso `production:read`; path UUID; 200:
 `{"data":{"batches":[{"id":"11111111-1111-4111-8111-111111111111","code":"B-1","productionOrderId":"22222222-2222-4222-8222-222222222222","articuloId":"33333333-3333-4333-8333-333333333333","unit":"KG","createdAt":"2025-01-01T00:00:00.000Z","observations":null,"version":0,"balance":{"productionBatchId":"11111111-1111-4111-8111-111111111111","generated":"100.000","consumed":"0.000","separated":"0.000","lost":"0.000","transferredToInventory":"0.000","available":"100.000","ledgerVersion":0,"updatedAt":"2025-01-01T00:00:00.000Z"}}],"lineage":[],"ledger":[],"receptions":[],"transformations":[],"measurements":[],"works":[],"containers":[]}}`.
 Puede producir `TRACE_LIMIT_EXCEEDED` (422) sobre profundidad 100 o 1000
 batches.
 
-### `GET /api/v1/production/batches/:id/balance`
+### `GET /api/v1/production/batches/:batchId/balance`
 
 Permiso `production:read`; path UUID; body/query `—`; 200 **sólo**:
 `{"data":{"productionBatchId":"11111111-1111-4111-8111-111111111111","unit":"KG","available":"100.000"}}`.
 No devuelve `generated`, `consumed`, `ledgerVersion` ni el balance embebido
 del detalle.
 
-### `POST /api/v1/production/batches/:id/release-to-inventory`
+### `POST /api/v1/production/batches/:batchId/release-to-inventory`
 
 Permiso `production:inventory_release`; request:
-`{"quantity":"20.000","warehouseId":"44444444-4444-4444-8444-444444444444","operationKey":"release-1","lotCode":"LOT-1","classification":"PRODUCTO_TERMINADO","fechaIngreso":"2025-01-02T00:00:00.000Z","observations":"Liberación"}`.
-`requestHash` es opcional. 200:
-`{"data":{"productionBatchId":"11111111-1111-4111-8111-111111111111","quantity":"20.000","remainingProductionQuantity":"80.000","inventoryLotId":"55555555-5555-4555-8555-555555555555","inventoryMovementId":"44444444-4444-4444-8444-444444444444","warehouseId":"44444444-4444-4444-8444-444444444444"}}`.
-`classification` es `PRODUCTO_ENVASADO|PRODUCTO_TERMINADO|
-PRODUCTO_TERMINADO_EXPORTACION`; balance insuficiente e
+`{"quantity":"20.000","warehouseId":"44444444-4444-4444-8444-444444444444","operationKey":"release-1","lotCode":"LOT-1","classification":"PRODUCTO_ENVASADO","fechaIngreso":"2025-01-02T00:00:00.000Z","observations":"Liberación"}`.
+El backend calcula y persiste el SHA-256 del comando normalizado; el cliente no
+puede elegir ese hash.
+El replay con la misma clave y payload devuelve el resultado original y un
+payload distinto produce `IDEMPOTENCY_CONFLICT`. 200:
+`{"data":{"releaseId":"33333333-3333-4333-8333-333333333333","productionBatchId":"11111111-1111-4111-8111-111111111111","quantity":"20.000","remainingProductionQuantity":"80.000","inventoryLotId":"55555555-5555-4555-8555-555555555555","inventoryMovementId":"44444444-4444-4444-8444-444444444444","warehouseId":"44444444-4444-4444-8444-444444444444"}}`.
+`classification` acepta exclusivamente `PRODUCTO_ENVASADO`. Production libera
+el lote con esa clasificación inicial; las transiciones posteriores a
+`PRODUCTO_TERMINADO` o `PRODUCTO_TERMINADO_EXPORTACION` son responsabilidad de
+Inventory. Balance insuficiente e
 `IDEMPOTENCY_CONFLICT` son errores relevantes.
+
+### `GET /api/v1/production/inventory-release/warehouses`
+
+Permiso `production:inventory_release`; devuelve los almacenes activos
+disponibles para release a Inventory.
 
 ## 6. Containers / occupancies / movements
 
-Container: `{id,code,capacity,capacityUnit,status,observations,createdAt,
-updatedAt,version}`; occupancy: `{id,containerId,batchId,quantity,unit,
-openedAt,closedAt}`; movement: `{id,movementType,sourceContainerId,
-destinationContainerId,sourceBatchId,destinationBatchId,quantity,unit,
-occurredAt,createdAt}`.
+Container: `{id,code,name,type,location,material,capacity,capacityUnit,status,
+observations,currentOccupancy,createdAt,updatedAt,version}`. Metadata is
+nullable for legacy rows; new API-created containers require
+`type:TANQUE|BARRICA|OTRO`. `currentOccupancy` is a nullable summary
+`{batchId,batchCode,quantity,unit,openedAt}` included by the list query.
+Occupancy is `{id,containerId,batchId,quantity,unit,openedAt,closedAt}`;
+movement is `{id,movementType,sourceContainerId,destinationContainerId,
+sourceBatchId,destinationBatchId,quantity,unit,productionWorkId,observations,
+actorUserId,occurredAt,createdAt}` and never exposes `requestHash`.
+
+### `GET /api/v1/production/batches/:batchId/releases`
+
+Permiso `production:read`; devuelve el historial append-only de releases del
+batch, con cantidad, lote/movimiento de Inventory, almacén, actor y fechas. No
+se edita ni elimina historia.
+
+### `POST /api/v1/production/batches/:batchId/releases/:releaseId/reverse`
+
+Permiso `production:inventory_release_reverse`; request:
+`{"operationKey":"reverse-1","reason":"Corrección operativa"}`. La reversión es
+completa y append-only: conserva el release original y crea el movimiento
+compensatorio. Rechaza un release ya revertido, ajeno al batch o cuyo estado
+actual haría insegura la compensación (`UNSAFE_RELEASE_REVERSAL`). No acepta
+`authorizeNegativeStock` ni autoriza stock negativo. Production, Inventory y
+auditoría confirman o revierten juntas.
 
 ### `GET /api/v1/production/containers`
 
 Permiso `production:read`; sin query/body; 200:
-`{"data":[{"id":"11111111-1111-4111-8111-111111111111","code":"T-1","capacity":"1000.000","capacityUnit":"L","status":"DISPONIBLE","observations":null,"createdAt":"2025-01-01T00:00:00.000Z","updatedAt":"2025-01-01T00:00:00.000Z","version":0}]}`
+`{"data":[{"id":"11111111-1111-4111-8111-111111111111","code":"T-1","name":null,"type":"TANQUE","location":null,"material":null,"capacity":"1000.000","capacityUnit":"L","status":"DISPONIBLE","observations":null,"currentOccupancy":null,"createdAt":"2025-01-01T00:00:00.000Z","updatedAt":"2025-01-01T00:00:00.000Z","version":0}]}`
 
 ### `GET /api/v1/production/containers/:id`
 
@@ -382,7 +414,8 @@ Permiso `production:read`; path UUID; 200:
 
 Permiso `production:container_manage`; request
 `{"code":"T-1","capacity":"1000.000","capacityUnit":"L","observations":"Acero"}`;
-201 devuelve container completo con status `DISPONIBLE`. Código duplicado:
+201 devuelve container completo con status `DISPONIBLE`; `type` es obligatorio
+en altas nuevas. Código duplicado:
 `PRODUCTION_CODE_ALREADY_EXISTS`.
 
 ### `PATCH /api/v1/production/containers/:id`
@@ -404,14 +437,69 @@ Permiso `production:container_manage`; path UUID; body `—`; 200 devuelve
 container completo con `status:"FUERA_DE_SERVICIO"`; `CONTAINER_OCCUPIED`
 si tiene ocupación abierta.
 
-Los movimientos de container existen como métodos internos, pero no tienen
-rutas HTTP registradas.
+### `POST /api/v1/production/containers/:id/assign`
+
+Permiso `production:container_assign`; `:id` es destino. Body:
+```json
+{"batchId":"22222222-2222-4222-8222-222222222222","quantity":"100.000",
+ "productionWorkId":"33333333-3333-4333-8333-333333333333",
+ "observations":"Carga inicial","occurredAt":"2025-01-01T08:00:00.000Z",
+ "operationKey":"assign-1","requestHash":"<sha256>"}
+```
+La respuesta es `{container,occupancy}`. El hash es SHA-256 del payload
+canónico semántico, sin `operationKey` ni `requestHash`.
+
+### `POST /api/v1/production/containers/:sourceId/transfers`
+
+Permiso `production:container_transfer`. Body:
+```json
+{"destinationContainerId":"44444444-4444-4444-8444-444444444444",
+ "batchId":"22222222-2222-4222-8222-222222222222",
+ "productionWorkId":"33333333-3333-4333-8333-333333333333",
+ "observations":"Traslado","occurredAt":"2025-01-01T09:00:00.000Z",
+ "operationKey":"transfer-1","requestHash":"<sha256>"}
+```
+No se envía `quantity`: deriva de la ocupación completa. Responde
+`{container,occupancy}`.
+
+### `POST /api/v1/production/containers/:sourceId/transfers/partial`
+
+Permiso `production:container_transfer`. Body:
+```json
+{"destinationContainerId":"44444444-4444-4444-8444-444444444444",
+ "batchId":"22222222-2222-4222-8222-222222222222","quantity":"20.000",
+ "childCode":"B-CHILD-1","productionWorkId":"33333333-3333-4333-8333-333333333333",
+ "observations":"Separación","occurredAt":"2025-01-01T09:00:00.000Z",
+ "operationKey":"partial-1","requestHash":"<sha256>"}
+```
+Responde `{parent,child,source,destination}` y crea el hijo/lineage
+atómicamente. Work se valida contra la ProductionOrder del batch; actor y
+fecha efectiva los determina/persiste backend. No hay InventoryMovement para
+traslados internos.
 
 ## 7. Works
 
 Work: `{id,productionOrderId,transformationOrderId,workTypeId,performedAt,
 observations,createdByUserId,createdAt,updatedAt,version,batchIds,
-containerIds,participants,corrections}`.
+containerIds,participants,corrections,inputs}`. `inputs` is append-only and
+contains the inventory movement provenance and reversal fields.
+
+### `POST /api/v1/production/works/:id/inputs`
+
+Permiso `production:work_input_create`. Body:
+`{articuloId,warehouseId,inventoryLotId?,quantity,unit,operationKey,requestHash,
+observations?,authorizeNegativeStock?,negativeStockReason?}`. `quantity` is a
+positive decimal string with at most three decimals and `unit` is
+`KG|G|L|M|UNIDAD`; no automatic conversion is performed. The command atomically
+creates an OUTBOUND inventory movement and the work input. Replaying the same
+operation key and request hash returns the same result; a mismatch returns
+`IDEMPOTENCY_CONFLICT`.
+
+### `POST /api/v1/production/works/:workId/inputs/:inputId/reverse`
+
+Permiso `production:work_input_reverse`. Body
+`{reason,operationKey,requestHash}`. A work input can be reversed once; reversal
+creates a compensating INBOUND movement and preserves the original row.
 
 ### `GET /api/v1/production/works`
 
@@ -443,43 +531,69 @@ observations`; no `operationKey` ni `requestHash`.
 
 ## 8. Grape receptions
 
-Reception returned by POST is the raw created row:
-`{id,productionOrderId,producerId,receivedAt,status,observations,actorUserId,
-createdAt,updatedAt,version}`; it has **no `items` property**. Item entries
-returned in the top-level ReceptionResult are:
-`{grapeVarietyId,articuloId,quantity,unit,productionBatchId}` (no `id`).
-GET detail additionally loads its item rows and corrections.
-Status: `ACCEPTED|ACCEPTED_WITH_OBSERVATIONS`.
+La recepción no expone relaciones humanas anidadas: `productionOrderId`,
+`producerId`, `grapeVarietyId` y `articuloId` son referencias opacas. Los estados
+de wire son exactamente `ACCEPTED|ACCEPTED_WITH_OBSERVATIONS`; cuando se usa
+`ACCEPTED_WITH_OBSERVATIONS`, `observations` debe existir y no ser sólo espacios.
+`observations` es opcional en los demás casos y admite como máximo 2000
+caracteres. `producerId` también es opcional.
 
 ### `GET /api/v1/production/grape-receptions`
 
-Permiso `production:read`; query `page,pageSize,search,active` (el router usa
-`listSchema`); 200 devuelve receptions y `meta`.
+Permiso `production:read`; query únicamente `page,pageSize`; 200 devuelve
+receptions y `meta`. Este listado no admite `search` ni `active`.
 
 ### `GET /api/v1/production/grape-receptions/:id`
 
-Permiso `production:read`; path UUID; 200 devuelve reception e items; 404
+Permiso `production:read`; path UUID; 200 devuelve en `data` el detalle completo
+de la recepción (sin wrapper adicional):
+`{id,productionOrderId,producerId?,receivedAt,status,observations,actorUserId,
+createdAt,updatedAt,version,items,corrections,customFields}`. `items` contiene
+`{id,grapeVarietyId,articuloId,quantity,unit,productionBatchId}`, `corrections`
+y `customFields`. Cada correction histórica tiene
+`{id,field,previousValue,newValue,reason,correctedAt,actorUserId,fromVersion,
+toVersion}`. Cada custom field público tiene
+`{definitionId,entityType,value}`, donde `entityType` es
+`GRAPE_RECEPTION` y `value` es el valor público tipado (TEXT/SELECT string,
+INTEGER number, DECIMAL string, BOOLEAN boolean o DATE ISO-8601 string). No
+incluye la definición completa ni relaciones anidadas. 404
 `GRAPE_RECEPTION_NOT_FOUND`.
 
 ### `POST /api/v1/production/grape-receptions`
 
-Permiso `production:reception_create`; request:
-`{"productionOrderId":"22222222-2222-4222-8222-222222222222","producerId":"33333333-3333-4333-8333-333333333333","receivedAt":"2025-01-02T09:00:00.000Z","status":"ACCEPTED","items":[{"grapeVarietyId":"44444444-4444-4444-8444-444444444444","articuloId":"55555555-5555-4555-8555-555555555555","quantity":"100.000","unit":"KG"}],"operationKey":"reception-1","requestHash":"hash-1"}`.
-`customFields` opcional contiene `definitionId` UUID y valor string/number/
-boolean. `operationKey` y `requestHash` son requeridos. 201 devuelve
-**ReceptionResult**, no una recepción aplanada:
-`{"data":{"reception":{"id":"11111111-1111-4111-8111-111111111111","productionOrderId":"22222222-2222-4222-8222-222222222222","producerId":"33333333-3333-4333-8333-333333333333","receivedAt":"2025-01-02T09:00:00.000Z","status":"ACCEPTED","observations":null,"actorUserId":"44444444-4444-4444-8444-444444444444","createdAt":"2025-01-02T09:00:00.000Z","updatedAt":"2025-01-02T09:00:00.000Z","version":0},"items":[{"grapeVarietyId":"44444444-4444-4444-8444-444444444444","articuloId":"55555555-5555-4555-8555-555555555555","quantity":"100.000","unit":"KG","productionBatchId":"11111111-1111-4111-8111-111111111111"}],"batchIds":["11111111-1111-4111-8111-111111111111"]}}`.
+Permiso `production:reception_create`; request completo:
+`{"productionOrderId":"22222222-2222-4222-8222-222222222222","producerId":"33333333-3333-4333-8333-333333333333","receivedAt":"2025-01-02T09:00:00.000Z","status":"ACCEPTED","observations":"Recepción normal","items":[{"grapeVarietyId":"44444444-4444-4444-8444-444444444444","articuloId":"55555555-5555-4555-8555-555555555555","quantity":"100.000","unit":"KG"}],"customFields":[{"definitionId":"11111111-1111-4111-8111-111111111111","value":"Mendoza"}],"operationKey":"reception-1","requestHash":"hash-1"}`.
+`producerId`, `observations` y `customFields` son opcionales. Cada item
+requiere `grapeVarietyId`, `articuloId`, `quantity` decimal string positiva con
+hasta tres decimales y `unit` exactamente uno de `KG|G|L|M|UNIDAD`.
+Cada custom field requiere `definitionId` UUID y `value` string, number o
+boolean; no se aceptan propiedades adicionales. `operationKey` y `requestHash`
+son requeridos. 201 devuelve este **ReceptionResult** completo, no una
+recepción aplanada:
+`{"data":{"reception":{"id":"11111111-1111-4111-8111-111111111111","productionOrderId":"22222222-2222-4222-8222-222222222222","producerId":"33333333-3333-4333-8333-333333333333","receivedAt":"2025-01-02T09:00:00.000Z","status":"ACCEPTED","observations":"Recepción normal","actorUserId":"44444444-4444-4444-8444-444444444444","createdAt":"2025-01-02T09:00:00.000Z","updatedAt":"2025-01-02T09:00:00.000Z","version":0},"items":[{"grapeVarietyId":"44444444-4444-4444-8444-444444444444","articuloId":"55555555-5555-4555-8555-555555555555","quantity":"100.000","unit":"KG","productionBatchId":"11111111-1111-4111-8111-111111111111"}],"batchIds":["11111111-1111-4111-8111-111111111111"]}}`.
 Errores: referencias inexistentes, unidad/cantidad inválida,
 `ARTICULOS_API_UNAVAILABLE`, estado inválido e `IDEMPOTENCY_CONFLICT`.
 
 ### `POST /api/v1/production/grape-receptions/:id/corrections`
 
-Permiso `production:reception_correct`; request
-`{"field":"status","newValue":"ACCEPTED_WITH_OBSERVATIONS","reason":"Control","operationKey":"corr-rec-1"}`;
+Permiso `production:reception_correct`; strict request
+`{"field":"status","newValue":"ACCEPTED_WITH_OBSERVATIONS","reason":"Control","operationKey":"corr-rec-1"}`.
+Sólo se permiten `receivedAt` (`newValue` ISO-8601 con offset),
+`producerId` (UUID), `observations` (string de hasta 2000 caracteres o
+`null`) y `status` (`ACCEPTED|ACCEPTED_WITH_OBSERVATIONS`); cada tipo de
+`newValue` es específico del campo. `reason` (1--2000 caracteres) y
+`operationKey` (1--100 caracteres) son obligatorios. No se acepta
+`requestHash` ni ningún campo desconocido.
 200 devuelve **`{id,field,value,version,correctionId}`**:
 `{"data":{"id":"11111111-1111-4111-8111-111111111111","field":"status","value":"ACCEPTED_WITH_OBSERVATIONS","version":1,"correctionId":"22222222-2222-4222-8222-222222222222"}}`.
-`operationKey` requerido; `requestHash` no existe en este schema. El replay
-devuelve la misma forma; payload distinto produce `IDEMPOTENCY_CONFLICT`.
+El resultado compacto de este command no es el DTO histórico de `corrections`
+del detalle. Las correcciones son append-only: conservan original, actor, fecha,
+motivo y valores anterior/nuevo; no hay edición destructiva ni DELETE. El replay
+con la misma `operationKey` y payload devuelve la misma forma; un payload
+distinto produce `IDEMPOTENCY_CONFLICT`, y un valor idéntico produce
+`CORRECTION_NOOP`. `status` no puede ser `ACCEPTED_WITH_OBSERVATIONS` sin
+observaciones no vacías ni pueden borrarse observaciones mientras ese estado
+continúe. `receivedAt` no puede quedar después de la generación del batch.
 
 ## 9. Measurements
 
@@ -537,10 +651,20 @@ Permiso `production:read`; path UUID; 200 devuelve transformation completa;
 
 Permisos `production:transformation_create` y, cuando `losses` no está vacío,
 `production:loss_create`. Request:
-`{"productionOrderId":"11111111-1111-4111-8111-111111111111","performedAt":"2025-01-02T12:00:00.000Z","operationKey":"tr-1","requestHash":"hash-1","inputs":[{"productionBatchId":"22222222-2222-4222-8222-222222222222","quantity":"10.000"}],"outputs":[{"articuloId":"33333333-3333-4333-8333-333333333333","quantity":"9.000","unit":"KG"}],"losses":[{"productionBatchId":"22222222-2222-4222-8222-222222222222","quantity":"1.000","unit":"KG","operationKey":"loss-1","requestHash":"loss-hash"}]}`.
+`productionOrderId` es obligatorio; `transformationOrderId` y
+`productionWorkId` son opcionales:
+`{"productionOrderId":"11111111-1111-4111-8111-111111111111","transformationOrderId":"44444444-4444-4444-8444-444444444444","productionWorkId":"55555555-5555-4555-8555-555555555555","performedAt":"2025-01-02T12:00:00.000Z","operationKey":"tr-1","requestHash":"hash-1","inputs":[{"productionBatchId":"22222222-2222-4222-8222-222222222222","quantity":"10.000"}],"outputs":[{"articuloId":"33333333-3333-4333-8333-333333333333","quantity":"9.000","unit":"KG"}],"losses":[{"productionBatchId":"22222222-2222-4222-8222-222222222222","quantity":"1.000","unit":"KG"}]}`.
+Si se envía `transformationOrderId`, debe existir, pertenecer a
+`productionOrderId` y estar en estado `OPEN`; el backend valida estas tres
+condiciones.
 `inputs`/`outputs` requieren al menos un elemento; cantidades positivas;
 unidades `KG|G|L|M|UNIDAD`. 201 devuelve transformation completa con
-`requestHash`; transformación y loss aplican sus claves de replay. Errores:
+`requestHash`. `operationKey`/`requestHash` identifican el comando completo:
+el replay devuelve la Transformation completa cuando el payload coincide y un
+payload distinto produce `IDEMPOTENCY_CONFLICT`. El request público no recibe
+claves de idempotencia por pérdida; las claves que puedan persistirse en cada
+pérdida son identificadores internos y no existe retry por API independiente
+de una pérdida. Errores:
 balance insuficiente, estado, referencias, `ARTICULOS_API_UNAVAILABLE` e
 `IDEMPOTENCY_CONFLICT`.
 
@@ -552,16 +676,38 @@ No hay ruta HTTP independiente. Sólo se crean en `losses` de
 
 ## 12. Production → Inventory
 
-La única ruta es `POST /api/v1/production/batches/:id/release-to-inventory`,
+Las rutas son `POST /api/v1/production/batches/:batchId/release-to-inventory`
+y `POST /api/v1/production/batches/:batchId/releases/:releaseId/reverse`,
 descrita arriba. Crea InventoryMovement y actualiza lote/stock de forma
 transaccional; `operationKey` evita duplicar el efecto. No hay endpoint
 adicional.
 
 ## Conteo y auditoría
 
-Las 67 rutas actuales son: 25 de catálogos; 6 de custom fields; 4 órdenes;
-4 transformation-orders; 5 batches; 8 containers; 4 works; 4 receptions;
-4 measurements y 3 transformations. No se documentan métodos internos sin
-route (movimientos de container) como APIs. Se verificaron métodos, paths,
+El inventario de rutas públicas de este documento (incluidas las rutas de
+release/reversal y el historial de release) se verificó contra métodos, paths,
 permisos, schemas Zod y controllers; las correcciones, ReceptionResult,
 balance reducido y ejemplos UUID reflejan sus formas actuales.
+
+## Cierre P5.5 — contrato público vigente
+
+El inventario público de este documento comprende catálogos, custom fields,
+órdenes, transformation-orders, batches (listado, detalle, trace, balance,
+releases, release y reversal), warehouse options, containers (maestro, detalle,
+occupancies,
+movements, assign, transfer total y partial), works (listado, detalle,
+creación, corrección, inputs y reversal), receptions (listado, detalle,
+creación y corrección), measurements (listado, detalle, creación y corrección)
+y transformations (listado, detalle y creación), todos bajo
+`/api/v1/production` y autenticación Firebase.
+
+P5.5A usa `ProductionWorkInput`, primitives confiables de Inventory y
+`SharedUnitOfWork`; consumo y reversal preservan provenance y son idempotentes.
+Inventory decide la autorización de stock negativo. P5.5B conserva estados
+`DISPONIBLE`, `OCUPADO`, `FUERA_DE_SERVICIO` y movimientos
+`ASSIGNED`/`TRANSFERRED`/`PARTIAL_TRANSFERRED` con lineage. No hay merge-back ni
+reversión destructiva automática de un traslado parcial en el MVP: la corrección
+requiere una nueva operación productiva válida. P5.5C expone trace backward y
+forward con límites, warnings y enlaces de Inventory. P5.5D fija
+`PRODUCTO_ENVASADO`, hash canónico server-side, reversión completa, historia y
+auditoría append-only, y rechazo de reversiones inseguras.

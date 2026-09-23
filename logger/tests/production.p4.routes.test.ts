@@ -46,8 +46,8 @@ describe("Production P4 HTTP contracts and RBAC", () => {
       assert.equal(result.json.error.code, "AUTH_FORBIDDEN");
     });
   }
-  it("does not expose physical movement HTTP commands", async () => {
-    for (const path of [`/containers/${id}/assign`, `/containers/${id}/transfer`, `/containers/${id}/partial-transfer`]) {
+  it("does not expose legacy transfer aliases", async () => {
+    for (const path of [`/containers/${id}/transfer`, `/containers/${id}/partial-transfer`]) {
       const result = await request("POST", path, all, { batchId: id, quantity: "1.000" });
       assert.equal(result.response.status, 404);
     }
@@ -59,7 +59,7 @@ describe("Production P4 HTTP contracts and RBAC", () => {
       assert.equal(result.response.status, 200);
       assert.ok("data" in result.json);
     }
-    const create = await request("POST", "/containers", all, { code: "HTTP-C", capacity: "2.000", capacityUnit: "KG" });
+    const create = await request("POST", "/containers", all, { code: "HTTP-C", type: "OTRO", capacity: "2.000", capacityUnit: "KG" });
     const update = await request("PATCH", `/containers/${id}`, all, { capacity: "3.000" });
     const activate = await request("POST", `/containers/${id}/activate`, all);
     const deactivate = await request("POST", `/containers/${id}/deactivate`, all);
@@ -69,9 +69,9 @@ describe("Production P4 HTTP contracts and RBAC", () => {
     assert.equal((calls.find((call) => call.name === "update")?.args[1] as any).capacity, "3.000");
   });
   it("rejects malformed create/update bodies and separates read/admin permissions", async () => {
-    assert.equal((await request("POST", "/containers", all, { code: "", capacity: "2.000", capacityUnit: "KG" })).response.status, 400);
+    assert.equal((await request("POST", "/containers", all, { code: "", type: "OTRO", capacity: "2.000", capacityUnit: "KG" })).response.status, 400);
     assert.equal((await request("PATCH", `/containers/${id}`, all, { code: "not-allowed" })).response.status, 400);
-    assert.equal((await request("POST", "/containers", ["production:read"], { code: "HTTP-C", capacity: "2.000", capacityUnit: "KG" })).response.status, 403);
+    assert.equal((await request("POST", "/containers", ["production:read"], { code: "HTTP-C", type: "OTRO", capacity: "2.000", capacityUnit: "KG" })).response.status, 403);
     assert.equal((await request("GET", "/containers", ["production:container_manage"])).response.status, 403);
   });
 });

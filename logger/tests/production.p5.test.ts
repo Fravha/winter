@@ -125,14 +125,14 @@ describe("Production P5 PostgreSQL", () => {
   it("rejects physical deletion of work history and rolls back failed audits", options, async () => {
     assert.ok(service && prisma);
     const f = await fixture();
-    const failing = new ProductionWorkService(prisma, {} as AuditService, () => new AuditService({ create: async () => { throw new Error("audit failure"); } }));
+    const failing = new ProductionWorkService(prisma, {} as AuditService, undefined, () => new AuditService({ create: async () => { throw new Error("audit failure"); } }));
     const before = await prisma.productionWork.count();
     await assert.rejects(failing.create({ productionOrderId: f.order.id, workTypeId: f.type.id, performedAt: new Date() }, context));
     assert.equal(await prisma.productionWork.count(), before);
     const work = await service.createWork({ productionOrderId: f.order.id, workTypeId: f.type.id, performedAt: new Date(), observations: "before", participants: [{ participantId: f.participant.id, role: "operator" }] }, context); ids.works.push(work.id);
     const correctionCount = await prisma.productionWorkCorrection.count({ where: { productionWorkId: work.id } });
     const versionBeforeCorrection = (await service.getWork(work.id)).version;
-    await assert.rejects(new ProductionWorkService(prisma, {} as AuditService, () => new AuditService({ create: async () => { throw new Error("audit failure"); } })).correct(work.id, { field: "observations", newValue: "after", reason: "correction" }, context));
+    await assert.rejects(new ProductionWorkService(prisma, {} as AuditService, undefined, () => new AuditService({ create: async () => { throw new Error("audit failure"); } })).correct(work.id, { field: "observations", newValue: "after", reason: "correction" }, context));
     assert.equal((await service.getWork(work.id)).observations, "before");
     assert.equal((await service.getWork(work.id)).version, versionBeforeCorrection);
     assert.equal(await prisma.productionWorkCorrection.count({ where: { productionWorkId: work.id } }), correctionCount);

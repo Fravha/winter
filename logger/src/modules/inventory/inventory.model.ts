@@ -16,15 +16,17 @@ const trustedContexts = new WeakSet<object>();
 export interface TrustedIntermoduleContext {
   readonly actorUserId: string;
   readonly requestId?: string;
+  readonly permissions: readonly string[];
   readonly [trustedIntermoduleBrand]: true;
 }
 
 export const createTrustedIntermoduleContext = (
-  context: Pick<ExecutionContext, "actorUserId" | "requestId">,
+  context: Pick<ExecutionContext, "actorUserId" | "requestId"> & { permissions?: readonly string[] },
 ): TrustedIntermoduleContext => {
   const trusted = {
     actorUserId: context.actorUserId,
     ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+    permissions: Object.freeze([...(context.permissions ?? [])]),
     [trustedIntermoduleBrand]: true as const,
   };
   trustedContexts.add(trusted);
