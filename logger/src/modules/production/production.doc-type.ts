@@ -20,6 +20,8 @@ export const productionDocType: DocType = {
     { code: "production:transformation_order_create", name: "Create transformation orders" },
     { code: "production:transformation_order_close", name: "Close transformation orders" },
     { code: "production:container_manage", name: "Manage production containers" },
+    { code: "production:container_assign", name: "Assign production batches to containers" },
+    { code: "production:container_transfer", name: "Transfer production batches between containers" },
     { code: "production:work_create", name: "Create production work" },
     { code: "production:work_correct", name: "Correct production work" },
     { code: "production:work_input_create", name: "Create production work inputs" },

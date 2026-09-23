@@ -394,3 +394,37 @@ bloqueo, no sustituirlos con valores locales.
 P5.5A is implemented as backend-only work-input consumption/reversal. The
 operation key is globally advisory-locked and requestHash is the canonical
 SHA-256 of the semantic payload (excluding operationKey/requestHash).
+
+## 15. P5.5B — entregado y alineado al código
+
+P5.5B añade metadata operativa de forma aditiva: `type` es nullable para
+contenedores legacy (sin backfill inventado), mientras las altas nuevas lo
+requieren; `name`, `location` y `material` son nullable. El listado devuelve
+`currentOccupancy` resumida. Se mantienen las rutas administrativas y de
+consulta existentes y se exponen:
+
+- `POST /api/v1/production/containers/:id/assign`;
+- `POST /api/v1/production/containers/:sourceId/transfers`;
+- `POST /api/v1/production/containers/:sourceId/transfers/partial`.
+
+Los permisos dedicados son `production:container_assign` y
+`production:container_transfer`; `production:container_manage` queda para el
+maestro. Assign y total reciben `batchId` y el contexto opcional
+`productionWorkId`, `observations`, `occurredAt`, más `operationKey` y
+`requestHash`; parcial añade `quantity` y `childCode`, y total no recibe
+quantity. El DTO de lectura omite `requestHash` y contiene
+`productionWorkId`, `observations`, `actorUserId`, `occurredAt`.
+
+El requestHash es SHA-256 del payload canónico (claves ordenadas, opcionales
+normalizados, sin operationKey/requestHash). Work se valida por existencia y
+ProductionOrder compatible; actor/fecha efectiva/observaciones quedan
+estructurados. Los comandos son atómicos en `SharedUnitOfWork`; Failure C
+revierte todos los efectos. No hay Inventory movement para traslados internos.
+El historial es inmutable: total admite traslado inverso sólo si el estado
+actual sigue compatible, no se inventa un unassign, y la reversión parcial se
+difiere a P5.5E como decisión de dominio.
+
+El frontend debe ofrecer listado (incluyendo ocupación actual), detalle,
+historial de ocupaciones y movimientos, alta/edición/activación, assign,
+traslado total y parcial; debe usar confirmación, bloquear doble submit e
+invalidar sólo las queries afectadas.

@@ -922,3 +922,27 @@ P5.5A: `ProductionWorkInput` stores the Inventory movement provenance and
 nullable legacy rows remain non-reversible. Production calls trusted Inventory
 primitives inside the shared unit of work; Inventory owns stock mutation,
 negative-stock authorization and movement audit.
+
+## 15. P5.5B — diseño vigente
+
+La extensión de recipientes es aditiva: `type` es nullable para filas legacy,
+sin backfill ni tipos supuestos; `name`, `location` y `material` también son
+nullable. Las nuevas altas API exigen `TANQUE|BARRICA|OTRO`. El listado expone
+`currentOccupancy` como resumen nullable. El Movement DTO contiene
+`productionWorkId`, `observations`, `actorUserId` y `occurredAt`, pero no
+`requestHash`.
+
+Se conservan las rutas administrativas y de lectura, y se publican assign,
+transfer total y transfer partial con permisos dedicados
+`production:container_assign` y `production:container_transfer`; el maestro
+usa `production:container_manage`. Los cuerpos exactos están en
+`PRODUCTION_API.md`. El hash canónico es SHA-256 de JSON con claves ordenadas,
+opcionales normalizados a `null`, excluyendo `operationKey`/`requestHash`.
+Work es opcional pero debe pertenecer a la ProductionOrder del batch.
+`SharedUnitOfWork` cubre movimiento, ocupación, estados, idempotencia y
+auditoría; Failure C revierte todo, incluido split/lineage/ledger.
+
+Los movimientos históricos son inmutables. Total puede compensarse con un
+traslado inverso nuevo si el estado actual sigue compatible; no se inventa
+un unassign destructivo. La reversión parcial se difiere a P5.5E como decisión
+de dominio. El traslado interno no crea InventoryMovement.

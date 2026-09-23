@@ -6,7 +6,8 @@
 - P1–P11 completados.
 - Limpieza legacy completada.
 - 25 migraciones oficiales.
-- Línea base validada: 279/279 tests, 0 fallos y 0 skips.
+- No se declara una suite DB ejecutada: `P55A_DATABASE_URL` y
+  `P55B_DATABASE_URL` no están disponibles en este entorno.
 - Drift validado en cero.
 - El frontend aún no forma parte de este repositorio de entrega.
 
@@ -251,9 +252,8 @@ git diff --check
 ```
 
 Las suites de integración requieren sus variables de base aislada cuando están
-configuradas. Hay cobertura de contratos HTTP, servicios, PostgreSQL,
-concurrencia, producción, RBAC y Storage mediante providers controlados. La
-línea base de este handoff es 279/279, sin fallos ni skips.
+configuradas. No se afirma ejecución de P5.5A/P5.5B PostgreSQL porque sus URLs
+no están disponibles.
 
 ## 13. Decisiones diferidas
 
@@ -279,3 +279,27 @@ The P5.5A endpoints are `/production/works/:id/inputs` and
 Inventory tables directly: both commands use trusted Inventory primitives,
 atomic shared transactions, idempotent replay/conflict handling and explicit
 compensating reversal.
+
+## P5.5B — handoff de recipientes
+
+La migración es aditiva: `type` permanece nullable en contenedores legacy y no
+se inventa un backfill; las altas nuevas requieren `TANQUE|BARRICA|OTRO`.
+`name`, `location` y `material` son nullable. El listado incluye
+`currentOccupancy` resumida sin N+1. Se mantienen las rutas administrativas y
+de lectura y se publican assign, transferencia total y parcial, con
+`production:container_assign`/`production:container_transfer` separados de
+`production:container_manage`. Los bodies exactos están en
+`PRODUCTION_API.md`; total no recibe quantity y parcial exige quantity y
+childCode.
+
+Movement DTO incluye `productionWorkId`, `observations`, `actorUserId` y
+`occurredAt`, nunca `requestHash`. Work se valida por orden compatible, el
+actor viene de autenticación y el hash canónico SHA-256 excluye las claves de
+idempotencia. `SharedUnitOfWork` y Failure C garantizan rollback de todos los
+efectos. Traslados internos no escriben InventoryMovement.
+
+El historial es inmutable. Total admite traslado inverso sólo si el estado
+permanece compatible; no se inventa un unassign. La compensación parcial se
+difiere a P5.5E. El frontend debe cubrir lista/detalle, ocupación actual e
+histórica, movements, assign, total y parcial, con confirmación y bloqueo de
+doble envío.

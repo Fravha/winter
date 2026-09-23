@@ -24,6 +24,7 @@ model User {
   productionWorkCorrections ProductionWorkCorrection[] @relation("ProductionWorkCorrectionActor")
   productionWorkInputsCreated ProductionWorkInput[] @relation("ProductionWorkInputCreator")
   productionWorkInputsReversed ProductionWorkInput[] @relation("ProductionWorkInputReverser")
+  productionContainerMovements ProductionBatchContainerMovement[] @relation("ProcessMovementActor")
   productionMeasurementCorrections ProductionMeasurementCorrection[] @relation("ProductionMeasurementCorrectionActor")
   grapeReceptionCorrections GrapeReceptionCorrection[] @relation("GrapeReceptionCorrectionActor")
   transformations Transformation[]
@@ -293,6 +294,12 @@ enum ProductionContainerStatus {
   FUERA_DE_SERVICIO
 }
 
+enum ProductionContainerType {
+  TANQUE
+  BARRICA
+  OTRO
+}
+
 enum ProductionBatchContainerMovementType {
   ASSIGNED
   TRANSFERRED
@@ -302,6 +309,10 @@ enum ProductionBatchContainerMovementType {
 model ProductionContainer {
   id          String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code        String                   @unique
+  name        String?
+  type        ProductionContainerType?
+  location    String?
+  material    String?
   capacity    Decimal                  @db.Decimal(18, 3)
   capacityUnit String                  @map("capacity_unit")
   status      ProductionContainerStatus @default(DISPONIBLE)
@@ -351,16 +362,21 @@ model ProductionBatchContainerMovement {
   requestHash        String                               @map("request_hash")
   occurredAt         DateTime                             @map("occurred_at")
   actorUserId        String                               @map("actor_user_id") @db.Uuid
+  productionWorkId   String?                              @map("production_work_id") @db.Uuid
+  observations       String?
   metadata           Json?
   createdAt          DateTime                             @default(now()) @map("created_at")
   sourceContainer    ProductionContainer? @relation("ContainerMovementSource", fields: [sourceContainerId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_source_container_fkey")
   destinationContainer ProductionContainer @relation("ContainerMovementDestination", fields: [destinationContainerId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_destination_container_fkey")
   sourceBatch        ProductionBatch @relation("ContainerMovementSourceBatch", fields: [sourceBatchId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_source_batch_fkey")
   destinationBatch   ProductionBatch? @relation("ContainerMovementDestinationBatch", fields: [destinationBatchId], references: [id], onDelete: Restrict, map: "production_batch_container_movements_destination_batch_fkey")
+  productionWork     ProductionWork? @relation("ProcessMovementWork", fields: [productionWorkId], references: [id], onDelete: Restrict)
+  actor              User             @relation("ProcessMovementActor", fields: [actorUserId], references: [id], onDelete: Restrict)
 
   @@unique([operationKey])
   @@index([destinationContainerId, occurredAt], map: "production_batch_container_movements_destination_idx")
   @@index([sourceBatchId, occurredAt], map: "production_batch_container_movements_source_batch_idx")
+  @@index([productionWorkId, occurredAt], map: "production_batch_container_movements_work_idx")
   @@map("production_batch_container_movements")
 }
 
@@ -417,6 +433,7 @@ model ProductionWork {
   inputs            ProductionWorkInput[]
   batches           ProductionWorkBatch[]
   containers        ProductionWorkContainer[]
+  processMovements  ProductionBatchContainerMovement[] @relation("ProcessMovementWork")
   participants      ProductionWorkParticipant[]
   corrections       ProductionWorkCorrection[]
   measurements      ProductionMeasurement[]

@@ -2126,3 +2126,38 @@ P5.5A work inputs are owned by Production while Inventory exclusively writes
 stock and movements. Create and reversal share one serializable transaction,
 canonical request hashes and globally locked operation keys; reversal is a
 compensating INBOUND and never edits the original input fact.
+
+## P5.5B — contrato vigente de recipientes y movimientos
+
+La migración es aditiva: `ProductionContainer.type` es nullable para no
+inventar tipos en recipientes legacy; `name`, `location` y `material` también
+son nullable. Las altas nuevas requieren `type` (`TANQUE|BARRICA|OTRO`).
+El listado incluye `currentOccupancy` como resumen nullable, evitando N+1.
+El DTO de movimiento incluye `productionWorkId`, `observations`, `actorUserId`
+y `occurredAt`, pero nunca `requestHash`.
+
+Las rutas vigentes son `POST /containers/:id/assign`,
+`POST /containers/:sourceId/transfers` y
+`POST /containers/:sourceId/transfers/partial`, además de las rutas
+administrativas y de consulta existentes. Sus permisos son respectivamente
+`production:container_assign` y `production:container_transfer`; administrar
+el maestro sigue usando `production:container_manage`. Los bodies exactos,
+incluidos `batchId`, `destinationContainerId` cuando aplica, `quantity` sólo
+en parcial, `childCode` sólo en parcial, `operationKey`, `requestHash` y los
+opcionales `productionWorkId`, `observations`, `occurredAt`, están definidos
+en `PRODUCTION_API.md`.
+
+El hash es SHA-256 del objeto canónico ordenado de campos semánticos,
+normalizando opcionales como `null` y excluyendo `operationKey`/`requestHash`.
+`actorUserId` proviene de autenticación. Work, cuando se informa, debe existir
+y pertenecer a la misma ProductionOrder del batch. El movimiento interno
+conserva batch/ocupación y no crea `InventoryMovement`.
+
+Los hechos históricos son inmutables. Una transferencia total puede
+representarse por un traslado inverso nuevo sólo si el destino permanece
+intacto y el estado actual sigue siendo compatible; no se inventa un
+`unassign` destructivo. La reversión de una transferencia parcial queda
+diferida como decisión de dominio P5.5E: no se hace merge inverso ni se
+destruye lineage. Assign, total y parcial se ejecutan en
+`SharedUnitOfWork`; Failure C revierte movement, ocupaciones, estados,
+split/lineage/ledger y auditoría conjuntamente.

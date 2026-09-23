@@ -3,6 +3,7 @@ import { z } from "zod";
 const code = z.string().trim().min(1).max(100);
 const name = z.string().trim().min(1).max(200);
 export const idParamsSchema = z.object({ id: z.string().uuid() }).strict();
+export const sourceContainerParamsSchema = z.object({ sourceId: z.string().uuid() }).strict();
 export const catalogInputSchema = z.object({ code, name, userId: z.string().uuid().optional() }).strict();
 export const administrativeCatalogInputSchema = z.object({ code, name }).strict();
 export const catalogUpdateSchema = z.object({ name: name.optional() }).strict();
@@ -55,9 +56,26 @@ export const grapeReceptionListSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 }).strict();
 const measurementValue = z.string().trim().regex(/^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/);
-export const containerCreateSchema = z.object({ code: code, capacity: quantity, capacityUnit: z.string().trim().min(1).max(30), observations: z.string().max(2000).optional() }).strict();
-export const containerUpdateSchema = z.object({ capacity: quantity.optional(), observations: z.string().max(2000).optional() }).strict();
-export const containerMoveSchema = z.object({ batchId: z.string().uuid(), sourceContainerId: z.string().uuid().optional(), destinationContainerId: z.string().uuid(), quantity: quantity.optional(), childCode: code.optional(), operationKey: code, requestHash: z.string().trim().min(1).max(500), occurredAt: z.coerce.date().optional() }).strict();
+const containerType = z.enum(["TANQUE", "BARRICA", "OTRO"]);
+const containerMetadata = {
+  name: z.string().trim().min(1).max(200).optional(),
+  type: containerType,
+  location: z.string().trim().min(1).max(200).optional(),
+  material: z.string().trim().min(1).max(200).optional(),
+};
+export const containerCreateSchema = z.object({ code, ...containerMetadata, capacity: positiveQuantity, capacityUnit: z.string().trim().min(1).max(30), observations: z.string().max(2000).optional() }).strict();
+export const containerUpdateSchema = z.object({ name: containerMetadata.name, type: containerType.optional(), location: containerMetadata.location, material: containerMetadata.material, capacity: positiveQuantity.optional(), observations: z.string().max(2000).optional() }).strict();
+const movementCommon = {
+  batchId: z.string().uuid(),
+  productionWorkId: z.string().uuid().optional(),
+  observations: z.string().max(2000).optional(),
+  operationKey: code,
+  requestHash: z.string().trim().length(64),
+  occurredAt: z.coerce.date().optional(),
+};
+export const containerAssignSchema = z.object({ ...movementCommon, quantity: positiveQuantity }).strict();
+export const containerTransferSchema = z.object({ ...movementCommon, destinationContainerId: z.string().uuid() }).strict();
+export const containerPartialTransferSchema = z.object({ ...movementCommon, destinationContainerId: z.string().uuid(), quantity: positiveQuantity, childCode: code }).strict();
 export const workListSchema = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20), productionOrderId: z.string().uuid().optional(), workTypeId: z.string().uuid().optional() }).strict();
 export const workParticipantSchema = z.object({ participantId: z.string().uuid(), role: z.string().trim().min(1).max(100).optional() }).strict();
 export const workCreateSchema = z.object({

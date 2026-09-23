@@ -24,6 +24,7 @@ IDs de path son UUID; cuerpos strict de Zod rechazan campos desconocidos.
 `production:measurement_type_manage`, `production:order_create`,
 `production:order_close`, `production:transformation_order_create`,
 `production:transformation_order_close`, `production:container_manage`,
+`production:container_assign`, `production:container_transfer`,
 `production:work_create`, `production:work_correct`,
 `production:reception_create`, `production:measurement_create`,
 `production:transformation_create`, `production:loss_create`,
@@ -354,16 +355,20 @@ Inventory. Balance insuficiente e
 
 ## 6. Containers / occupancies / movements
 
-Container: `{id,code,capacity,capacityUnit,status,observations,createdAt,
-updatedAt,version}`; occupancy: `{id,containerId,batchId,quantity,unit,
-openedAt,closedAt}`; movement: `{id,movementType,sourceContainerId,
-destinationContainerId,sourceBatchId,destinationBatchId,quantity,unit,
-occurredAt,createdAt}`.
+Container: `{id,code,name,type,location,material,capacity,capacityUnit,status,
+observations,currentOccupancy,createdAt,updatedAt,version}`. Metadata is
+nullable for legacy rows; new API-created containers require
+`type:TANQUE|BARRICA|OTRO`. `currentOccupancy` is a nullable summary
+`{batchId,batchCode,quantity,unit,openedAt}` included by the list query.
+Occupancy is `{id,containerId,batchId,quantity,unit,openedAt,closedAt}`;
+movement is `{id,movementType,sourceContainerId,destinationContainerId,
+sourceBatchId,destinationBatchId,quantity,unit,productionWorkId,observations,
+actorUserId,occurredAt,createdAt}` and never exposes `requestHash`.
 
 ### `GET /api/v1/production/containers`
 
 Permiso `production:read`; sin query/body; 200:
-`{"data":[{"id":"11111111-1111-4111-8111-111111111111","code":"T-1","capacity":"1000.000","capacityUnit":"L","status":"DISPONIBLE","observations":null,"createdAt":"2025-01-01T00:00:00.000Z","updatedAt":"2025-01-01T00:00:00.000Z","version":0}]}`
+`{"data":[{"id":"11111111-1111-4111-8111-111111111111","code":"T-1","name":null,"type":"TANQUE","location":null,"material":null,"capacity":"1000.000","capacityUnit":"L","status":"DISPONIBLE","observations":null,"currentOccupancy":null,"createdAt":"2025-01-01T00:00:00.000Z","updatedAt":"2025-01-01T00:00:00.000Z","version":0}]}`
 
 ### `GET /api/v1/production/containers/:id`
 
@@ -385,7 +390,8 @@ Permiso `production:read`; path UUID; 200:
 
 Permiso `production:container_manage`; request
 `{"code":"T-1","capacity":"1000.000","capacityUnit":"L","observations":"Acero"}`;
-201 devuelve container completo con status `DISPONIBLE`. Código duplicado:
+201 devuelve container completo con status `DISPONIBLE`; `type` es obligatorio
+en altas nuevas. Código duplicado:
 `PRODUCTION_CODE_ALREADY_EXISTS`.
 
 ### `PATCH /api/v1/production/containers/:id`
@@ -407,8 +413,45 @@ Permiso `production:container_manage`; path UUID; body `—`; 200 devuelve
 container completo con `status:"FUERA_DE_SERVICIO"`; `CONTAINER_OCCUPIED`
 si tiene ocupación abierta.
 
-Los movimientos de container existen como métodos internos, pero no tienen
-rutas HTTP registradas.
+### `POST /api/v1/production/containers/:id/assign`
+
+Permiso `production:container_assign`; `:id` es destino. Body:
+```json
+{"batchId":"22222222-2222-4222-8222-222222222222","quantity":"100.000",
+ "productionWorkId":"33333333-3333-4333-8333-333333333333",
+ "observations":"Carga inicial","occurredAt":"2025-01-01T08:00:00.000Z",
+ "operationKey":"assign-1","requestHash":"<sha256>"}
+```
+La respuesta es `{container,occupancy}`. El hash es SHA-256 del payload
+canónico semántico, sin `operationKey` ni `requestHash`.
+
+### `POST /api/v1/production/containers/:sourceId/transfers`
+
+Permiso `production:container_transfer`. Body:
+```json
+{"destinationContainerId":"44444444-4444-4444-8444-444444444444",
+ "batchId":"22222222-2222-4222-8222-222222222222",
+ "productionWorkId":"33333333-3333-4333-8333-333333333333",
+ "observations":"Traslado","occurredAt":"2025-01-01T09:00:00.000Z",
+ "operationKey":"transfer-1","requestHash":"<sha256>"}
+```
+No se envía `quantity`: deriva de la ocupación completa. Responde
+`{container,occupancy}`.
+
+### `POST /api/v1/production/containers/:sourceId/transfers/partial`
+
+Permiso `production:container_transfer`. Body:
+```json
+{"destinationContainerId":"44444444-4444-4444-8444-444444444444",
+ "batchId":"22222222-2222-4222-8222-222222222222","quantity":"20.000",
+ "childCode":"B-CHILD-1","productionWorkId":"33333333-3333-4333-8333-333333333333",
+ "observations":"Separación","occurredAt":"2025-01-01T09:00:00.000Z",
+ "operationKey":"partial-1","requestHash":"<sha256>"}
+```
+Responde `{parent,child,source,destination}` y crea el hijo/lineage
+atómicamente. Work se valida contra la ProductionOrder del batch; actor y
+fecha efectiva los determina/persiste backend. No hay InventoryMovement para
+traslados internos.
 
 ## 7. Works
 
@@ -616,9 +659,9 @@ adicional.
 
 ## Conteo y auditoría
 
-Las 67 rutas actuales son: 25 de catálogos; 6 de custom fields; 4 órdenes;
-4 transformation-orders; 5 batches; 8 containers; 4 works; 4 receptions;
-4 measurements y 3 transformations. No se documentan métodos internos sin
-route (movimientos de container) como APIs. Se verificaron métodos, paths,
+Las 72 rutas actuales son: 25 de catálogos y 47 rutas explícitas (incluidas
+6 de custom fields, 4 órdenes, 4 transformation-orders, 3 transformations,
+5 batches, 11 containers, 5 works, 4 receptions y 4 measurements). Se
+verificaron métodos, paths,
 permisos, schemas Zod y controllers; las correcciones, ReceptionResult,
 balance reducido y ejemplos UUID reflejan sus formas actuales.
