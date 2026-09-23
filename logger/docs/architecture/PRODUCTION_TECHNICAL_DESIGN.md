@@ -470,13 +470,15 @@ con identidad y unidad capturada.
 ### 4.17 `Transformation`
 
 Operación atómica del ciclo productivo de una `ProductionOrder`, con una
-`TransformationOrder` opcional.
+`TransformationOrder` opcional y un `ProductionWork` opcional como contexto
+operativo.
 
 | Campo | Tipo | Null | Regla |
 |---|---|---:|---|
 | `id` | Id | no | PK |
 | `productionOrderId` | Id | no | FK a `ProductionOrder` |
 | `transformationOrderId` | Id | sí | FK opcional; si se informa, debe pertenecer a `productionOrderId` y estar `OPEN` |
+| `productionWorkId` | Id | sí | FK opcional a `ProductionWork`; si se informa, debe existir y ser compatible con el contexto productivo según las reglas vigentes |
 | `performedAt` | Timestamp | no | fecha real |
 | `actorUserId` | Id externo | no | contexto autenticado |
 | `observations` | String | sí | observación |
@@ -485,7 +487,7 @@ Operación atómica del ciclo productivo de una `ProductionOrder`, con una
 | `createdAt` | Timestamp | no | registro |
 
 Índices `(productionOrderId, performedAt)`, `(transformationOrderId, performedAt)`,
-`(operationKey)`;
+`(productionWorkId)`, `(operationKey)`;
 unique `operationKey`. `Transformation 1:N Input`, `1:N Output`; una
 transformación productiva debe tener inputs y outputs coherentes con la
 operación antes de quedar completa. No se elimina.

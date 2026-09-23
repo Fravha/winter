@@ -116,7 +116,7 @@ export const measurementListSchema = z.object({
 }).strict();
 const transformationInputSchema = z.object({ productionBatchId: z.string().uuid(), quantity: positiveQuantity }).strict();
 const transformationOutputSchema = z.object({ articuloId: z.string().uuid(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), observations: z.string().max(2000).optional() }).strict();
-const transformationLossSchema = z.object({ productionBatchId: z.string().uuid().optional(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), operationKey: z.string().trim().min(1).max(200).optional(), requestHash: z.string().trim().min(1).max(500).optional(), observations: z.string().max(2000).optional() }).strict();
+const transformationLossSchema = z.object({ productionBatchId: z.string().uuid().optional(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), observations: z.string().max(2000).optional() }).strict();
 export const transformationCreateSchema = z.object({
   productionOrderId: z.string().uuid(), transformationOrderId: z.string().uuid().optional(), productionWorkId: z.string().uuid().optional(),
   performedAt: z.coerce.date(), observations: z.string().max(2000).optional(),

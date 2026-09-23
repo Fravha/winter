@@ -565,8 +565,9 @@ Permiso `production:read`; path UUID; 200 devuelve transformation completa;
 
 Permisos `production:transformation_create` y, cuando `losses` no está vacío,
 `production:loss_create`. Request:
-`productionOrderId` es obligatorio y `transformationOrderId` es opcional:
-`{"productionOrderId":"11111111-1111-4111-8111-111111111111","transformationOrderId":"44444444-4444-4444-8444-444444444444","performedAt":"2025-01-02T12:00:00.000Z","operationKey":"tr-1","requestHash":"hash-1","inputs":[{"productionBatchId":"22222222-2222-4222-8222-222222222222","quantity":"10.000"}],"outputs":[{"articuloId":"33333333-3333-4333-8333-333333333333","quantity":"9.000","unit":"KG"}],"losses":[{"productionBatchId":"22222222-2222-4222-8222-222222222222","quantity":"1.000","unit":"KG","operationKey":"loss-1","requestHash":"loss-hash"}]}`.
+`productionOrderId` es obligatorio; `transformationOrderId` y
+`productionWorkId` son opcionales:
+`{"productionOrderId":"11111111-1111-4111-8111-111111111111","transformationOrderId":"44444444-4444-4444-8444-444444444444","productionWorkId":"55555555-5555-4555-8555-555555555555","performedAt":"2025-01-02T12:00:00.000Z","operationKey":"tr-1","requestHash":"hash-1","inputs":[{"productionBatchId":"22222222-2222-4222-8222-222222222222","quantity":"10.000"}],"outputs":[{"articuloId":"33333333-3333-4333-8333-333333333333","quantity":"9.000","unit":"KG"}],"losses":[{"productionBatchId":"22222222-2222-4222-8222-222222222222","quantity":"1.000","unit":"KG"}]}`.
 Si se envía `transformationOrderId`, debe existir, pertenecer a
 `productionOrderId` y estar en estado `OPEN`; el backend valida estas tres
 condiciones.
@@ -574,9 +575,10 @@ condiciones.
 unidades `KG|G|L|M|UNIDAD`. 201 devuelve transformation completa con
 `requestHash`. `operationKey`/`requestHash` identifican el comando completo:
 el replay devuelve la Transformation completa cuando el payload coincide y un
-payload distinto produce `IDEMPOTENCY_CONFLICT`. Las claves de cada pérdida
-pueden persistirse como identificadores internos, pero no existe retry por API
-independiente de una pérdida. Errores:
+payload distinto produce `IDEMPOTENCY_CONFLICT`. El request público no recibe
+claves de idempotencia por pérdida; las claves que puedan persistirse en cada
+pérdida son identificadores internos y no existe retry por API independiente
+de una pérdida. Errores:
 balance insuficiente, estado, referencias, `ARTICULOS_API_UNAVAILABLE` e
 `IDEMPOTENCY_CONFLICT`.
 
