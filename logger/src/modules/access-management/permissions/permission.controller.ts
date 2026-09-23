@@ -4,6 +4,7 @@ import type {
   UpdatePermissionInput,
 } from "./permission.repository.js";
 import type { PermissionService } from "./permission.service.js";
+import { buildAuthenticatedAuditContext } from "../../../shared/http/audit-context.js";
 
 type Params = { id: string };
 
@@ -32,7 +33,10 @@ export class PermissionController {
     next: NextFunction,
   ) => {
     try {
-      const permission = await this.service.create(req.body);
+      const permission = await this.service.create(
+        req.body,
+        buildAuthenticatedAuditContext(req, res),
+      );
       res.status(201).json({ data: permission });
     } catch (e) {
       next(e);
@@ -45,7 +49,11 @@ export class PermissionController {
     next: NextFunction,
   ) => {
     try {
-      const permission = await this.service.update(req.params.id, req.body);
+      const permission = await this.service.update(
+        req.params.id,
+        req.body,
+        buildAuthenticatedAuditContext(req, res),
+      );
       res.status(200).json({ data: permission });
     } catch (e) {
       next(e);
@@ -54,7 +62,10 @@ export class PermissionController {
 
   delete = async (req: Request<Params>, res: Response, next: NextFunction) => {
     try {
-      await this.service.delete(req.params.id);
+      await this.service.delete(
+        req.params.id,
+        buildAuthenticatedAuditContext(req, res),
+      );
       res.status(204).send();
     } catch (e) {
       next(e);
