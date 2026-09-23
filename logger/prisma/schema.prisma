@@ -187,6 +187,7 @@ enum ProductionBatchLedgerEntryType {
   SEPARATED
   LOSS
   TRANSFERRED_TO_INVENTORY
+  INVENTORY_RELEASE_RESTORED
 }
 
 model ProductionBatch {
@@ -212,11 +213,45 @@ model ProductionBatch {
   transformationInputs TransformationInput[]
   transformationOutputs TransformationOutput[]
   productionLosses ProductionLoss[]
+  inventoryReleases ProductionInventoryRelease[]
 
   @@index([productionOrderId])
   @@index([articuloId])
   @@index([createdAt])
   @@map("production_batches")
+}
+
+model ProductionInventoryRelease {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productionBatchId  String   @map("production_batch_id") @db.Uuid
+  quantity           Decimal  @db.Decimal(18, 3)
+  unit               String
+  warehouseId        String   @map("warehouse_id") @db.Uuid
+  inventoryLotId     String   @map("inventory_lot_id") @db.Uuid
+  inventoryMovementId String  @map("inventory_movement_id") @db.Uuid
+  operationKey       String   @map("operation_key")
+  actorUserId        String   @map("actor_user_id") @db.Uuid
+  occurredAt         DateTime @map("occurred_at")
+  observations       String?
+  productionBatch    ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Restrict)
+  warehouse          Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  inventoryLot       InventoryLot @relation(fields: [inventoryLotId], references: [id], onDelete: Restrict)
+  reversal           ProductionInventoryReversal?
+  @@index([productionBatchId, occurredAt, id], map: "production_inventory_releases_batch_occurred_id_idx")
+  @@unique([operationKey])
+  @@map("production_inventory_releases")
+}
+
+model ProductionInventoryReversal {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  releaseId          String   @unique @map("release_id") @db.Uuid
+  operationKey       String   @unique @map("operation_key")
+  reason             String
+  actorUserId        String   @map("actor_user_id") @db.Uuid
+  occurredAt         DateTime @map("occurred_at")
+  inventoryMovementId String   @map("inventory_movement_id") @db.Uuid
+  release             ProductionInventoryRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict)
+  @@map("production_inventory_reversals")
 }
 
 model ProductionBatchLedgerEntry {
@@ -865,6 +900,7 @@ model Warehouse {
   productionWorkInputs ProductionWorkInput[]
   sourceMovements InventoryMovement[] @relation("InventoryMovementSourceWarehouse")
   destinationMovements InventoryMovement[] @relation("InventoryMovementDestinationWarehouse")
+  productionInventoryReleases ProductionInventoryRelease[]
   manager         User?               @relation("WarehouseManager", fields: [encargadoUserId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "warehouses_manager_user_id_fkey")
 
   @@map("warehouses")
@@ -883,6 +919,7 @@ model InventoryLot {
   stocks                  InventoryStock[]
   movements               InventoryMovement[]
   productionWorkInputs ProductionWorkInput[]
+  productionInventoryReleases ProductionInventoryRelease[]
   articulo                Articulo                   @relation(fields: [articuloId], references: [id], onDelete: Restrict)
 
   @@unique([articuloId, lotCode])

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
@@ -12,18 +12,21 @@ import { InventoryService } from "../src/modules/inventory/inventory.service.js"
 import { ProductionService } from "../src/modules/production/production.service.js";
 import { ProductionReleaseService } from "../src/modules/production/production.release.js";
 import { canonicalContainerAssignmentRequest } from "../src/modules/production/production.container.js";
+import { createHash } from "node:crypto";
 import { createTrustedIntermoduleContext } from "../src/modules/inventory/inventory.model.js";
-import { createTemporaryProductionDatabaseResource } from "./helpers/production-test-database.js";
-
-const database = createTemporaryProductionDatabaseResource("P9_DATABASE_URL", connectionString => ({ connectionString, createClient: () => new PrismaClient({ adapter: new PrismaPg({ connectionString }) }) }));
-const prisma = database?.createClient();
+const connectionString = process.env.P55A_DATABASE_URL;
+if (!connectionString) throw new Error("P55A_DATABASE_URL is required");
+const parsedDatabaseUrl = new URL(connectionString);
+if (parsedDatabaseUrl.hostname !== "127.0.0.1" || decodeURIComponent(parsedDatabaseUrl.pathname.slice(1)) !== "winter_p55_test") throw new Error("P55A_DATABASE_URL must point to 127.0.0.1/winter_p55_test");
+const database = { connectionString };
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+const stable = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value) : Array.isArray(value) ? `[${value.map(stable).join(",")}]` : `{${Object.keys(value as object).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`;
 let available = false;
 if (prisma) { try { await prisma.$queryRaw`SELECT 1 FROM inventory_lots LIMIT 1`; available = true; } catch { available = false; } }
-if (database && !available) throw new Error("P9_DATABASE_URL was supplied but the P9 migration/database is unavailable");
-const options = available ? {} : { skip: "requires P9_DATABASE_URL with P9 migration applied" };
-const stable = (value: unknown): string => value === null || typeof value !== "object" ? JSON.stringify(value) : Array.isArray(value) ? `[${value.map(stable).join(",")}]` : `{${Object.keys(value as object).sort().map(key => `${JSON.stringify(key)}:${stable((value as Record<string, unknown>)[key])}`).join(",")}}`;
+if (database && !available) throw new Error("P55A_DATABASE_URL was supplied but the P5.5D migration/database is unavailable");
+const options = available ? {} : { skip: "requires P55A_DATABASE_URL with P9 migration applied" };
 
-describe("Production P9 release to inventory", () => {
+describe("Production P5.5D release to inventory", () => {
   const actor = randomUUID();
   const context = { actorUserId: actor, requestId: randomUUID() };
   const articles = prisma ? new ArticuloService(new PrismaArticuloRepository(prisma), new PrismaArticuloUnitOfWork(prisma)) : undefined;
@@ -32,12 +35,12 @@ describe("Production P9 release to inventory", () => {
   before(async () => { if (prisma) await prisma.user.create({ data: { id: actor, firebaseUid: `p9-${actor}`, email: `${actor}@test.invalid`, status: "ACTIVE" } }); });
   after(async () => { await prisma?.$disconnect(); });
 
-  async function fixture(quantity = "10.000", closed = false) {
+  async function fixture(quantity = "10.000", closed = false, unit = "KG") {
     assert.ok(prisma && service && articles);
     const order = await service.createOrder({ code: `P9-O-${randomUUID()}`, startDate: new Date() }, context);
-    const article = await articles.createArticulo({ codigo: `P9-A-${randomUUID()}`, nombre: "Output", clasificacion: "PRODUCTO_TERMINADO", unidadMedida: "KG" }, context);
-    const batch = await service.createBatch({ code: `P9-B-${randomUUID()}`, productionOrderId: order.id, articuloId: article.id, unit: "KG", quantity, operationKey: `p9-create-${randomUUID()}`, requestHash: "fixture" }, context);
-    const warehouse = await prisma.warehouse.create({ data: { codigo: `P9-W-${randomUUID()}`, nombre: "P9" } });
+    const article = await articles.createArticulo({ codigo: `P9-A-${randomUUID()}`, nombre: "Output", clasificacion: "PRODUCTO_TERMINADO", unidadMedida: unit }, context);
+    const batch = await service.createBatch({ code: `P9-B-${randomUUID()}`, productionOrderId: order.id, articuloId: article.id, unit, quantity, operationKey: `p9-create-${randomUUID()}`, requestHash: "fixture" }, context);
+    const warehouse = await prisma.warehouse.create({ data: { codigo: unit === "UNIDAD" ? `PT-${randomUUID()}` : `P9-W-${randomUUID()}`, nombre: "PT" } });
     if (closed) await service.closeOrder(order.id, context);
     return { order, article, batch, warehouse };
   }
@@ -264,5 +267,109 @@ describe("Production P9 release to inventory", () => {
       ledger: await prisma.productionBatchLedgerEntry.count({ where: { productionBatchId: f.batch.id } }),
       operation: await prisma.productionBatchOperation.count(), audit: await prisma.auditLog.count(),
     }, before);
+  });
+  it("Scenario G reverses one release append-only and restores production", options, async () => {
+    assert.ok(service && prisma);
+    const f = await fixture("500.000");
+    const releaseInput = command(f, { quantity: "120.000" });
+    const released = await service.releaseBatchToInventory(releaseInput, context);
+    const reversal = await service.reverseRelease(f.batch.id, released.releaseId, { operationKey: `p55d-reverse-${randomUUID()}`, reason: "quality correction" }, context);
+    assert.equal(reversal.remainingProductionQuantity, "500.000");
+    const stock = await prisma.inventoryStock.findFirstOrThrow({ where: { warehouseId: f.warehouse.id, articuloId: f.article.id, inventoryLotId: released.inventoryLotId } });
+    assert.equal(stock.quantity.toFixed(3), "0.000");
+    assert.equal(await prisma.productionInventoryRelease.count({ where: { id: released.releaseId } }), 1);
+    assert.equal(await prisma.productionInventoryReversal.count({ where: { releaseId: released.releaseId } }), 1);
+    assert.equal(await prisma.inventoryMovement.count({ where: { inventoryLotId: released.inventoryLotId } }), 2);
+    const history = await service.listReleases(f.batch.id);
+    assert.equal(history[0]?.status, "REVERSED");
+    assert.equal(history[0]?.reversible, false);
+    const trace = await service.getBatchTrace(f.batch.id);
+    assert.equal(trace.releases.length, 1);
+    assert.equal(trace.releases[0]?.reversal?.inventoryMovementId, reversal.inventoryMovementId);
+  });
+  it("Scenario F uses PT/UNIDAD and preserves ACTIVE history as reversible", options, async () => {
+    assert.ok(service && prisma);
+    const f = await fixture("500.000", false, "UNIDAD");
+    const releaseInput = command(f, { quantity: "120.000" });
+    const released = await service.releaseBatchToInventory(releaseInput, context);
+    assert.match(f.warehouse.codigo, /^PT-/);
+    assert.equal(released.remainingProductionQuantity, "380.000");
+    const replay = await service.releaseBatchToInventory(releaseInput, context);
+    assert.deepEqual(replay, released);
+    const stock = await prisma.inventoryStock.findFirstOrThrow({ where: { warehouseId: f.warehouse.id, inventoryLotId: released.inventoryLotId } });
+    assert.equal(stock.quantity.toFixed(3), "120.000");
+    assert.equal(stock.unit, "UNIDAD");
+    const history = await service.listReleases(f.batch.id);
+    assert.equal(history.length, 1);
+    assert.equal(history[0]?.status, "ACTIVE");
+    assert.equal(history[0]?.reversible, true);
+    assert.equal(await prisma.inventoryMovement.count({ where: { inventoryLotId: released.inventoryLotId, source: "PRODUCTION_OUTPUT" } }), 1);
+    assert.equal(await prisma.productionBatchLedgerEntry.count({ where: { productionBatchId: f.batch.id, entryType: "TRANSFERRED_TO_INVENTORY" } }), 1);
+    assert.equal(history[0]?.inventoryLot.classification, "PRODUCTO_ENVASADO");
+    const trace = await service.getBatchTrace(f.batch.id);
+    assert.equal(trace.releases.length, 1);
+    assert.equal(trace.releases[0]?.inventoryMovementId, released.inventoryMovementId);
+  });
+  it("release warehouse options exclude inactive warehouses", options, async () => {
+    assert.ok(service && prisma);
+    const inactive = await prisma.warehouse.create({ data: { codigo: `P55D-INACTIVE-${randomUUID()}`, nombre: "Inactive", activo: false } });
+    const options = await service.listInventoryReleaseWarehouses();
+    assert.equal(options.some(option => option.id === inactive.id), false);
+    assert.equal(options.every(option => Object.keys(option).sort().join(",") === "codigo,id,nombre"), true);
+  });
+  it("reversal replay/conflict and independent second reversal are deterministic", options, async () => {
+    assert.ok(service && prisma);
+    const f = await fixture("20.000");
+    const released = await service.releaseBatchToInventory(command(f, { quantity: "5.000" }), context);
+    const input = { operationKey: `p55d-replay-reverse-${randomUUID()}`, reason: "replay" };
+    const first = await service.reverseRelease(f.batch.id, released.releaseId, input, context);
+    const counts = { reverse: await prisma.productionInventoryReversal.count(), movement: await prisma.inventoryMovement.count(), ledger: await prisma.productionBatchLedgerEntry.count({ where: { entryType: "INVENTORY_RELEASE_RESTORED" } }), audit: await prisma.auditLog.count({ where: { action: "PRODUCTION_BATCH_RELEASE_REVERSED" } }) };
+    const second = await service.reverseRelease(f.batch.id, released.releaseId, input, context);
+    assert.deepEqual(second, first);
+    assert.deepEqual({ reverse: await prisma.productionInventoryReversal.count(), movement: await prisma.inventoryMovement.count(), ledger: await prisma.productionBatchLedgerEntry.count({ where: { entryType: "INVENTORY_RELEASE_RESTORED" } }), audit: await prisma.auditLog.count({ where: { action: "PRODUCTION_BATCH_RELEASE_REVERSED" } }) }, counts);
+    await assert.rejects(service.reverseRelease(f.batch.id, released.releaseId, { ...input, reason: "changed" }, context), (error: any) => error.code === "IDEMPOTENCY_CONFLICT");
+    await assert.rejects(service.reverseRelease(f.batch.id, released.releaseId, { operationKey: `${input.operationKey}-second`, reason: "second" }, context), (error: any) => error.code === "RELEASE_ALREADY_REVERSED");
+  });
+  it("concurrent reversal has one compensation and one rejection", options, async () => {
+    assert.ok(service && prisma);
+    const f = await fixture("20.000");
+    const released = await service.releaseBatchToInventory(command(f, { quantity: "5.000" }), context);
+    const attempts = await Promise.allSettled([1, 2].map(i => service.reverseRelease(f.batch.id, released.releaseId, { operationKey: `p55d-concurrent-${randomUUID()}`, reason: `concurrent-${i}` }, context)));
+    assert.equal(attempts.filter(result => result.status === "fulfilled").length, 1);
+    assert.equal(attempts.filter(result => result.status === "rejected").length, 1);
+    assert.equal(await prisma.productionInventoryReversal.count({ where: { releaseId: released.releaseId } }), 1);
+  });
+  it("Failure F rolls back outbound inventory and all production compensation writes", options, async () => {
+    assert.ok(service && prisma);
+    const f = await fixture("20.000");
+    const released = await service.releaseBatchToInventory(command(f, { quantity: "5.000" }), context);
+    const before = { stock: (await prisma.inventoryStock.findFirstOrThrow({ where: { warehouseId: f.warehouse.id, inventoryLotId: released.inventoryLotId } })).quantity.toString(), movements: await prisma.inventoryMovement.count(), reversal: await prisma.productionInventoryReversal.count(), ledger: await prisma.productionBatchLedgerEntry.count(), operations: await prisma.productionBatchOperation.count(), audit: await prisma.auditLog.count() };
+    const failing = new ProductionReleaseService(prisma, inventory!, () => ({ record: async () => { throw new Error("injected reversal audit failure"); } }) as unknown as AuditService);
+    await assert.rejects(failing.reverse(f.batch.id, released.releaseId, { operationKey: `p55d-failure-f-${randomUUID()}`, reason: "rollback" }, context), /injected reversal audit failure/);
+    assert.equal((await prisma.inventoryStock.findFirstOrThrow({ where: { warehouseId: f.warehouse.id, inventoryLotId: released.inventoryLotId } })).quantity.toString(), before.stock);
+    assert.deepEqual({ movements: await prisma.inventoryMovement.count(), reversal: await prisma.productionInventoryReversal.count(), ledger: await prisma.productionBatchLedgerEntry.count(), operations: await prisma.productionBatchOperation.count(), audit: await prisma.auditLog.count() }, { movements: before.movements, reversal: before.reversal, ledger: before.ledger, operations: before.operations, audit: before.audit });
+  });
+  it("append-only guards reject update/delete of releases and reversals", options, async () => {
+    assert.ok(service && prisma);
+    const f = await fixture("10.000");
+    const released = await service.releaseBatchToInventory(command(f), context);
+    await service.reverseRelease(f.batch.id, released.releaseId, { operationKey: `p55d-guard-${randomUUID()}`, reason: "guard" }, context);
+    await assert.rejects(prisma.$executeRaw`UPDATE production_inventory_releases SET observations='tampered' WHERE id=${released.releaseId}`);
+    await assert.rejects(prisma.$executeRaw`DELETE FROM production_inventory_releases WHERE id=${released.releaseId}`);
+    await assert.rejects(prisma.$executeRaw`UPDATE production_inventory_reversals SET reason='tampered' WHERE release_id=${released.releaseId}`);
+    await assert.rejects(prisma.$executeRaw`DELETE FROM production_inventory_reversals WHERE release_id=${released.releaseId}`);
+  });
+  it("Scenario H rejects unsafe reversal without compensating rows or restoration", options, async () => {
+    assert.ok(service && prisma && inventory);
+    const f = await fixture("100.000");
+    const released = await service.releaseBatchToInventory(command(f, { quantity: "20.000" }), context);
+    const stock = await prisma.inventoryStock.findFirstOrThrow({ where: { warehouseId: f.warehouse.id, articuloId: f.article.id, inventoryLotId: released.inventoryLotId } });
+    await inventory.registerOutbound({ articuloId: f.article.id, warehouseId: f.warehouse.id, inventoryLotId: released.inventoryLotId, quantity: "1.000", unit: "KG", source: "P55D_TEST_CONSUMPTION", idempotencyKey: `p55d-consume-${randomUUID()}` }, { ...context, permissions: ["inventory:outbound"] });
+    const movementCount = await prisma.inventoryMovement.count();
+    await assert.rejects(service.reverseRelease(f.batch.id, released.releaseId, { operationKey: `p55d-unsafe-${randomUUID()}`, reason: "unsafe" }, context), (error: any) => error.code === "INSUFFICIENT_EXACT_STOCK");
+    assert.equal(await prisma.inventoryMovement.count(), movementCount);
+    assert.equal((await prisma.productionBatchBalance.findUniqueOrThrow({ where: { productionBatchId: f.batch.id } })).available.toFixed(3), "80.000");
+    assert.equal((await prisma.inventoryStock.findUniqueOrThrow({ where: { id: stock.id } })).quantity.toFixed(3), "19.000");
+    assert.equal(await prisma.productionInventoryReversal.count({ where: { releaseId: released.releaseId } }), 0);
   });
 });

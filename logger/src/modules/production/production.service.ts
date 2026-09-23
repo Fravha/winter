@@ -110,6 +110,9 @@ export class ProductionService {
   getBatch(id: string) { return this.batches.getBatch(id); }
   getBatchBalance(id: string) { return this.batches.getAvailableBatchQuantity(id); }
   releaseBatchToInventory(data: ReleaseBatchInput, context: AuthenticatedAuditContext) { if (!this.releaseService) throw new AppError("INVENTORY_API_UNAVAILABLE", "InventoryApi is required", 500); return this.releaseService.release(data, context); }
+  reverseRelease(batchId: string, releaseId: string, data: { operationKey: string; reason: string }, context: AuthenticatedAuditContext) { if (!this.releaseService) throw new AppError("INVENTORY_API_UNAVAILABLE", "InventoryApi is required", 500); return this.releaseService.reverse(batchId, releaseId, data, context); }
+  listReleases(batchId: string) { if (!this.releaseService) throw new AppError("INVENTORY_API_UNAVAILABLE", "InventoryApi is required", 500); return this.releaseService.list(batchId); }
+  listInventoryReleaseWarehouses() { if (!this.releaseService) throw new AppError("INVENTORY_API_UNAVAILABLE", "InventoryApi is required", 500); return this.releaseService.listActiveWarehouseOptions(); }
   validateBatch(id: string) { return this.batches.validateProductionBatch(id); }
   getBatchLineage(id: string) { return this.batches.lineage(id); }
   createReception(data: ReceptionInput, context: AuthenticatedAuditContext) { if (!this.receptions) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for receptions", 500); return this.receptions.create(data, context); }

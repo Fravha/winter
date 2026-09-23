@@ -44,6 +44,9 @@ export const inventoryRequestFingerprint = (value: unknown): string =>
   createHash("sha256").update(canonical(value)).digest("hex");
 
 export class InventoryService implements InventoryApi {
+  async listActiveWarehouseOptions() {
+    return this.prisma.warehouse.findMany({ where: { activo: true }, select: { id: true, codigo: true, nombre: true }, orderBy: [{ codigo: "asc" }, { id: "asc" }] });
+  }
   private readonly uow: InventoryUnitOfWork;
   constructor(private readonly prisma: PrismaClient, private readonly articulos?: ArticulosApi) { this.uow = new InventoryUnitOfWork(prisma); }
   private async validateArticle(
@@ -398,6 +401,51 @@ export class InventoryService implements InventoryApi {
       const row = stock ? await tx.inventoryStock.update({ where: { id: stock.id }, data: { quantity: formatInventoryQuantity(resulting) } }) : await tx.inventoryStock.create({ data: { warehouseId: input.warehouseId, articuloId: input.articuloId, inventoryLotId: lot.id, quantity: formatInventoryQuantity(resulting), unit: input.unit as InventoryUnit } });
       const movement = await tx.inventoryMovement.create({ data: { type: "INBOUND", source: "PRODUCTION_OUTPUT", reason: null, articuloId: input.articuloId, warehouseId: input.warehouseId, inventoryLotId: lot.id, quantity: formatInventoryQuantity(amount), unit: input.unit as InventoryUnit, stockBefore: formatInventoryQuantity(before), resultingStock: formatInventoryQuantity(resulting), actorUserId: c.actorUserId, negativeStockAuthorized: false } });
       return { inventoryLotId: lot.id, inventoryMovementId: movement.id, warehouseId: input.warehouseId, resultingStock: row.quantity.toString() };
+    });
+  }
+  async reverseProductionOutput(input: { warehouseId: string; articuloId: string; unit: string; quantity: string; inventoryLotId: string; idempotencyKey: string; reason: string }, c: TrustedIntermoduleContext, tx: SharedTransactionContext) {
+    if (!isTrustedIntermoduleContext(c)) throw new AppError("AUTH_FORBIDDEN", "Inventory context is not trusted", 403);
+    const fingerprint = inventoryRequestFingerprint(input);
+    await tx.$queryRaw`SELECT 1::int FROM pg_advisory_xact_lock(hashtext(${input.idempotencyKey}))`;
+    return this.idempotent(tx, input.idempotencyKey, "PRODUCTION_OUTPUT_REVERSAL", fingerprint, async () => {
+      const lot = await tx.inventoryLot.findUnique({ where: { id: input.inventoryLotId } });
+      if (!lot || lot.articuloId !== input.articuloId) throw new AppError("LOT_ARTICULO_MISMATCH", "Inventory lot does not match release", 409);
+      if (lot.classification !== "PRODUCTO_ENVASADO") throw new AppError("INVALID_LOT_CLASSIFICATION", "Only PRODUCTO_ENVASADO output can be reversed", 409);
+      await tx.$queryRaw`SELECT 1::int FROM pg_advisory_xact_lock(hashtext(${"inventory-stock:" + input.warehouseId + ":" + input.articuloId + ":" + lot.id}))`;
+      const stock = await tx.inventoryStock.findFirst({ where: { warehouseId: input.warehouseId, articuloId: input.articuloId, inventoryLotId: lot.id } });
+      const before = parseInventoryQuantity(stock?.quantity.toString() ?? "0");
+      const amount = parseInventoryQuantity(input.quantity);
+      const resulting = before - amount;
+      if (resulting < 0n) throw new AppError("INSUFFICIENT_EXACT_STOCK", "Released inventory is no longer available for reversal", 409);
+      const row = stock ? await tx.inventoryStock.update({ where: { id: stock.id }, data: { quantity: formatInventoryQuantity(resulting) } }) : null;
+      const movement = await tx.inventoryMovement.create({ data: { type: "OUTBOUND", source: "PRODUCTION_OUTPUT_REVERSAL", reason: input.reason, articuloId: input.articuloId, warehouseId: input.warehouseId, inventoryLotId: lot.id, quantity: formatInventoryQuantity(amount), unit: input.unit as InventoryUnit, stockBefore: formatInventoryQuantity(before), resultingStock: formatInventoryQuantity(resulting), actorUserId: c.actorUserId, negativeStockAuthorized: false } });
+      return { inventoryMovementId: movement.id, inventoryLotId: lot.id, warehouseId: input.warehouseId, resultingStock: row?.quantity.toString() ?? "0.000" };
+    });
+  }
+  async isProductionOutputReversible(input: { warehouseId: string; articuloId: string; unit: string; quantity: string; inventoryLotId: string }, c: TrustedIntermoduleContext) {
+    if (!isTrustedIntermoduleContext(c)) throw new AppError("AUTH_FORBIDDEN", "Inventory context is not trusted", 403);
+    const lot = await this.prisma.inventoryLot.findUnique({ where: { id: input.inventoryLotId } });
+    if (!lot || lot.articuloId !== input.articuloId || lot.classification !== "PRODUCTO_ENVASADO") return false;
+    const stock = await this.prisma.inventoryStock.findFirst({ where: { warehouseId: input.warehouseId, articuloId: input.articuloId, inventoryLotId: input.inventoryLotId } });
+    if (!stock || stock.unit !== input.unit) return false;
+    return parseInventoryQuantity(stock.quantity.toString()) >= parseInventoryQuantity(input.quantity);
+  }
+  async areProductionOutputsReversible(inputs: ReadonlyArray<{ warehouseId: string; articuloId: string; unit: string; quantity: string; inventoryLotId: string }>, c: TrustedIntermoduleContext) {
+    if (!isTrustedIntermoduleContext(c)) throw new AppError("AUTH_FORBIDDEN", "Inventory context is not trusted", 403);
+    if (inputs.length === 0) return [];
+    const lotIds = [...new Set(inputs.map(input => input.inventoryLotId))];
+    const warehouseIds = [...new Set(inputs.map(input => input.warehouseId))];
+    const articuloIds = [...new Set(inputs.map(input => input.articuloId))];
+    const [lots, stocks] = await Promise.all([
+      this.prisma.inventoryLot.findMany({ where: { id: { in: lotIds } }, select: { id: true, articuloId: true, classification: true } }),
+      this.prisma.inventoryStock.findMany({ where: { warehouseId: { in: warehouseIds }, articuloId: { in: articuloIds }, inventoryLotId: { in: lotIds } }, select: { warehouseId: true, articuloId: true, inventoryLotId: true, unit: true, quantity: true } }),
+    ]);
+    const lotMap = new Map(lots.map(lot => [lot.id, lot]));
+    const stockMap = new Map(stocks.map(stock => [`${stock.warehouseId}:${stock.articuloId}:${stock.inventoryLotId}`, stock]));
+    return inputs.map(input => {
+      const lot = lotMap.get(input.inventoryLotId);
+      const stock = stockMap.get(`${input.warehouseId}:${input.articuloId}:${input.inventoryLotId}`);
+      return Boolean(lot && lot.articuloId === input.articuloId && lot.classification === "PRODUCTO_ENVASADO" && stock && stock.unit === input.unit && parseInventoryQuantity(stock.quantity.toString()) >= parseInventoryQuantity(input.quantity));
     });
   }
   async transitionInventoryLotClassification(input: { inventoryLotId: string; classification: InventoryLotClassification; idempotencyKey: string }, c: ExecutionContext) {

@@ -9,7 +9,7 @@ import { AppError } from "../../shared/errors/app-error.js";
 import { z } from "zod";
 
 type Db = PrismaClient | SharedTransactionContext;
-type EntryType = "GENERATED" | "CONSUMED" | "SEPARATED" | "LOSS" | "TRANSFERRED_TO_INVENTORY";
+type EntryType = "GENERATED" | "CONSUMED" | "SEPARATED" | "LOSS" | "TRANSFERRED_TO_INVENTORY" | "INVENTORY_RELEASE_RESTORED";
 const quantityPattern = /^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const requireUuid = (value: string, name: string): void => { if (!uuidPattern.test(value)) throw new AppError("INVALID_BATCH_TRANSFORMATION", `${name} must be a UUID`, 400); };
@@ -120,6 +120,7 @@ export class BatchAvailabilityService {
       if (entry.entryType === "SEPARATED") totals.separated = totals.separated.plus(entry.quantity);
       if (entry.entryType === "LOSS") totals.lost = totals.lost.plus(entry.quantity);
       if (entry.entryType === "TRANSFERRED_TO_INVENTORY") totals.transferredToInventory = totals.transferredToInventory.plus(entry.quantity);
+      if (entry.entryType === "INVENTORY_RELEASE_RESTORED") totals.transferredToInventory = totals.transferredToInventory.minus(entry.quantity);
     }
     const available = totals.generated.minus(totals.consumed).minus(totals.separated).minus(totals.lost).minus(totals.transferredToInventory);
     if (available.lt(0)) throw new AppError("INSUFFICIENT_BATCH_QUANTITY", "Batch available quantity cannot be negative", 409);
@@ -163,7 +164,7 @@ export class BatchLedgerService {
     requireText(operationKey, "Operation key");
     requireText(unit, "Unit");
     requireUuid(actorUserId, "Actor user id");
-    if (!["GENERATED", "CONSUMED", "SEPARATED", "LOSS", "TRANSFERRED_TO_INVENTORY"].includes(entryType)) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Unsupported production ledger fact", 400);
+    if (!["GENERATED", "CONSUMED", "SEPARATED", "LOSS", "TRANSFERRED_TO_INVENTORY", "INVENTORY_RELEASE_RESTORED"].includes(entryType)) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Unsupported production ledger fact", 400);
     if (quantity.lte(0) || quantity.decimalPlaces() > 3) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Ledger quantity must be positive with at most three decimal places", 400);
     if (!this.transactional) {
       return new SharedUnitOfWork(this.db as PrismaClient).execute(async tx => new BatchLedgerService(tx, true).append(batchId, entryType, quantity, unit, operationKey, actorUserId, occurredAt, metadata, refs));
@@ -172,7 +173,7 @@ export class BatchLedgerService {
     const batch = await this.db.productionBatch.findUnique({ where: { id: batchId } });
     if (!batch) throw new AppError("BATCH_NOT_FOUND", "Production batch not found", 404);
     if (batch.unit !== unit) throw new AppError("INVALID_BATCH_TRANSFORMATION", "Batch unit does not match operation unit", 409);
-    if (entryType !== "GENERATED") {
+    if (entryType !== "GENERATED" && entryType !== "INVENTORY_RELEASE_RESTORED") {
       const availability = new BatchAvailabilityService(this.db, true);
       const { balance } = await availability.assertAvailable(batchId, quantity, unit);
       const allocations = await this.db.productionContainerOccupancy.findMany({ where: { batchId, closedAt: null }, select: { quantity: true } });

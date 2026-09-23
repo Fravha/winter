@@ -49,8 +49,8 @@ export const releaseBatchSchema = z.object({
   quantity: positiveQuantity, warehouseId: z.string().uuid(), operationKey: code,
   lotCode: code, classification: z.literal("PRODUCTO_ENVASADO"),
   fechaIngreso: z.coerce.date(), observations: z.string().max(2000).optional(),
-  requestHash: z.string().optional(),
 }).strict();
+export const reverseReleaseSchema = z.object({ operationKey: code, reason: z.string().trim().min(1).max(2000) }).strict();
 export const grapeReceptionListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),

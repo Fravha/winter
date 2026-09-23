@@ -43,6 +43,7 @@ describe("Production P9 HTTP contracts and RBAC", () => {
     assert.equal((await request("POST", `/batches/${id}/release-to-inventory`, [], body)).response.status, 403);
     assert.equal((await request("POST", `/batches/not-a-uuid/release-to-inventory`, ["production:inventory_release"], body)).response.status, 400);
     assert.equal((await request("POST", `/batches/${id}/release-to-inventory`, ["production:inventory_release"], { ...body, extra: true })).response.status, 400);
+    assert.equal((await request("POST", `/batches/${id}/release-to-inventory`, ["production:inventory_release"], { ...body, requestHash: "client-supplied" })).response.status, 400);
     assert.equal((await request("POST", `/batches/${id}/release-to-inventory`, ["production:inventory_release"], { ...body, quantity: "0" })).response.status, 400);
     assert.equal((await request("PATCH", `/batches/${id}/release-to-inventory`, ["production:inventory_release"], body)).response.status, 404);
     assert.equal((await request("DELETE", `/batches/${id}/release-to-inventory`, ["production:inventory_release"])).response.status, 404);
