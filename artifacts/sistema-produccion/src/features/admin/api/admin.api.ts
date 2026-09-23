@@ -1,10 +1,21 @@
 import { request } from '@/lib/api/request';
-import type { PermissionAdmin, PermissionInput, PermissionUpdateInput, RoleAdmin, RoleInput, RoleUpdateInput, UserAdmin, UserInput, UserUpdateInput } from '../types';
+import type { AuditLogListResponse, AuditLogQuery, PermissionAdmin, PermissionInput, PermissionUpdateInput, RoleAdmin, RoleInput, RoleUpdateInput, UserAdmin, UserInput, UserUpdateInput } from '../types';
 
 type DataResponse<T> = { data: T };
 const data = <T>(response: DataResponse<T>) => response.data;
 
 export const adminApi = {
+  auditLogs: {
+    list(query: AuditLogQuery = {}, signal?: AbortSignal) {
+      const params = new URLSearchParams();
+      for (const key of ['actorUserId', 'action', 'resourceType', 'resourceId', 'from', 'to', 'page', 'pageSize'] as const) {
+        const value = query[key];
+        if (value !== undefined && value !== '') params.set(key, String(value));
+      }
+      const suffix = params.toString();
+      return request<AuditLogListResponse>(`audit-logs${suffix ? `?${suffix}` : ''}`, { signal });
+    },
+  },
   users: {
     async list(signal?: AbortSignal) { return data(await request<DataResponse<UserAdmin[]>>('users', { signal })); },
     async get(id: string, signal?: AbortSignal) { return data(await request<DataResponse<UserAdmin>>(`users/${id}`, { signal })); },

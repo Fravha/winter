@@ -1,5 +1,40 @@
 export type AdminStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED';
 
+export type AuditLog = {
+  id: string;
+  actorUserId: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  metadata: unknown;
+  ipAddress: string | null;
+  requestId: string | null;
+  createdAt: string;
+};
+
+export type AuditLogQuery = {
+  actorUserId?: string;
+  action?: string;
+  resourceType?: string;
+  resourceId?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type PaginationMeta = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type AuditLogListResponse = {
+  data: AuditLog[];
+  meta: PaginationMeta;
+};
+
 export type PermissionSummary = {
   id: string;
   code: string;

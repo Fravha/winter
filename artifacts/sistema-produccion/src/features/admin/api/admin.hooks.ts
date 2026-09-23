@@ -2,10 +2,20 @@ import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type Us
 import { ApiError } from '@/lib/api/api-error';
 import { adminApi } from './admin.api';
 import { adminKeys } from './admin.keys';
-import type { PermissionAdmin, PermissionInput, PermissionUpdateInput, RoleAdmin, RoleInput, RoleUpdateInput, UserAdmin, UserInput, UserUpdateInput } from '../types';
+import type { AuditLogListResponse, AuditLogQuery, PermissionAdmin, PermissionInput, PermissionUpdateInput, RoleAdmin, RoleInput, RoleUpdateInput, UserAdmin, UserInput, UserUpdateInput } from '../types';
 
 const retryQuery = (count: number, error: Error) => count < 1 && (!(error instanceof ApiError) || error.status === 0 || error.status >= 500);
 type QueryOptions<T> = Omit<UseQueryOptions<T, Error>, 'queryKey' | 'queryFn'>;
+
+export function useAuditLogs(filters: AuditLogQuery, options?: QueryOptions<AuditLogListResponse>) {
+  return useQuery({
+    ...options,
+    queryKey: adminKeys.auditLogs.list(filters),
+    queryFn: ({ signal }) => adminApi.auditLogs.list(filters, signal),
+    retry: options?.retry ?? retryQuery,
+    staleTime: options?.staleTime ?? 30_000,
+  });
+}
 
 export function useUsers(options?: QueryOptions<UserAdmin[]>) {
   return useQuery({ ...options, queryKey: adminKeys.users.all, queryFn: ({ signal }) => adminApi.users.list(signal), retry: options?.retry ?? retryQuery, staleTime: options?.staleTime ?? 30_000 });

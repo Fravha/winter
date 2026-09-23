@@ -1,5 +1,5 @@
 import { Link } from 'wouter';
-import { Users, Shield, Key } from 'lucide-react';
+import { Users, Shield, Key, FileText } from 'lucide-react';
 import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -10,13 +10,14 @@ export default function AdministracionPage() {
   const canViewUsers = can('users:read') || can('users:manage');
   const canViewRoles = can('rbac:read') || can('rbac:manage');
   const canViewPermissions = can('rbac:read') || can('rbac:manage');
+  const canViewAudit = can('audit:read');
 
   return (
     <div className="flex flex-col gap-6 max-w-5xl mx-auto py-6">
       <PageHeader
         eyebrow="Configuración"
         title="Administración"
-        description="Gestión de usuarios, roles y permisos del sistema."
+        description="Gestión de accesos y consulta del historial de acciones del sistema."
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -56,6 +57,20 @@ export default function AdministracionPage() {
                 <CardTitle className="text-xl">Permisos</CardTitle>
                 <CardDescription className="text-sm mt-1">
                   Catálogo de permisos base disponibles para asignar a los roles.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
+
+        {canViewAudit && (
+          <Link href="/administracion/auditoria" className="block hover-elevate rounded-xl group transition-all">
+            <Card className="h-full border-border/50 group-hover:border-primary/30 transition-colors shadow-sm">
+              <CardHeader>
+                <FileText className="w-8 h-8 text-primary mb-3" />
+                <CardTitle className="text-xl">Auditoría</CardTitle>
+                <CardDescription className="text-sm mt-1">
+                  Registro de acciones, cambios y eventos de seguridad del sistema.
                 </CardDescription>
               </CardHeader>
             </Card>

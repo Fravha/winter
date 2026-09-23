@@ -1,4 +1,9 @@
+import type { AuditLogQuery } from '../types';
+
 export const adminKeys = {
+  auditLogs: {
+    list: (filters: AuditLogQuery) => ['admin', 'auditLogs', 'list', filters] as const,
+  },
   users: {
     all: ['admin', 'users'] as const,
     detail: (id: string) => [...adminKeys.users.all, 'detail', id] as const,

@@ -22,6 +22,7 @@ import {
   Users,
   Shield,
   KeyRound,
+  FileText,
 } from 'lucide-react';
 
 type NavItem = {
@@ -55,10 +56,11 @@ const navGroups: NavGroup[] = [
   {
     label: 'ADMINISTRACIÓN',
     items: [
-      { label: 'Administración', href: '/administracion', icon: Settings, permission: ['users:read', 'users:manage', 'rbac:read', 'rbac:manage'] },
+      { label: 'Administración', href: '/administracion', icon: Settings, permission: ['users:read', 'users:manage', 'rbac:read', 'rbac:manage', 'audit:read'] },
       { label: 'Usuarios', href: '/administracion/usuarios', icon: Users, permission: 'users:read' },
       { label: 'Roles', href: '/administracion/roles', icon: Shield, permission: 'rbac:read' },
       { label: 'Permisos', href: '/administracion/permisos', icon: KeyRound, permission: 'rbac:read' },
+      { label: 'Auditoría', href: '/administracion/auditoria', icon: FileText, permission: 'audit:read' },
     ],
   },
 ];

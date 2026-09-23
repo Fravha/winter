@@ -21,6 +21,7 @@ import AdministracionPage from '@/pages/administracion/AdministracionPage';
 import UsuariosPage from '@/pages/administracion/UsuariosPage';
 import RolesPage from '@/pages/administracion/RolesPage';
 import PermisosPage from '@/pages/administracion/PermisosPage';
+import AuditoriaPage from '@/pages/administracion/AuditoriaPage';
 import ProduccionPage from '@/pages/produccion/ProduccionPage';
 import BatchTracePage, { BATCH_TRACE_PERMISSION } from '@/pages/produccion/BatchTracePage';
 import ArticulosPage from '@/pages/articulos/ArticulosPage';
@@ -86,8 +87,14 @@ function ProtectedRoutes() {
             </PermissionGuard>
           </Route>
 
+          <Route path="/administracion/auditoria">
+            <PermissionGuard permission="audit:read" showErrorPage>
+              <AuditoriaPage />
+            </PermissionGuard>
+          </Route>
+
           <Route path="/administracion">
-            <PermissionGuard permission={['users:read', 'users:manage', 'rbac:read', 'rbac:manage']} showErrorPage>
+            <PermissionGuard permission={['users:read', 'users:manage', 'rbac:read', 'rbac:manage', 'audit:read']} showErrorPage>
               <AdministracionPage />
             </PermissionGuard>
           </Route>

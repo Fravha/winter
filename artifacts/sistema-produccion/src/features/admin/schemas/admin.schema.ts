@@ -2,6 +2,20 @@ import { z } from 'zod';
 
 const nonEmpty = (max: number) => z.string().trim().min(1).max(max);
 
+export const auditLogQuerySchema = z.object({
+  actorUserId: z.string().uuid().optional(),
+  action: z.string().trim().min(1).optional(),
+  resourceType: z.string().trim().min(1).optional(),
+  resourceId: z.string().trim().min(1).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  page: z.number().int().positive().default(1),
+  pageSize: z.number().int().positive().max(100).default(20),
+}).refine((query) => !query.from || !query.to || query.from <= query.to, {
+  path: ['from'],
+  message: 'La fecha inicial no puede ser posterior a la final.',
+});
+
 export const createUserSchema = z.object({
   email: z.string().trim().email().max(320),
   roleId: z.string().uuid(),
