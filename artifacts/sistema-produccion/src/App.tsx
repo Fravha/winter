@@ -3,39 +3,86 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import NotFound from '@/pages/not-found';
 import {
   Route,
   Switch,
   useLocation,
   Router as WouterRouter,
 } from 'wouter';
+import { AuthProvider } from '@/auth/AuthContext';
+import { AuthGuard } from '@/components/shared/AuthGuard';
+import { PermissionGuard } from '@/components/shared/PermissionGuard';
+import { AppShell } from '@/components/layout/AppShell';
+
+import LoginPage from '@/pages/auth/LoginPage';
+import HomePage from '@/pages/HomePage';
+import NotFound from '@/pages/not-found';
+import { PlaceholderPage } from '@/pages/PlaceholderPage';
+import ArticulosPage from '@/pages/articulos/ArticulosPage';
+import ComprasPage from '@/pages/compras/ComprasPage';
+import InventarioPage from '@/pages/inventario/InventarioPage';
 
 const queryClient = new QueryClient();
 
-function Home() {
+function ProtectedRoutes() {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Replit Agent is building...
-        </h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Your app will appear here once it's ready.
-        </p>
-      </div>
-    </div>
+    <AuthGuard>
+      <AppShell>
+        <Switch>
+          <Route path="/" component={HomePage} />
+          
+          <Route path="/articulos">
+            <PermissionGuard permission="articulos:read" showErrorPage>
+              <ArticulosPage />
+            </PermissionGuard>
+          </Route>
+
+          <Route path="/compras">
+            <PermissionGuard permission="compras:read" showErrorPage>
+              <ComprasPage />
+            </PermissionGuard>
+          </Route>
+
+          <Route path="/inventario">
+            <PermissionGuard permission="inventory:read" showErrorPage>
+              <InventarioPage />
+            </PermissionGuard>
+          </Route>
+
+          <Route path="/produccion">
+            <PermissionGuard permission="production:read" showErrorPage>
+              <PlaceholderPage 
+                eyebrow="Operaciones"
+                title="Producción"
+                description="Control de órdenes de producción, trabajos, transformaciones y trazabilidad."
+              />
+            </PermissionGuard>
+          </Route>
+          
+          {/* Grouped administracion - using generic routing for these roles */}
+          <Route path="/administracion">
+            <PermissionGuard permission={['users:read', 'rbac:read']} showErrorPage>
+              <PlaceholderPage 
+                eyebrow="Administración"
+                title="Administración"
+                description="Ajustes generales, usuarios, roles y permisos."
+              />
+            </PermissionGuard>
+          </Route>
+
+          <Route component={NotFound} />
+        </Switch>
+      </AppShell>
+    </AuthGuard>
   );
 }
 
 function Router() {
   return (
-    // Keep a shared shell (sidebar, navbar) outside the boundary so it
-    // survives a page crash.
     <RoutedErrorBoundary>
       <Switch>
-        <Route path="/" component={Home} />
-        <Route component={NotFound} />
+        <Route path="/iniciar-sesion" component={LoginPage} />
+        <Route component={ProtectedRoutes} />
       </Switch>
     </RoutedErrorBoundary>
   );
@@ -49,12 +96,14 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
