@@ -2121,3 +2121,8 @@ Production never writes Inventory tables directly. The output lot must be
 unchanged lot metadata. The operation rejects consumption of open container
 allocations, persists a canonical idempotent result, appends the explicit
 transfer ledger fact, rebuilds balance and records the release audit atomically.
+
+P5.5A work inputs are owned by Production while Inventory exclusively writes
+stock and movements. Create and reversal share one serializable transaction,
+canonical request hashes and globally locked operation keys; reversal is a
+compensating INBOUND and never edits the original input fact.

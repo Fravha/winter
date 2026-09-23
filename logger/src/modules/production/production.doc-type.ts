@@ -22,6 +22,8 @@ export const productionDocType: DocType = {
     { code: "production:container_manage", name: "Manage production containers" },
     { code: "production:work_create", name: "Create production work" },
     { code: "production:work_correct", name: "Correct production work" },
+    { code: "production:work_input_create", name: "Create production work inputs" },
+    { code: "production:work_input_reverse", name: "Reverse production work inputs" },
     { code: "production:reception_create", name: "Create grape receptions" },
     { code: "production:measurement_create", name: "Create production measurements" },
     { code: "production:transformation_create", name: "Create production transformations" },

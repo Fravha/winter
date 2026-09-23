@@ -10,7 +10,7 @@ import { ProductionBatchService } from "./production.batch.js";
 import { ProductionContainerService } from "./production.container.js";
 import type { ContainerCreateInput, ContainerMoveInput, ContainerUpdateInput } from "./production.container.js";
 import { ProductionWorkService } from "./production.work.js";
-import type { WorkCreateInput, WorkCorrectionInput } from "./production.work.js";
+import type { WorkCreateInput, WorkCorrectionInput, WorkInputCreate, WorkInputReverse } from "./production.work.js";
 import type { BatchCreateInput, BatchConsumptionInput, BatchListFilters, BatchMergeInput, BatchSplitInput } from "./production.batch.js";
 import { ProductionReceptionService } from "./production.reception.js";
 import type { ReceptionInput } from "./production.reception.js";
@@ -34,7 +34,7 @@ export class ProductionService {
   private readonly releaseService: ProductionReleaseService | undefined;
   private readonly corrections: ProductionCorrectionService;
   private readonly trace: ProductionTraceService;
-  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, articulos?: ArticulosApi, inventory?: InventoryApi) { this.trace = new ProductionTraceService(prisma); this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit); this.measurements = new ProductionMeasurementService(prisma, tx => this.auditIn(tx)); this.corrections = new ProductionCorrectionService(prisma, tx => this.auditIn(tx)); this.releaseService = inventory ? new ProductionReleaseService(prisma, inventory, tx => this.auditIn(tx)) : undefined; if (articulos) { this.receptions = new ProductionReceptionService(prisma, articulos); this.transformations = new ProductionTransformationService(prisma, articulos); } else { this.receptions = undefined as unknown as ProductionReceptionService; this.transformations = undefined as unknown as ProductionTransformationService; } }
+  constructor(private readonly prisma: PrismaClient, private readonly audit: AuditService, articulos?: ArticulosApi, inventory?: InventoryApi) { this.trace = new ProductionTraceService(prisma); this.batches = new ProductionBatchService(prisma, audit); this.containers = new ProductionContainerService(prisma, audit); this.works = new ProductionWorkService(prisma, audit, inventory); this.measurements = new ProductionMeasurementService(prisma, tx => this.auditIn(tx)); this.corrections = new ProductionCorrectionService(prisma, tx => this.auditIn(tx)); this.releaseService = inventory ? new ProductionReleaseService(prisma, inventory, tx => this.auditIn(tx)) : undefined; if (articulos) { this.receptions = new ProductionReceptionService(prisma, articulos); this.transformations = new ProductionTransformationService(prisma, articulos); } else { this.receptions = undefined as unknown as ProductionReceptionService; this.transformations = undefined as unknown as ProductionTransformationService; } }
   private auditIn(tx: SharedTransactionContext): AuditService { return new AuditService(new PrismaAuditRepository(tx)); }
   list(kind: CatalogKind | "work-types" | "measurement-types", f: CatalogFilters) { return new ProductionRepository(this.prisma).list(kindMap[kind], f); }
   async create(kind: CatalogKind, data: CatalogInput, context: AuthenticatedAuditContext) {
@@ -129,6 +129,8 @@ export class ProductionService {
   listWorks(filters: { page?: number | undefined; pageSize?: number | undefined; productionOrderId?: string | undefined; workTypeId?: string | undefined }) { return this.works.list(filters); }
   getWork(id: string) { return this.works.get(id); }
   createWork(data: WorkCreateInput, context: AuthenticatedAuditContext) { return this.works.create(data, context); }
+  createWorkInput(workId: string, data: WorkInputCreate, context: AuthenticatedAuditContext) { return this.works.createInput(workId, data, context); }
+  reverseWorkInput(workId: string, inputId: string, data: WorkInputReverse, context: AuthenticatedAuditContext) { return this.works.reverseInput(workId, inputId, data, context); }
   correctWork(id: string, data: WorkCorrectionInput, context: AuthenticatedAuditContext) { return this.works.correct(id, data, context); }
   createMeasurement(data: MeasurementInput, context: AuthenticatedAuditContext) { return this.measurements.create(data, context); }
   listMeasurements(filters: MeasurementFilters) { return this.measurements.list(filters); }

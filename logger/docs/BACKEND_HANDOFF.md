@@ -273,3 +273,9 @@ El frontend no debe deducir rutas desde documentos históricos, modelos Prisma o
 implementaciones internas. Debe respetar autenticación, permisos, enums,
 representación decimal/fecha, paginación e idempotencia indicados por cada
 documento.
+
+The P5.5A endpoints are `/production/works/:id/inputs` and
+`/production/works/:workId/inputs/:inputId/reverse`. Production never writes
+Inventory tables directly: both commands use trusted Inventory primitives,
+atomic shared transactions, idempotent replay/conflict handling and explicit
+compensating reversal.

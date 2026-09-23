@@ -917,3 +917,8 @@ ningún endpoint nuevo de Inventory.
    implemente división parcial.
 
 Ningún bloqueante se resuelve por inferencia durante la implementación.
+
+P5.5A: `ProductionWorkInput` stores the Inventory movement provenance and
+nullable legacy rows remain non-reversible. Production calls trusted Inventory
+primitives inside the shared unit of work; Inventory owns stock mutation,
+negative-stock authorization and movement audit.

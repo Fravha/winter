@@ -3,7 +3,7 @@ import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
 import type { InventoryApi } from "./inventory.api.js";
 import type { AdjustmentInput, InventoryMovementListInput, InventoryMovementListResult, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
 import { isTrustedIntermoduleContext } from "./inventory.model.js";
-import type { ExecutionContext, InventoryLotClassification, InventoryUnit, TrustedIntermoduleContext } from "./inventory.model.js";
+import type { ExecutionContext, InventoryLotClassification, InventoryUnit, TrustedIntermoduleContext, CommandResult } from "./inventory.model.js";
 import { InventoryUnitOfWork } from "./inventory.unit-of-work.js";
 import type { ArticulosApi } from "../articulos/articulos.api.js";
 import { createHash } from "node:crypto";
@@ -275,6 +275,39 @@ export class InventoryService implements InventoryApi {
   registerOutbound(input: MovementInput, c: ExecutionContext) { return this.movement(input, c, "OUTBOUND", "inventory:outbound"); }
   registerAdjustment(input: AdjustmentInput, c: ExecutionContext) { return this.movement(input, c, "ADJUSTMENT", "inventory:adjust"); }
   registerProductionConsumption(input: MovementInput, c: ExecutionContext) { return this.movement(input, c, "OUTBOUND", "inventory:outbound", undefined, "PRODUCTION_CONSUMPTION"); }
+  private async productionConsumption(input: MovementInput, c: TrustedIntermoduleContext, tx: SharedTransactionContext, reverse: boolean): Promise<CommandResult> {
+    if (!isTrustedIntermoduleContext(c)) throw new AppError("AUTH_FORBIDDEN", "Inventory context is not trusted", 403);
+    await this.validateArticle(input, tx);
+    const amount = parsePositiveInventoryQuantity(input.quantity, input.unit as InventoryUnit);
+    const operation = reverse ? "PRODUCTION_INPUT_REVERSAL" : "PRODUCTION_INPUT_CONSUMPTION";
+    const fingerprint = inventoryRequestFingerprint({ operation, input });
+    await tx.$queryRaw`SELECT 1::int FROM pg_advisory_xact_lock(hashtext(${input.idempotencyKey}))`;
+    return this.idempotent(tx, input.idempotencyKey, operation, fingerprint, async () => {
+      await tx.$queryRaw`SELECT 1::int FROM pg_advisory_xact_lock(hashtext(${"inventory-stock:" + input.warehouseId + ":" + input.articuloId + ":" + (input.inventoryLotId ?? "none")}))`;
+      const warehouse = await tx.warehouse.findUnique({ where: { id: input.warehouseId } });
+      if (!warehouse) throw new AppError("NOT_FOUND", "Warehouse not found", 404);
+      if (!warehouse.activo) throw new AppError("WAREHOUSE_INACTIVE", "Warehouse is inactive", 409);
+      if (input.inventoryLotId) {
+        const lot = await tx.inventoryLot.findUnique({ where: { id: input.inventoryLotId } });
+        if (!lot) throw new AppError("NOT_FOUND", "Inventory lot not found", 404);
+        if (lot.articuloId !== input.articuloId) throw new AppError("LOT_ARTICULO_MISMATCH", "Lot articulo does not match movement articulo", 400);
+      }
+      const existing = await tx.inventoryStock.findFirst({ where: { warehouseId: input.warehouseId, articuloId: input.articuloId, inventoryLotId: input.inventoryLotId ?? null } });
+      const before = parseInventoryQuantity(existing?.quantity?.toString() ?? "0");
+      const resulting = reverse ? before + amount : before - amount;
+      const authorized = input.authorizeNegativeStock === true;
+      if (resulting < 0n && (!authorized || !input.negativeStockReason?.trim())) throw new AppError("NEGATIVE_STOCK_AUTHORIZATION_REQUIRED", "Insufficient stock requires explicit authorization", 409);
+      if (resulting < 0n && !c.permissions.includes("inventory:negative_stock_authorize")) throw new AppError("AUTH_FORBIDDEN", "Negative stock authorization permission is required", 403);
+      const row = existing
+        ? await tx.inventoryStock.update({ where: { id: existing.id }, data: { quantity: formatInventoryQuantity(resulting) } })
+        : await tx.inventoryStock.create({ data: { warehouseId: input.warehouseId, articuloId: input.articuloId, inventoryLotId: input.inventoryLotId ?? null, quantity: formatInventoryQuantity(resulting), unit: input.unit as InventoryUnit } });
+      const movement = await tx.inventoryMovement.create({ data: { type: reverse ? "INBOUND" : "OUTBOUND", source: input.source, reason: input.reason ?? null, articuloId: input.articuloId, warehouseId: input.warehouseId, inventoryLotId: input.inventoryLotId ?? null, quantity: formatInventoryQuantity(amount), unit: input.unit as InventoryUnit, stockBefore: formatInventoryQuantity(before), resultingStock: formatInventoryQuantity(resulting), actorUserId: c.actorUserId, negativeStockAuthorized: resulting < 0n, negativeStockAuthorizerUserId: resulting < 0n ? c.actorUserId : null, negativeStockReason: resulting < 0n ? input.negativeStockReason ?? null : null } });
+      await tx.auditLog.create({ data: { actorUserId: c.actorUserId, action: reverse ? "INVENTORY_PRODUCTION_INPUT_REVERSED" : "INVENTORY_PRODUCTION_INPUT_CONSUMED", resourceType: "InventoryMovement", resourceId: movement.id, requestId: c.requestId ?? null, metadata: { articuloId: input.articuloId, warehouseId: input.warehouseId, inventoryLotId: input.inventoryLotId ?? null, quantity: formatInventoryQuantity(amount) } } });
+      return { movementId: movement.id, articuloId: input.articuloId, inventoryLotId: input.inventoryLotId ?? null, quantity: formatInventoryQuantity(amount), unit: input.unit as InventoryUnit, resultingStock: row.quantity.toString(), createdAt: movement.createdAt };
+    });
+  }
+  consumeProductionInput(input: MovementInput, c: TrustedIntermoduleContext, tx: SharedTransactionContext) { return this.productionConsumption(input, c, tx, false); }
+  reverseProductionInputConsumption(input: MovementInput, c: TrustedIntermoduleContext, tx: SharedTransactionContext) { return this.productionConsumption(input, c, tx, true); }
   async registerTransfer(input: TransferInput, c: ExecutionContext) {
     required(c, "inventory:transfer"); const amount = parsePositiveInventoryQuantity(input.quantity, input.unit as InventoryUnit);
     if (input.sourceWarehouseId === input.destinationWarehouseId) throw new AppError("INVALID_TRANSFER", "Source and destination warehouses must differ", 400);

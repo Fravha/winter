@@ -390,3 +390,7 @@ ledger; estrategia de correcciones; decisión sobre `ProductionWorkInput`;
 contrato transaccional y resultado de Inventory; repetición de variedad; y
 semántica de `SEPARATED`. Las fases que los requieren deben reportarlos como
 bloqueo, no sustituirlos con valores locales.
+
+P5.5A is implemented as backend-only work-input consumption/reversal. The
+operation key is globally advisory-locked and requestHash is the canonical
+SHA-256 of the semantic payload (excluding operationKey/requestHash).

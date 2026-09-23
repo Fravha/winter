@@ -19,6 +19,7 @@ export function buildAuthenticatedAuditContext(
 
   return {
     actorUserId: req.currentUser.id,
+    permissions: req.currentUser.permissions,
     ...(req.ip ? { ipAddress: req.ip } : {}),
     ...(requestId ? { requestId } : {}),
   };

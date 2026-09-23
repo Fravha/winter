@@ -15,6 +15,7 @@ export interface AuditContext {
 
 export interface AuthenticatedAuditContext extends AuditContext {
   actorUserId: string;
+  permissions?: readonly string[];
 }
 
 export interface AuditEvent {

@@ -1,11 +1,12 @@
 import { Router, type RequestHandler } from "express";
+import { z } from "zod";
 import { requirePermission } from "../../core/access-control/authorization.middleware.js";
 import { authenticate, resolveCurrentUser } from "../../core/auth/auth.middleware.js";
 import type { TokenVerifier } from "../../core/auth/auth.types.js";
 import type { UserRepository } from "../../core/users/user.repository.js";
 import { validateRequest } from "../../shared/http/validate-request.js";
 import { ProductionController } from "./production.controller.js";
-  import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema, grapeReceptionSchema, grapeReceptionListSchema, measurementCreateSchema, measurementListSchema, transformationCreateSchema, transformationListSchema, releaseBatchSchema, measurementCorrectionSchema, receptionCorrectionSchema } from "./production.schema.js";
+   import { catalogInputSchema, administrativeCatalogInputSchema, catalogUpdateSchema, idParamsSchema, listSchema, customDefinitionSchema, customDefinitionUpdateSchema, customValueSchema, orderListSchema, productionOrderCreateSchema, transformationOrderCreateSchema, batchListSchema, containerCreateSchema, containerUpdateSchema, workListSchema, workCreateSchema, workCorrectionSchema, workInputSchema, workInputReversalSchema, grapeReceptionSchema, grapeReceptionListSchema, measurementCreateSchema, measurementListSchema, transformationCreateSchema, transformationListSchema, releaseBatchSchema, measurementCorrectionSchema, receptionCorrectionSchema } from "./production.schema.js";
 import type { ProductionService } from "./production.service.js";
 const manage: Record<string, string> = { participants: "production:participant_manage", producers: "production:producer_manage", "grape-varieties": "production:grape_variety_manage", "work-types": "production:work_type_manage", "measurement-types": "production:measurement_type_manage" };
 const transformationPermissions: RequestHandler = (req, res, next) => {
@@ -56,6 +57,8 @@ export function createProductionRouter(verifier: TokenVerifier, users: UserRepos
   router.get("/works", ...auth, requirePermission("production:read"), validateRequest({ query: workListSchema }), controller.listWorks);
   router.get("/works/:id", ...auth, requirePermission("production:read"), validateRequest({ params: idParamsSchema }), controller.getWork);
   router.post("/works", ...auth, requirePermission("production:work_create"), validateRequest({ body: workCreateSchema }), controller.createWork);
+  router.post("/works/:id/inputs", ...auth, requirePermission("production:work_input_create"), validateRequest({ params: idParamsSchema, body: workInputSchema }), controller.createWorkInput);
+  router.post("/works/:workId/inputs/:inputId/reverse", ...auth, requirePermission("production:work_input_reverse"), validateRequest({ params: z.object({ workId: z.string().uuid(), inputId: z.string().uuid() }), body: workInputReversalSchema }), controller.reverseWorkInput);
   router.get("/grape-receptions", ...auth, requirePermission("production:read"), validateRequest({ query: grapeReceptionListSchema }), controller.listReceptions);
   router.get("/grape-receptions/:id", ...auth, requirePermission("production:read"), validateRequest({ params: idParamsSchema }), controller.getReception);
   router.post("/grape-receptions", ...auth, requirePermission("production:reception_create"), validateRequest({ body: grapeReceptionSchema }), controller.createReception);

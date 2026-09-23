@@ -71,6 +71,14 @@ export const workCorrectionSchema = z.object({
   newValue: z.string().nullable(),
   reason: z.string().trim().min(1).max(2000),
 }).strict();
+export const workInputSchema = z.object({
+  articuloId: z.string().uuid(), warehouseId: z.string().uuid(), inventoryLotId: z.string().uuid().optional(),
+  quantity: positiveQuantity, unit: z.enum(["KG", "G", "L", "M", "UNIDAD"]),
+  operationKey: z.string().trim().min(1).max(200), requestHash: z.string().trim().min(1).max(500),
+  observations: z.string().max(2000).optional(), authorizeNegativeStock: z.boolean().optional(),
+  negativeStockReason: z.string().max(2000).optional(),
+}).strict().refine(v => !v.authorizeNegativeStock || Boolean(v.negativeStockReason?.trim()), { message: "negativeStockReason is required when authorizing negative stock", path: ["negativeStockReason"] });
+export const workInputReversalSchema = z.object({ reason: z.string().trim().min(1).max(2000), operationKey: z.string().trim().min(1).max(200), requestHash: z.string().trim().min(1).max(500) }).strict();
 export const correctionSchema = z.object({
   field: z.string().trim().min(1).max(40),
   newValue: z.union([z.string(), z.number(), z.boolean(), z.null()]),

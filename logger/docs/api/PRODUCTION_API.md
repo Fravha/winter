@@ -28,7 +28,8 @@ IDs de path son UUID; cuerpos strict de Zod rechazan campos desconocidos.
 `production:reception_create`, `production:measurement_create`,
 `production:transformation_create`, `production:loss_create`,
 `production:inventory_release`, `production:measurement_correct`,
-`production:reception_correct`.
+`production:reception_correct`, `production:work_input_create`,
+`production:work_input_reverse`.
 
 `code` tiene 1--100 caracteres; `name` y `label`, 1--200. Las cantidades
 son strings no negativas con hasta tres decimales; cantidades de operación
@@ -413,7 +414,25 @@ rutas HTTP registradas.
 
 Work: `{id,productionOrderId,transformationOrderId,workTypeId,performedAt,
 observations,createdByUserId,createdAt,updatedAt,version,batchIds,
-containerIds,participants,corrections}`.
+containerIds,participants,corrections,inputs}`. `inputs` is append-only and
+contains the inventory movement provenance and reversal fields.
+
+### `POST /api/v1/production/works/:id/inputs`
+
+Permiso `production:work_input_create`. Body:
+`{articuloId,warehouseId,inventoryLotId?,quantity,unit,operationKey,requestHash,
+observations?,authorizeNegativeStock?,negativeStockReason?}`. `quantity` is a
+positive decimal string with at most three decimals and `unit` is
+`KG|G|L|M|UNIDAD`; no automatic conversion is performed. The command atomically
+creates an OUTBOUND inventory movement and the work input. Replaying the same
+operation key and request hash returns the same result; a mismatch returns
+`IDEMPOTENCY_CONFLICT`.
+
+### `POST /api/v1/production/works/:workId/inputs/:inputId/reverse`
+
+Permiso `production:work_input_reverse`. Body
+`{reason,operationKey,requestHash}`. A work input can be reversed once; reversal
+creates a compensating INBOUND movement and preserves the original row.
 
 ### `GET /api/v1/production/works`
 
