@@ -18,6 +18,8 @@ import LoginPage from '@/pages/auth/LoginPage';
 import HomePage from '@/pages/HomePage';
 import NotFound from '@/pages/not-found';
 import { PlaceholderPage } from '@/pages/PlaceholderPage';
+import ProduccionPage from '@/pages/produccion/ProduccionPage';
+import BatchTracePage, { BATCH_TRACE_PERMISSION } from '@/pages/produccion/BatchTracePage';
 import ArticulosPage from '@/pages/articulos/ArticulosPage';
 import ComprasPage from '@/pages/compras/ComprasPage';
 import InventarioPage from '@/pages/inventario/InventarioPage';
@@ -30,7 +32,7 @@ function ProtectedRoutes() {
       <AppShell>
         <Switch>
           <Route path="/" component={HomePage} />
-          
+
           <Route path="/articulos">
             <PermissionGuard permission="articulos:read" showErrorPage>
               <ArticulosPage />
@@ -51,18 +53,22 @@ function ProtectedRoutes() {
 
           <Route path="/produccion">
             <PermissionGuard permission="production:read" showErrorPage>
-              <PlaceholderPage 
-                eyebrow="Operaciones"
-                title="Producción"
-                description="Control de órdenes de producción, trabajos, transformaciones y trazabilidad."
-              />
+              <ProduccionPage />
             </PermissionGuard>
           </Route>
-          
+
+          <Route path="/produccion/batches/:batchId/trace">
+            {(params) => (
+              <PermissionGuard permission={BATCH_TRACE_PERMISSION} showErrorPage>
+                <BatchTracePage batchId={params.batchId} />
+              </PermissionGuard>
+            )}
+          </Route>
+
           {/* Grouped administracion - using generic routing for these roles */}
           <Route path="/administracion">
             <PermissionGuard permission={['users:read', 'rbac:read']} showErrorPage>
-              <PlaceholderPage 
+              <PlaceholderPage
                 eyebrow="Administración"
                 title="Administración"
                 description="Ajustes generales, usuarios, roles y permisos."
