@@ -18,5 +18,7 @@ export interface PermissionRepository {
   findByCode(code: string): Promise<PermissionModel | null>;
   create(data: CreatePermissionInput): Promise<PermissionModel>;
   update(id: string, data: UpdatePermissionInput): Promise<PermissionModel>;
+  countRoleAssignments(id: string): Promise<number>;
+  lockForDelete(id: string): Promise<void>;
   delete(id: string): Promise<void>;
 }

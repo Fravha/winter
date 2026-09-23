@@ -15,6 +15,7 @@ const corePermissions = [
   { code: "users:manage", name: "Manage users" },
   { code: "rbac:read", name: "Read roles and permissions" },
   { code: "rbac:manage", name: "Manage roles and permissions" },
+  { code: "audit:read", name: "Read audit logs" },
 ] as const;
 
 const permissions = [

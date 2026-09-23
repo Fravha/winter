@@ -5,10 +5,12 @@ import { authenticate, resolveCurrentUser } from "../../../core/auth/auth.middle
 import type { TokenVerifier } from "../../../core/auth/auth.types.js";
 import type { UserRepository } from "../../../core/users/user.repository.js";
 import type { PrismaClient } from "../../../generated/prisma/client.js";
+import type { AuditService } from "../../../core/audit/audit.service.js";
 import { validateRequest } from "../../../shared/http/validate-request.js";
 import { PermissionController } from "./permission.controller.js";
 import { PermissionService } from "./permission.service.js";
 import { PrismaPermissionRepository } from "./prisma-permission.repository.js";
+import { PrismaPermissionUnitOfWork } from "./permission.unit-of-work.js";
 
 const idParams = z.object({ id: z.string().uuid() });
 
@@ -39,9 +41,14 @@ export function createPermissionRouter(
   client: PrismaClient,
   tokenVerifier: TokenVerifier,
   userRepository: UserRepository,
+  auditService: AuditService,
 ) {
   const controller = new PermissionController(
-    new PermissionService(new PrismaPermissionRepository(client)),
+    new PermissionService(
+      new PrismaPermissionRepository(client),
+      auditService,
+      new PrismaPermissionUnitOfWork(client),
+    ),
   );
   const router = Router();
   const auth = [authenticate(tokenVerifier), resolveCurrentUser(userRepository)] as const;
