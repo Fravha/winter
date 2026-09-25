@@ -51,6 +51,7 @@ const navGroups: NavGroup[] = [
       { label: 'Compras', href: '/compras', icon: ShoppingCart, permission: 'compras:read' },
       { label: 'Inventario', href: '/inventario', icon: Boxes, permission: 'inventory:read' },
       { label: 'Producción', href: '/produccion', icon: Factory, permission: 'production:read' },
+      { label: 'Reportes', href: '/reportes', icon: FileText, permission: 'reports:export' },
     ],
   },
   {

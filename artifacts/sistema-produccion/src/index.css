@@ -459,3 +459,23 @@
     inset: -1px;
   }
 }
+
+/* Reports: an operational archive in Winter's parchment and claret language. */
+.reportes-page { max-width: 1240px; margin: 0 auto; padding: 28px 24px 72px; }
+.reportes-intro { display: flex; align-items: end; justify-content: space-between; gap: 40px; padding: 34px 38px; margin: 8px 0 34px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-radius: 10px; }
+.reportes-kicker { font-size: 10px; letter-spacing: .2em; font-weight: 700; opacity: .72; }
+.reportes-intro h2 { font-family: var(--app-font-serif); font-size: clamp(28px, 3.2vw, 44px); line-height: 1.15; margin-top: 12px; letter-spacing: -.025em; }
+.reportes-intro h2 em { font-weight: 400; }
+.reportes-intro p { font-size: 13px; line-height: 1.75; max-width: 295px; opacity: .8; }
+.reportes-section-title { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid hsl(var(--border)); padding-bottom: 12px; margin-bottom: 18px; color: hsl(var(--muted-foreground)); font-size: 10px; letter-spacing: .16em; font-weight: 700; }
+.reportes-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.report-card { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 25px 28px 24px; }
+.report-card-featured { border-top: 3px solid hsl(var(--accent)); }
+.report-card-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 17px; }
+.report-card-index { font-size: 10px; letter-spacing: .16em; color: hsl(var(--muted-foreground)); font-weight: 700; }
+.report-card-note { border-left: 2px solid hsl(var(--accent)); padding-left: 10px; margin-top: 13px; font-size: 12px; color: hsl(var(--muted-foreground)); }
+.report-card-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 15px 16px; margin-top: 24px; }
+.report-card-footer { border-top: 1px solid hsl(var(--border)); padding-top: 19px; margin-top: 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.reportes-footnote { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 24px; }
+@media (max-width: 850px) { .reportes-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .reportes-page { padding: 22px 16px 60px; } .reportes-intro { padding: 28px 24px; display: block; } .reportes-intro p { margin-top: 18px; } .report-card { padding: 22px 18px; } .report-card-fields { grid-template-columns: 1fr; } }

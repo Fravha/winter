@@ -27,6 +27,7 @@ import BatchTracePage, { BATCH_TRACE_PERMISSION } from '@/pages/produccion/Batch
 import ArticulosPage from '@/pages/articulos/ArticulosPage';
 import ComprasPage from '@/pages/compras/ComprasPage';
 import InventarioPage from '@/pages/inventario/InventarioPage';
+import ReportesPage from '@/pages/reportes/ReportesPage';
 
 const queryClient = new QueryClient();
 
@@ -58,6 +59,12 @@ function ProtectedRoutes() {
           <Route path="/produccion">
             <PermissionGuard permission="production:read" showErrorPage>
               <ProduccionPage />
+            </PermissionGuard>
+          </Route>
+
+          <Route path="/reportes">
+            <PermissionGuard permission="reports:export" showErrorPage>
+              <ReportesPage />
             </PermissionGuard>
           </Route>
 
