@@ -25,8 +25,19 @@ tipo de reporte y filtros (sin contenido del archivo).
 - CORS expone `Content-Disposition` para que clientes web puedan leer el nombre
   sugerido del archivo.
 - Los workbooks congelan la primera fila, incluyen autofiltro, encabezados
-  humanos y hojas vacías con sus encabezados. Valores decimales se escriben como
-  texto para preservar todos sus dígitos, sin cálculos en punto flotante.
+  humanos y hojas vacías con sus encabezados. Cantidades, precios y subtotales
+  que caben en los 15 dígitos significativos de Excel son celdas numéricas,
+  aptas para SUMA y tablas dinámicas; los valores mayores siguen como texto
+  exacto para evitar redondearlos. El subtotal se calcula primero con
+  aritmética decimal exacta, antes de decidir el tipo de celda. Las columnas
+  numéricas son `quantity`, `unitPrice`, `subtotal`, `generated`, `consumed`,
+  `separated`, `lost`, `transferredToInventory`, `available`, `capacity`,
+  `stockBefore`, `resultingStock` y `value` (mediciones); conservan texto solo
+  cuando superan esa precisión. Los formatos muestran 3 decimales de dominio,
+  o 6 para subtotales/mediciones. Fechas son fechas Excel; identificadores,
+  códigos y descripciones permanecen como texto. Para sumar una columna que
+  contenga excepciones grandes en texto hay que tratarlas por separado, nunca
+  asumir que Excel las agregó al total.
 - IDs técnicos se incluyen como columnas secundarias.
 - `from` y `to`, cuando estén disponibles, aceptan únicamente `YYYY-MM-DD`.
   Son días UTC inclusivos: `from` empieza a las 00:00:00 UTC y `to` termina

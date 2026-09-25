@@ -174,6 +174,23 @@ describe("Reports HTTP export contract", () => {
     assert.equal((await firstExport).status, 200);
   });
 
+  it("releases the export slot after a failed workbook generation", async () => {
+    let attempts = 0;
+    const reports = {
+      ...(testReports as unknown as Record<string, unknown>),
+      async exportStock() {
+        attempts += 1;
+        if (attempts === 1) throw new Error("XLSX generation failed");
+        return { filename: "report.xlsx", content: await emptyWorkbook() };
+      },
+    } as unknown as ReportsApi;
+    const first = await request("/stock/export", { permissions: ["reports:export"], reports });
+    assert.equal(first.status, 500);
+    const second = await request("/stock/export", { permissions: ["reports:export"], reports });
+    assert.equal(second.status, 200);
+    assert.equal(attempts, 2);
+  });
+
   it("rejects malformed filters and does not allow actorUserId as caller-supplied identity", async () => {
     calls.length = 0;
     assert.equal((await request("/inventory-movements/export?from=2025-02-01&to=2025-01-01", { permissions: ["reports:export"] })).status, 400);

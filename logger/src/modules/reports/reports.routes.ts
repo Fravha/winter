@@ -19,21 +19,20 @@ import {
 import { ReportsController } from "./reports.controller.js";
 
 let activeExports = 0;
-const exportConcurrencyLimit: RequestHandler = (_request, response, next) => {
+const guardExport = (handler: RequestHandler): RequestHandler => async (request, response, next) => {
   if (activeExports >= 1) {
     next(new AppError("REPORT_EXPORT_BUSY", "Another report export is already being generated. Retry when it has completed.", 429));
     return;
   }
   activeExports += 1;
-  let released = false;
-  const release = () => {
-    if (released) return;
-    released = true;
+  try {
+    await handler(request, response, next);
+  } catch (error) {
+    next(error);
+  } finally {
+    // Keep the slot until generation finishes, even if the client disconnects.
     activeExports -= 1;
-  };
-  response.once("finish", release);
-  response.once("close", release);
-  next();
+  }
 };
 
 export function createReportsRouter(
@@ -54,11 +53,11 @@ export function createReportsRouter(
   router.get("/options/work-types", ...auth, exportPermission, validateRequest({ query: reportOptionsQuerySchema }), controller.workTypes);
   router.get("/options/containers", ...auth, exportPermission, validateRequest({ query: reportOptionsQuerySchema }), controller.containers);
 
-  router.get("/stock/export", ...auth, exportPermission, validateRequest({ query: stockQuerySchema }), exportConcurrencyLimit, controller.stock);
-  router.get("/inventory-movements/export", ...auth, exportPermission, validateRequest({ query: inventoryMovementsQuerySchema }), exportConcurrencyLimit, controller.inventoryMovements);
-  router.get("/purchases/export", ...auth, exportPermission, validateRequest({ query: purchasesQuerySchema }), exportConcurrencyLimit, controller.purchases);
-  router.get("/production-works/export", ...auth, exportPermission, validateRequest({ query: productionWorksQuerySchema }), exportConcurrencyLimit, controller.productionWorks);
-  router.get("/transformations/export", ...auth, exportPermission, validateRequest({ query: transformationsQuerySchema }), exportConcurrencyLimit, controller.transformations);
-  router.get("/traceability/export", ...auth, exportPermission, validateRequest({ query: traceabilityQuerySchema }), exportConcurrencyLimit, controller.traceability);
+  router.get("/stock/export", ...auth, exportPermission, validateRequest({ query: stockQuerySchema }), guardExport(controller.stock));
+  router.get("/inventory-movements/export", ...auth, exportPermission, validateRequest({ query: inventoryMovementsQuerySchema }), guardExport(controller.inventoryMovements));
+  router.get("/purchases/export", ...auth, exportPermission, validateRequest({ query: purchasesQuerySchema }), guardExport(controller.purchases));
+  router.get("/production-works/export", ...auth, exportPermission, validateRequest({ query: productionWorksQuerySchema }), guardExport(controller.productionWorks));
+  router.get("/transformations/export", ...auth, exportPermission, validateRequest({ query: transformationsQuerySchema }), guardExport(controller.transformations));
+  router.get("/traceability/export", ...auth, exportPermission, validateRequest({ query: traceabilityQuerySchema }), guardExport(controller.traceability));
   return router;
 }

@@ -11,7 +11,7 @@ import type { ProductionBatchTraceDto } from "../src/modules/production/producti
 import { AppError } from "../src/shared/errors/app-error.js";
 import { MAX_REPORT_ROWS } from "../src/shared/reports/report-limits.js";
 import { ReportsService } from "../src/modules/reports/reports.service.js";
-import { addReportSheet, createReportWorkbook } from "../src/modules/reports/reports.workbook.js";
+import { addReportSheet, createReportWorkbook, workbookBuffer } from "../src/modules/reports/reports.workbook.js";
 
 const ids = {
   warehouse: "00000000-0000-4000-8000-000000000001",
@@ -201,7 +201,7 @@ describe("Reports Excel exports", () => {
     assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Stock actual"]);
     const sheet = workbook.getWorksheet("Stock actual")!;
     assert.equal(sheet.getRow(1).getCell(1).value, "Almacén código");
-    assert.equal(sheet.getRow(2).getCell(8).value, "1.375");
+    assert.equal(sheet.getRow(2).getCell(8).value, 1.375);
     assert.equal(sheet.getRow(2).getCell(1).value, "ALM-1");
     assert.equal((calls[0]?.filters as { warehouseId: string }).warehouseId, ids.warehouse);
   });
@@ -215,7 +215,7 @@ describe("Reports Excel exports", () => {
     assert.equal(sheet.getRow(2).getCell(1).value instanceof Date, true);
     assert.equal(sheet.getRow(2).getCell(8).value, "Bodega");
     assert.equal(sheet.getRow(2).getCell(10).value, "Depósito");
-    assert.equal(sheet.getRow(2).getCell(6).value, "2.125");
+    assert.equal(sheet.getRow(2).getCell(6).value, 2.125);
     const filters = calls[0]?.filters as { from: Date; toExclusive: Date; movementType: string };
     assert.equal(filters.from.toISOString(), "2025-04-05T00:00:00.000Z");
     assert.equal(filters.toExclusive.toISOString(), "2025-04-06T00:00:00.000Z");
@@ -227,7 +227,8 @@ describe("Reports Excel exports", () => {
     const workbook = await load(await service.exportPurchases({ supplier: "Proveedor" }, context));
     const sheet = workbook.getWorksheet("Compras")!;
     assert.equal(sheet.rowCount, 3);
-    assert.equal(sheet.getRow(2).getCell(11).value, "0.3125");
+    assert.equal(sheet.getRow(2).getCell(11).value, 0.3125);
+    assert.equal(sheet.getRow(2).getCell(10).value, 2.5);
     assert.equal(sheet.getRow(3).getCell(10).value, null);
     assert.equal(sheet.getRow(2).getCell(5).value, "VIN-01");
     assert.equal(sheet.getRow(1).getCell(13).value, "Fecha recepción del ítem (UTC)");
@@ -252,6 +253,31 @@ describe("Reports Excel exports", () => {
     assert.equal(workbook.worksheets.length, 0);
   });
 
+  it("exports safe decimals as numbers and preserves oversized decimals as exact text", async () => {
+    const workbook = createReportWorkbook();
+    addReportSheet(workbook, "Decimal precision", [
+      { header: "Quantity", key: "quantity" },
+      { header: "Price", key: "unitPrice" },
+      { header: "Subtotal", key: "subtotal" },
+      { header: "Code", key: "code" },
+    ], [
+      { quantity: "123456789012.345", unitPrice: "0.125", subtotal: "0.3125", code: "000123" },
+      { quantity: "123456789012345.678", unitPrice: "999999999999999.999", subtotal: "123456789012345678.901234", code: "000456" },
+    ]);
+    const loaded = new ExcelJS.Workbook();
+    await loaded.xlsx.load(await workbookBuffer(workbook));
+    const sheet = loaded.getWorksheet("Decimal precision")!;
+    assert.equal(sheet.getRow(2).getCell(1).value, 123456789012.345);
+    assert.equal(sheet.getRow(2).getCell(2).value, 0.125);
+    assert.equal(sheet.getRow(2).getCell(3).value, 0.3125);
+    assert.equal(sheet.getRow(2).getCell(4).value, "000123");
+    assert.equal(sheet.getRow(3).getCell(1).value, "123456789012345.678");
+    assert.equal(sheet.getRow(3).getCell(2).value, "999999999999999.999");
+    assert.equal(sheet.getRow(3).getCell(3).value, "123456789012345678.901234");
+    assert.equal(sheet.getRow(2).getCell(1).numFmt, "#,##0.000");
+    assert.equal(sheet.getRow(2).getCell(3).numFmt, "#,##0.000000");
+  });
+
   it("preserves N:N work relationships in dedicated sheets", async () => {
     const { service, calls } = makeService();
     const workbook = await load(await service.exportProductionWorks({
@@ -260,7 +286,7 @@ describe("Reports Excel exports", () => {
     }, context));
     assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Trabajos", "Batches", "Recipientes", "Participantes", "Insumos"]);
     assert.equal(workbook.getWorksheet("Batches")!.rowCount, 3);
-    assert.equal(workbook.getWorksheet("Insumos")!.getRow(2).getCell(5).value, "0.125");
+    assert.equal(workbook.getWorksheet("Insumos")!.getRow(2).getCell(5).value, 0.125);
     assert.equal((calls[0]?.filters as { containerId: string }).containerId, ids.container);
   });
 
@@ -268,7 +294,7 @@ describe("Reports Excel exports", () => {
     const { service } = makeService();
     const workbook = await load(await service.exportTransformations({ productionBatchId: ids.batch }, context));
     assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Transformaciones", "Entradas", "Salidas", "Pérdidas"]);
-    assert.equal(workbook.getWorksheet("Entradas")!.getRow(2).getCell(3).value, "1.125");
+    assert.equal(workbook.getWorksheet("Entradas")!.getRow(2).getCell(3).value, 1.125);
     assert.equal(workbook.getWorksheet("Salidas")!.getRow(2).getCell(2).value, "BATCH-8");
     assert.equal(workbook.getWorksheet("Pérdidas")!.getRow(2).getCell(4).value, "L");
   });
