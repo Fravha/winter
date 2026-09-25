@@ -15,6 +15,7 @@ import { createRoutes } from "./routes/index.js";
 import { errorHandler } from "./shared/http/error-handler.js";
 import { notFoundHandler } from "./shared/http/not-found-handler.js";
 import { requestContext } from "./shared/http/request-context.js";
+import { createCorsOptions } from "./shared/http/cors-options.js";
 
 export function createApp(config: AppConfig = env) {
   const app = express();
@@ -28,13 +29,7 @@ export function createApp(config: AppConfig = env) {
   app.set("trust proxy", config.TRUST_PROXY);
   app.use(requestContext);
   app.use(helmet());
-  app.use(cors({
-    origin(origin, callback) {
-      if (!origin || config.corsOrigins.includes(origin)) return callback(null, true);
-      return callback(null, false);
-    },
-    credentials: true,
-  }));
+  app.use(cors(createCorsOptions(config.corsOrigins)));
   app.use(rateLimit({
     windowMs: config.RATE_LIMIT_WINDOW_MS,
     limit: config.RATE_LIMIT_MAX,

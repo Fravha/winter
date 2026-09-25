@@ -4,6 +4,7 @@ import { inventoryDocType } from "../inventory/inventory.doc-type.js";
 import { compraDocType } from "../compras/compra.doc-type.js";
 import { productionDocType } from "../production/production.doc-type.js";
 import { attachmentDocType } from "../attachments/attachment.doc-type.js";
+import { reportsDocType } from "../reports/reports.doc-type.js";
 
 export const businessDocTypes: readonly DocType[] = [
   articuloDocType,
@@ -11,4 +12,5 @@ export const businessDocTypes: readonly DocType[] = [
   compraDocType,
   productionDocType,
   attachmentDocType,
+  reportsDocType,
 ];

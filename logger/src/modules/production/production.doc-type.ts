@@ -5,7 +5,8 @@ import { ArticuloService } from "../articulos/articulo.service.js";
 import { PrismaArticuloRepository } from "../articulos/prisma-articulo.repository.js";
 import { PrismaArticuloUnitOfWork } from "../articulos/prisma-articulo.unit-of-work.js";
 import { InventoryService } from "../inventory/inventory.service.js";
-export const productionDocType: DocType = {
+import type { ProductionApi } from "./production.api.js";
+export const productionDocType: DocType<ProductionApi> = {
   name: "production", route: "/production",
   permissions: [
     { code: "production:read", name: "Read production catalogs" },

@@ -34,6 +34,31 @@ export interface ListComprasDto {
   status?: CompraStatus;
 }
 
+export interface ComprasReportFilters {
+  from?: Date;
+  toExclusive?: Date;
+  status?: CompraStatus;
+  supplier?: string;
+  articuloId?: string;
+}
+
+export interface CompraReportRow {
+  compraId: string;
+  documentNumber: string | null;
+  date: Date;
+  itemReceivedAt: Date | null;
+  status: CompraStatus;
+  supplierName: string;
+  articuloId: string;
+  articuloCodigo: string;
+  articuloNombre: string;
+  brand: string | null;
+  quantity: string;
+  unit: CompraUnit;
+  unitPrice: string | null;
+  currency: string | null;
+}
+
 export interface ReceiveCompraItemDto {
   compraItemId: string;
   inventoryLotId?: string;

@@ -29,6 +29,7 @@ export const orderListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   status: z.enum(["OPEN", "CLOSED"]).optional(),
+  search: z.string().trim().min(1).max(100).optional(),
 }).strict();
 export const productionOrderCreateSchema = z.object({
   code, startDate: z.coerce.date(), observations: z.string().max(2000).optional(),
@@ -40,6 +41,7 @@ export const transformationOrderCreateSchema = z.object({
 export const batchListSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().trim().min(1).max(100).optional(),
   articuloId: z.string().uuid().optional(),
   productionOrderId: z.string().uuid().optional(),
 }).strict();

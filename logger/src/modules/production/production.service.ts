@@ -4,6 +4,11 @@ import type { AuthenticatedAuditContext } from "../../core/audit/audit.types.js"
 import { isSerializationConflict, SharedUnitOfWork } from "../../core/database/shared-unit-of-work.js";
 import type { SharedTransactionContext } from "../../core/database/shared-unit-of-work.js";
 import { AppError } from "../../shared/errors/app-error.js";
+import {
+  assertReportRecordLimit,
+  MAX_REPORT_RELATED_RECORDS,
+  MAX_REPORT_ROOT_RECORDS,
+} from "../../shared/reports/report-limits.js";
 import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
 import { ProductionRepository } from "./production.repository.js";
 import { ProductionBatchService } from "./production.batch.js";
@@ -22,9 +27,10 @@ import { ProductionMeasurementService, type MeasurementInput, type MeasurementFi
 import { ProductionCorrectionService } from "./production.corrections.js";
 import { ProductionTraceService } from "./production.trace.js";
 import { ProductionTransformationService, type TransformationCreateInput } from "./production.transformation.js";
+import type { ProductionApi, ProductionOptionFilters, ProductionReportFilters, ProductionReportTransformation, ProductionReportWork } from "./production.api.js";
 import type { CatalogFilters, CatalogInput, CatalogKind, OrderFilters, ProductionOrderInput, TransformationOrderInput } from "./production.dto.js";
 const kindMap = { participants: "participants", producers: "producers", "grape-varieties": "grape-varieties", "work-types": "work-types", "measurement-types": "measurement-types" } as const;
-export class ProductionService {
+export class ProductionService implements ProductionApi {
   private readonly batches: ProductionBatchService;
   private readonly containers: ProductionContainerService;
   private readonly works: ProductionWorkService;
@@ -102,6 +108,54 @@ export class ProductionService {
   getOrder(id: string) { return new ProductionRepository(this.prisma).findOrder(id); }
   listTransformationOrders(filters: OrderFilters) { return new ProductionRepository(this.prisma).listTransformationOrders(filters); }
   getTransformationOrder(id: string) { return new ProductionRepository(this.prisma).findTransformationOrder(id); }
+  async queryReportOrderOptions(type: "production" | "transformation", filters: ProductionOptionFilters) {
+    const result = type === "production"
+      ? await this.listOrders(filters)
+      : await this.listTransformationOrders(filters);
+    return {
+      items: result.items.map(({ id, code, status }) => ({ id, code, status })),
+      pagination: result.pagination,
+    };
+  }
+  async queryReportBatchOptions(filters: ProductionOptionFilters) {
+    const result = await this.listBatches(filters);
+    return {
+      items: result.items.map(({ id, code, productionOrderId, articuloId }) => ({ id, code, productionOrderId, articuloId })),
+      pagination: result.pagination,
+    };
+  }
+  async queryReportWorkTypeOptions(filters: ProductionOptionFilters) {
+    const result = await this.list("work-types", {
+      page: filters.page,
+      pageSize: filters.pageSize,
+      ...(filters.search === undefined ? {} : { search: filters.search }),
+      active: true,
+    });
+    return {
+      items: result.items.map(({ id, code, name }) => ({ id, code, name })),
+      pagination: result.pagination,
+    };
+  }
+  async queryReportContainerOptions(filters: ProductionOptionFilters) {
+    const where = filters.search ? {
+      OR: [
+        { code: { contains: filters.search, mode: "insensitive" as const } },
+        { name: { contains: filters.search, mode: "insensitive" as const } },
+      ],
+    } : {};
+    const [items, total] = await Promise.all([
+      this.prisma.productionContainer.findMany({
+        where, skip: (filters.page - 1) * filters.pageSize, take: filters.pageSize,
+        select: { id: true, code: true, name: true, status: true },
+        orderBy: [{ code: "asc" }, { id: "asc" }],
+      }),
+      this.prisma.productionContainer.count({ where }),
+    ]);
+    return {
+      items,
+      pagination: { page: filters.page, pageSize: filters.pageSize, total, totalPages: Math.ceil(total / filters.pageSize) },
+    };
+  }
   createBatch(data: BatchCreateInput, context: AuthenticatedAuditContext) { return this.batches.createBatch(data, context); }
   consumeBatch(data: BatchConsumptionInput, context: AuthenticatedAuditContext) { return this.batches.consumeBatch(data, context); }
   splitBatch(data: BatchSplitInput, context: AuthenticatedAuditContext) { return this.batches.splitBatch(data, context); }
@@ -141,6 +195,139 @@ export class ProductionService {
   correctMeasurement(id: string, data: any, context: AuthenticatedAuditContext) { return this.corrections.correctMeasurement(id, data, context); }
   correctReception(id: string, data: any, context: AuthenticatedAuditContext) { return this.corrections.correctReception(id, data, context); }
   getBatchTrace(id: string) { return this.trace.get(id); }
+  async queryWorksForReport(filters: ProductionReportFilters): Promise<readonly ProductionReportWork[]> {
+    const dateFilter = filters.from || filters.toExclusive
+      ? { ...(filters.from ? { gte: filters.from } : {}), ...(filters.toExclusive ? { lt: filters.toExclusive } : {}) }
+      : undefined;
+    const rows = await this.prisma.productionWork.findMany({
+      where: {
+        ...(filters.productionOrderId ? { productionOrderId: filters.productionOrderId } : {}),
+        ...(filters.transformationOrderId ? { transformationOrderId: filters.transformationOrderId } : {}),
+        ...(filters.workTypeId ? { workTypeId: filters.workTypeId } : {}),
+        ...(dateFilter ? { performedAt: dateFilter } : {}),
+        ...(filters.productionBatchId ? { batches: { some: { productionBatchId: filters.productionBatchId } } } : {}),
+        ...(filters.containerId ? { containers: { some: { productionContainerId: filters.containerId } } } : {}),
+      },
+      take: MAX_REPORT_ROOT_RECORDS + 1,
+      select: {
+        id: true,
+        performedAt: true,
+        observations: true,
+        productionOrder: { select: { id: true, code: true } },
+        transformationOrder: { select: { id: true, code: true } },
+        workType: { select: { id: true, code: true, name: true } },
+        createdBy: { select: { id: true, displayName: true } },
+        batches: { take: MAX_REPORT_RELATED_RECORDS + 1, select: { productionBatchId: true, productionBatch: { select: { code: true } } } },
+        containers: { take: MAX_REPORT_RELATED_RECORDS + 1, select: { productionContainerId: true, productionContainer: { select: { code: true, name: true } } } },
+        participants: { take: MAX_REPORT_RELATED_RECORDS + 1, select: { productionParticipantId: true, role: true, productionParticipant: { select: { code: true, name: true } } } },
+        inputs: {
+          take: MAX_REPORT_RELATED_RECORDS + 1,
+          select: {
+            id: true, articuloId: true, quantity: true, unit: true, inventoryLotId: true,
+             warehouseId: true, inventoryMovementId: true, operationKey: true, reversedAt: true,
+             reversalInventoryMovementId: true, reversalOperationKey: true, reversalReason: true,
+            articulo: { select: { codigo: true, nombre: true } },
+             warehouse: { select: { id: true, codigo: true, nombre: true } },
+            inventoryLot: { select: { lotCode: true } },
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        },
+      },
+      orderBy: [{ performedAt: "asc" }, { id: "asc" }],
+    });
+    assertReportRecordLimit(rows.length, MAX_REPORT_ROOT_RECORDS, "Production work report");
+    for (const row of rows) {
+      assertReportRecordLimit(row.batches.length, MAX_REPORT_RELATED_RECORDS, "Production work report batches per work");
+      assertReportRecordLimit(row.containers.length, MAX_REPORT_RELATED_RECORDS, "Production work report containers per work");
+      assertReportRecordLimit(row.participants.length, MAX_REPORT_RELATED_RECORDS, "Production work report participants per work");
+      assertReportRecordLimit(row.inputs.length, MAX_REPORT_RELATED_RECORDS, "Production work report inputs per work");
+    }
+    return rows.map((row): ProductionReportWork => ({
+      id: row.id,
+      performedAt: row.performedAt,
+      observations: row.observations,
+      productionOrder: row.productionOrder,
+      transformationOrder: row.transformationOrder,
+      workType: row.workType,
+      createdBy: row.createdBy,
+      batches: row.batches.map((link) => ({ productionBatchId: link.productionBatchId, code: link.productionBatch.code })),
+      containers: row.containers.map((link) => ({ productionContainerId: link.productionContainerId, code: link.productionContainer.code, name: link.productionContainer.name })),
+      participants: row.participants.map((link) => ({ productionParticipantId: link.productionParticipantId, code: link.productionParticipant.code, name: link.productionParticipant.name, role: link.role })),
+      inputs: row.inputs.map((input) => ({
+        id: input.id,
+        articuloId: input.articuloId,
+        articuloCodigo: input.articulo.codigo,
+        articuloNombre: input.articulo.nombre,
+        warehouseId: input.warehouseId,
+        warehouse: input.warehouse,
+        inventoryLotId: input.inventoryLotId,
+        lotCode: input.inventoryLot?.lotCode ?? null,
+        quantity: input.quantity.toString(),
+        unit: input.unit,
+        inventoryMovementId: input.inventoryMovementId,
+        operationKey: input.operationKey,
+        status: input.reversedAt ? "REVERSED" : "ACTIVE",
+        reversedAt: input.reversedAt,
+        reversalInventoryMovementId: input.reversalInventoryMovementId,
+        reversalOperationKey: input.reversalOperationKey,
+        reversalReason: input.reversalReason,
+      })),
+    }));
+  }
+  async queryTransformationsForReport(filters: Pick<ProductionReportFilters, "productionOrderId" | "transformationOrderId" | "from" | "toExclusive" | "productionBatchId">): Promise<readonly ProductionReportTransformation[]> {
+    const dateFilter = filters.from || filters.toExclusive
+      ? { ...(filters.from ? { gte: filters.from } : {}), ...(filters.toExclusive ? { lt: filters.toExclusive } : {}) }
+      : undefined;
+    const batchRelation = filters.productionBatchId
+      ? { OR: [
+        { inputs: { some: { productionBatchId: filters.productionBatchId } } },
+        { outputs: { some: { productionBatchId: filters.productionBatchId } } },
+        { losses: { some: { productionBatchId: filters.productionBatchId } } },
+      ] }
+      : {};
+    const rows = await this.prisma.transformation.findMany({
+      where: {
+        ...(filters.productionOrderId ? { productionOrderId: filters.productionOrderId } : {}),
+        ...(filters.transformationOrderId ? { transformationOrderId: filters.transformationOrderId } : {}),
+        ...(dateFilter ? { performedAt: dateFilter } : {}),
+        ...batchRelation,
+      },
+      take: MAX_REPORT_ROOT_RECORDS + 1,
+      select: {
+        id: true,
+        actorUserId: true,
+        operationKey: true,
+        performedAt: true,
+        observations: true,
+        productionOrder: { select: { id: true, code: true } },
+        transformationOrder: { select: { id: true, code: true } },
+        productionWork: { select: { id: true, workType: { select: { code: true, name: true } } } },
+        inputs: { take: MAX_REPORT_RELATED_RECORDS + 1, select: { productionBatchId: true, quantity: true, unit: true, productionBatch: { select: { code: true } } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+        outputs: { take: MAX_REPORT_RELATED_RECORDS + 1, select: { productionBatchId: true, quantity: true, unit: true, productionBatch: { select: { code: true } } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+        losses: { take: MAX_REPORT_RELATED_RECORDS + 1, select: { id: true, productionBatchId: true, quantity: true, unit: true, observations: true, occurredAt: true, productionBatch: { select: { code: true } } }, orderBy: [{ occurredAt: "asc" }, { id: "asc" }] },
+      },
+      orderBy: [{ performedAt: "asc" }, { id: "asc" }],
+    });
+    assertReportRecordLimit(rows.length, MAX_REPORT_ROOT_RECORDS, "Transformation report");
+    for (const row of rows) {
+      assertReportRecordLimit(row.inputs.length, MAX_REPORT_RELATED_RECORDS, "Transformation report inputs per transformation");
+      assertReportRecordLimit(row.outputs.length, MAX_REPORT_RELATED_RECORDS, "Transformation report outputs per transformation");
+      assertReportRecordLimit(row.losses.length, MAX_REPORT_RELATED_RECORDS, "Transformation report losses per transformation");
+    }
+    return rows.map((row): ProductionReportTransformation => ({
+      id: row.id,
+      performedAt: row.performedAt,
+      observations: row.observations,
+      productionOrder: row.productionOrder,
+      transformationOrder: row.transformationOrder,
+      productionWork: row.productionWork,
+       actorUserId: row.actorUserId,
+       operationKey: row.operationKey,
+       inputs: row.inputs.map((input) => ({ productionBatchId: input.productionBatchId, batchCode: input.productionBatch.code, quantity: input.quantity.toString(), unit: input.unit })),
+      outputs: row.outputs.map((output) => ({ productionBatchId: output.productionBatchId, batchCode: output.productionBatch.code, quantity: output.quantity.toString(), unit: output.unit })),
+       losses: row.losses.map((loss) => ({ id: loss.id, productionBatchId: loss.productionBatchId, batchCode: loss.productionBatch?.code ?? null, quantity: loss.quantity.toString(), unit: loss.unit, observations: loss.observations, occurredAt: loss.occurredAt })),
+    }));
+  }
   createTransformation(data: TransformationCreateInput, context: AuthenticatedAuditContext) { if (!this.transformations) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for transformations", 500); return this.transformations.create(data, context); }
   listTransformations(filters: { page?: number | undefined; pageSize?: number | undefined; productionOrderId?: string | undefined } = {}) { if (!this.transformations) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for transformations", 500); return this.transformations.list(filters); }
   getTransformation(id: string) { if (!this.transformations) throw new AppError("ARTICULOS_API_UNAVAILABLE", "ArticulosApi is required for transformations", 500); return this.transformations.get(id); }

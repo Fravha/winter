@@ -87,3 +87,38 @@ export interface InventoryMovementListResult {
     totalPages: number;
   };
 }
+
+export interface InventoryReportFilters {
+  warehouseId?: string;
+  articuloId?: string;
+  classification?: InventoryLotClassification;
+  from?: Date;
+  toExclusive?: Date;
+  movementType?: InventoryMovementType;
+}
+
+export interface InventoryReportStockRow {
+  id: string;
+  warehouse: { id: string; codigo: string; nombre: string };
+  articulo: { id: string; codigo: string; nombre: string; unidadMedida: string };
+  inventoryLotId: string | null;
+  lotCode: string | null;
+  classification: InventoryLotClassification | null;
+  quantity: string;
+  unit: InventoryUnit;
+}
+
+export interface InventoryReportMovementRow {
+  id: string;
+  type: InventoryMovementType;
+  source: string;
+  reason: string | null;
+  quantity: string;
+  unit: InventoryUnit;
+  createdAt: Date;
+  articulo: { id: string; codigo: string; nombre: string };
+  warehouse: { id: string; codigo: string; nombre: string };
+  destinationWarehouse: { id: string; codigo: string; nombre: string } | null;
+  lot: { id: string; lotCode: string } | null;
+  actor: { id: string; displayName: string | null } | null;
+}
