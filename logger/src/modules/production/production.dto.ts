@@ -5,4 +5,4 @@ export interface ProductionActor { actorUserId: string; ipAddress?: string; requ
 export type ReadCatalogKind = CatalogKind | "work-types" | "measurement-types";
 export interface ProductionOrderInput { code: string; startDate: Date; observations?: string | undefined }
 export interface TransformationOrderInput { code: string; productionOrderId: string; periodStart: Date; periodEnd?: Date | undefined; observations?: string | undefined }
-export interface OrderFilters { page?: number | undefined; pageSize?: number | undefined; status?: "OPEN" | "CLOSED" | undefined }
+export interface OrderFilters { page?: number | undefined; pageSize?: number | undefined; status?: "OPEN" | "CLOSED" | undefined; search?: string | undefined }

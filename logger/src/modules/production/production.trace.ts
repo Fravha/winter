@@ -1,6 +1,11 @@
 import { Prisma } from "../../generated/prisma/client.js";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import { AppError } from "../../shared/errors/app-error.js";
+import {
+  assertReportRecordLimit,
+  MAX_REPORT_RELATED_RECORDS,
+  MAX_REPORT_ROOT_RECORDS,
+} from "../../shared/reports/report-limits.js";
 
 export interface ProductionBatchTraceDto {
   rootBatchId: string;
@@ -14,7 +19,7 @@ export interface ProductionBatchTraceDto {
   transformations: Array<{ id: string; productionOrderId: string; transformationOrderId: string | null; productionWorkId: string | null; actorUserId: string; operationKey: string; performedAt: string; observations: string | null; inputs: Array<{ productionBatchId: string; quantity: string; unit: string }>; outputs: Array<{ productionBatchId: string; quantity: string; unit: string }>; losses: Array<{ id: string; productionBatchId: string | null; quantity: string; unit: string; occurredAt: string }> }>;
   losses: Array<{ id: string; productionBatchId: string | null; quantity: string; unit: string; occurredAt: string; observations: string | null }>;
   containers: Array<{ id: string; code: string; name: string | null; type: string | null; location: string | null; material: string | null; capacity: string; capacityUnit: string; status: string; observations: string | null; occupancies: Array<{ id: string; batchId: string; quantity: string; unit: string; openedAt: string; closedAt: string | null }>; movements: Array<{ id: string; movementType: string; sourceContainerId: string | null; destinationContainerId: string; sourceBatchId: string; destinationBatchId: string | null; quantity: string; unit: string; occurredAt: string; productionWorkId: string | null; observations: string | null; actorUserId: string; createdAt: string }> }>;
-  inventory: { lots: Array<{ id: string; lotCode: string; articuloId: string; article: { id: string; codigo: string; nombre: string } | null; classification: string; fechaIngreso: string; observations: string | null; originProductionBatchId: string | null }>; movements: Array<{ id: string; type: string; source: string; reason: string | null; articuloId: string; article: { id: string; codigo: string; nombre: string } | null; warehouseId: string; warehouse: { id: string; codigo: string; nombre: string } | null; destinationWarehouseId: string | null; destinationWarehouse: { id: string; codigo: string; nombre: string } | null; inventoryLotId: string | null; quantity: string; unit: string; stockBefore: string; resultingStock: string; createdAt: string }>; stocks: Array<{ id: string; warehouseId: string; warehouse: { id: string; codigo: string; nombre: string } | null; articuloId: string; article: { id: string; codigo: string; nombre: string } | null; inventoryLotId: string | null; quantity: string; unit: string }> };
+   inventory: { lots: Array<{ id: string; lotCode: string; articuloId: string; article: { id: string; codigo: string; nombre: string } | null; classification: string; fechaIngreso: string; observations: string | null; originProductionBatchId: string | null }>; movements: Array<{ id: string; type: string; source: string; reason: string | null; articuloId: string; article: { id: string; codigo: string; nombre: string } | null; warehouseId: string; warehouse: { id: string; codigo: string; nombre: string } | null; destinationWarehouseId: string | null; destinationWarehouse: { id: string; codigo: string; nombre: string } | null; inventoryLotId: string | null; quantity: string; unit: string; stockBefore: string; resultingStock: string; actorUserId: string | null; createdAt: string }>; stocks: Array<{ id: string; warehouseId: string; warehouse: { id: string; codigo: string; nombre: string } | null; articuloId: string; article: { id: string; codigo: string; nombre: string } | null; inventoryLotId: string | null; quantity: string; unit: string }> };
   warnings: string[];
 }
 export type JsonPrimitive = string | number | boolean | null;
@@ -43,44 +48,86 @@ export class ProductionTraceService {
     const depths = new Map<string, number>([[id, 0]]); const queue = [id]; const edgeMap = new Map<string, { id: string; parentBatchId: string; childBatchId: string; quantity: Prisma.Decimal | null; unit: string | null; operationKey: string; createdAt: Date }>();
     while (queue.length) {
       const layer = queue.splice(0); const layerDepth = Math.max(...layer.map(batchId => depths.get(batchId) ?? 0));
-      const edges = await this.prisma.productionBatchLineage.findMany({ where: { OR: [{ parentBatchId: { in: layer } }, { childBatchId: { in: layer } }] }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+       const edges = await this.prisma.productionBatchLineage.findMany({ where: { OR: [{ parentBatchId: { in: layer } }, { childBatchId: { in: layer } }] }, take: MAX_REPORT_ROOT_RECORDS + 1, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+       assertReportRecordLimit(edges.length, MAX_REPORT_ROOT_RECORDS, "Trace lineage edges per traversal layer");
       for (const edge of edges) {
         edgeMap.set(edge.id, edge);
+         assertReportRecordLimit(edgeMap.size, MAX_REPORT_ROOT_RECORDS, "Trace lineage edges");
         for (const next of [edge.parentBatchId, edge.childBatchId]) if (!depths.has(next)) { const depth = layerDepth + 1; if (depth > 100) throw new AppError("TRACE_LIMIT_EXCEEDED", "Trace exceeds the maximum depth", 422); depths.set(next, depth); queue.push(next); }
         if (depths.size > 1000) throw new AppError("TRACE_LIMIT_EXCEEDED", "Trace exceeds the maximum number of batches", 422);
       }
     }
     const ids = [...depths.keys()];
-    const batches = await this.prisma.productionBatch.findMany({ where: { id: { in: ids } }, include: { productionOrder: true, balance: true } });
-    const ledgers = await this.prisma.productionBatchLedgerEntry.findMany({ where: { productionBatchId: { in: ids } }, orderBy: [{ occurredAt: "asc" }, { id: "asc" }] });
-    const receptions = await this.prisma.grapeReception.findMany({ where: { items: { some: { productionBatchId: { in: ids } } } }, include: { items: true, corrections: { orderBy: { toVersion: "asc" } } } });
-    const transformations = await this.prisma.transformation.findMany({ where: { OR: [{ inputs: { some: { productionBatchId: { in: ids } } } }, { outputs: { some: { productionBatchId: { in: ids } } } }] }, include: { inputs: true, outputs: true, losses: true }, orderBy: [{ performedAt: "asc" }, { id: "asc" }] });
-    const workLinks = await this.prisma.productionWorkBatch.findMany({ where: { productionBatchId: { in: ids } }, select: { productionWorkId: true } });
+     const batches = await this.prisma.productionBatch.findMany({ where: { id: { in: ids } }, take: MAX_REPORT_ROOT_RECORDS + 1, include: { productionOrder: true, balance: true } });
+     const ledgers = await this.prisma.productionBatchLedgerEntry.findMany({ where: { productionBatchId: { in: ids } }, take: MAX_REPORT_ROOT_RECORDS + 1, orderBy: [{ occurredAt: "asc" }, { id: "asc" }] });
+     const receptions = await this.prisma.grapeReception.findMany({ where: { items: { some: { productionBatchId: { in: ids } } } }, take: MAX_REPORT_ROOT_RECORDS + 1, include: { items: { take: MAX_REPORT_RELATED_RECORDS + 1 }, corrections: { take: MAX_REPORT_RELATED_RECORDS + 1, orderBy: { toVersion: "asc" } } } });
+     const transformations = await this.prisma.transformation.findMany({ where: { OR: [{ inputs: { some: { productionBatchId: { in: ids } } } }, { outputs: { some: { productionBatchId: { in: ids } } } }] }, take: MAX_REPORT_ROOT_RECORDS + 1, include: { inputs: { take: MAX_REPORT_RELATED_RECORDS + 1 }, outputs: { take: MAX_REPORT_RELATED_RECORDS + 1 }, losses: { take: MAX_REPORT_RELATED_RECORDS + 1 } }, orderBy: [{ performedAt: "asc" }, { id: "asc" }] });
+     const workLinks = await this.prisma.productionWorkBatch.findMany({ where: { productionBatchId: { in: ids } }, take: MAX_REPORT_ROOT_RECORDS + 1, select: { productionWorkId: true } });
+     assertReportRecordLimit(batches.length, MAX_REPORT_ROOT_RECORDS, "Trace batch records");
+     assertReportRecordLimit(ledgers.length, MAX_REPORT_ROOT_RECORDS, "Trace ledger entries");
+     assertReportRecordLimit(receptions.length, MAX_REPORT_ROOT_RECORDS, "Trace receptions");
+     assertReportRecordLimit(transformations.length, MAX_REPORT_ROOT_RECORDS, "Trace transformations");
+     assertReportRecordLimit(workLinks.length, MAX_REPORT_ROOT_RECORDS, "Trace work links");
+     for (const row of receptions) {
+       assertReportRecordLimit(row.items.length, MAX_REPORT_RELATED_RECORDS, "Trace reception items per reception");
+       assertReportRecordLimit(row.corrections.length, MAX_REPORT_RELATED_RECORDS, "Trace reception corrections per reception");
+     }
+     for (const row of transformations) {
+       assertReportRecordLimit(row.inputs.length, MAX_REPORT_RELATED_RECORDS, "Trace transformation inputs per transformation");
+       assertReportRecordLimit(row.outputs.length, MAX_REPORT_RELATED_RECORDS, "Trace transformation outputs per transformation");
+       assertReportRecordLimit(row.losses.length, MAX_REPORT_RELATED_RECORDS, "Trace transformation losses per transformation");
+     }
     const workIds = [...new Set(workLinks.map(row => row.productionWorkId).concat(transformations.flatMap(row => [row.productionWorkId, ...row.losses.map(loss => loss.productionWorkId)]).filter((value): value is string => value !== null)))];
-    const works = await this.prisma.productionWork.findMany({ where: { id: { in: workIds } }, include: { workType: true, batches: true, containers: true, participants: true, inputs: true, corrections: { orderBy: { toVersion: "asc" } } } });
-    const graphOccupancies = await this.prisma.productionContainerOccupancy.findMany({ where: { batchId: { in: ids } }, select: { containerId: true, batchId: true, openedAt: true, closedAt: true } });
+     const works = await this.prisma.productionWork.findMany({ where: { id: { in: workIds } }, take: MAX_REPORT_ROOT_RECORDS + 1, include: { workType: true, batches: { take: MAX_REPORT_RELATED_RECORDS + 1 }, containers: { take: MAX_REPORT_RELATED_RECORDS + 1 }, participants: { take: MAX_REPORT_RELATED_RECORDS + 1 }, inputs: { take: MAX_REPORT_RELATED_RECORDS + 1 }, corrections: { take: MAX_REPORT_RELATED_RECORDS + 1, orderBy: { toVersion: "asc" } } } });
+     assertReportRecordLimit(works.length, MAX_REPORT_ROOT_RECORDS, "Trace work records");
+     for (const work of works) {
+       assertReportRecordLimit(work.batches.length, MAX_REPORT_RELATED_RECORDS, "Trace work batches per work");
+       assertReportRecordLimit(work.containers.length, MAX_REPORT_RELATED_RECORDS, "Trace work containers per work");
+       assertReportRecordLimit(work.participants.length, MAX_REPORT_RELATED_RECORDS, "Trace work participants per work");
+       assertReportRecordLimit(work.inputs.length, MAX_REPORT_RELATED_RECORDS, "Trace work inputs per work");
+       assertReportRecordLimit(work.corrections.length, MAX_REPORT_RELATED_RECORDS, "Trace work corrections per work");
+     }
+     const graphOccupancies = await this.prisma.productionContainerOccupancy.findMany({ where: { batchId: { in: ids } }, take: MAX_REPORT_ROOT_RECORDS + 1, select: { containerId: true, batchId: true, openedAt: true, closedAt: true } });
+     assertReportRecordLimit(graphOccupancies.length, MAX_REPORT_ROOT_RECORDS, "Trace container occupancies");
     const occupancyContainerIds = graphOccupancies.map(row => row.containerId);
-    const workContainerIds = (await this.prisma.productionWorkContainer.findMany({ where: { productionWorkId: { in: workIds } }, select: { productionContainerId: true } })).map(row => row.productionContainerId);
+     const workContainerLinks = await this.prisma.productionWorkContainer.findMany({ where: { productionWorkId: { in: workIds } }, take: MAX_REPORT_ROOT_RECORDS + 1, select: { productionContainerId: true } });
+     assertReportRecordLimit(workContainerLinks.length, MAX_REPORT_ROOT_RECORDS, "Trace work-container links");
+     const workContainerIds = workContainerLinks.map(row => row.productionContainerId);
     const containerIds = [...new Set(occupancyContainerIds.concat(workContainerIds))];
     const movementScope = [{ sourceBatchId: { in: ids } }, { destinationBatchId: { in: ids } }, ...(workIds.length ? [{ productionWorkId: { in: workIds } }] : [])];
-    const containers = await this.prisma.productionContainer.findMany({ where: { id: { in: containerIds } }, include: { occupancies: { where: { batchId: { in: ids } } }, movementsFrom: { where: { OR: movementScope } }, movementsTo: { where: { OR: movementScope } } } });
+     const containers = await this.prisma.productionContainer.findMany({ where: { id: { in: containerIds } }, take: MAX_REPORT_ROOT_RECORDS + 1, include: { occupancies: { where: { batchId: { in: ids } }, take: MAX_REPORT_RELATED_RECORDS + 1 }, movementsFrom: { where: { OR: movementScope }, take: MAX_REPORT_RELATED_RECORDS + 1 }, movementsTo: { where: { OR: movementScope }, take: MAX_REPORT_RELATED_RECORDS + 1 } } });
+     assertReportRecordLimit(containers.length, MAX_REPORT_ROOT_RECORDS, "Trace containers");
+     for (const container of containers) {
+       assertReportRecordLimit(container.occupancies.length, MAX_REPORT_RELATED_RECORDS, "Trace container occupancies per container");
+       assertReportRecordLimit(container.movementsFrom.length, MAX_REPORT_RELATED_RECORDS, "Trace container source movements per container");
+       assertReportRecordLimit(container.movementsTo.length, MAX_REPORT_RELATED_RECORDS, "Trace container destination movements per container");
+     }
     const measurementScope = [{ productionBatchId: { in: ids } }, { productionWorkId: { in: workIds } }, ...graphOccupancies.map(row => ({ productionContainerId: row.containerId, measuredAt: { gte: row.openedAt, ...(row.closedAt ? { lte: row.closedAt } : {}) } }))];
-    const measurements = await this.prisma.productionMeasurement.findMany({ where: { OR: measurementScope }, include: { corrections: { orderBy: { toVersion: "asc" } } }, orderBy: [{ measuredAt: "asc" }, { id: "asc" }] });
-    const losses = await this.prisma.productionLoss.findMany({ where: { OR: [{ productionBatchId: { in: ids } }, { productionWorkId: { in: workIds } }, { transformationId: { in: transformations.map(row => row.id) } }] }, orderBy: [{ occurredAt: "asc" }, { id: "asc" }] });
+     const measurements = await this.prisma.productionMeasurement.findMany({ where: { OR: measurementScope }, take: MAX_REPORT_ROOT_RECORDS + 1, include: { corrections: { take: MAX_REPORT_RELATED_RECORDS + 1, orderBy: { toVersion: "asc" } } }, orderBy: [{ measuredAt: "asc" }, { id: "asc" }] });
+     assertReportRecordLimit(measurements.length, MAX_REPORT_ROOT_RECORDS, "Trace measurements");
+     for (const row of measurements) assertReportRecordLimit(row.corrections.length, MAX_REPORT_RELATED_RECORDS, "Trace measurement corrections per measurement");
+     const losses = await this.prisma.productionLoss.findMany({ where: { OR: [{ productionBatchId: { in: ids } }, { productionWorkId: { in: workIds } }, { transformationId: { in: transformations.map(row => row.id) } }] }, take: MAX_REPORT_ROOT_RECORDS + 1, orderBy: [{ occurredAt: "asc" }, { id: "asc" }] });
+     assertReportRecordLimit(losses.length, MAX_REPORT_ROOT_RECORDS, "Trace production losses");
     const workInputLotIds = works.flatMap(work => work.inputs.map(input => input.inventoryLotId).filter((value): value is string => value !== null));
     const lotIds = [...new Set(workInputLotIds)];
-    const lots = await this.prisma.inventoryLot.findMany({ where: { OR: [{ originProductionBatchId: { in: ids } }, { id: { in: lotIds } }] }, orderBy: { id: "asc" } });
+     const lots = await this.prisma.inventoryLot.findMany({ where: { OR: [{ originProductionBatchId: { in: ids } }, { id: { in: lotIds } }] }, take: MAX_REPORT_ROOT_RECORDS + 1, orderBy: { id: "asc" } });
+     assertReportRecordLimit(lots.length, MAX_REPORT_ROOT_RECORDS, "Trace inventory lots");
     const includedLotIds = lots.map(lot => lot.id);
     const workInputMovementIds = works.flatMap(work => work.inputs.flatMap(input => [input.inventoryMovementId, input.reversalInventoryMovementId]).filter((value): value is string => value !== null));
     const movementIds = [...new Set(workInputMovementIds)];
-    const movementRows = await this.prisma.inventoryMovement.findMany({ where: { OR: [{ inventoryLotId: { in: includedLotIds } }, { id: { in: movementIds } }] }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
-    const releases = await this.prisma.productionInventoryRelease.findMany({ where: { productionBatchId: { in: ids } }, include: { reversal: true }, orderBy: [{ occurredAt: "asc" }, { id: "asc" }] });
-    const stocks = await this.prisma.inventoryStock.findMany({ where: { inventoryLotId: { in: includedLotIds } }, orderBy: { id: "asc" } });
+     const movementRows = await this.prisma.inventoryMovement.findMany({ where: { OR: [{ inventoryLotId: { in: includedLotIds } }, { id: { in: movementIds } }] }, take: MAX_REPORT_ROOT_RECORDS + 1, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+     assertReportRecordLimit(movementRows.length, MAX_REPORT_ROOT_RECORDS, "Trace inventory movements");
+     const releases = await this.prisma.productionInventoryRelease.findMany({ where: { productionBatchId: { in: ids } }, take: MAX_REPORT_ROOT_RECORDS + 1, include: { reversal: true }, orderBy: [{ occurredAt: "asc" }, { id: "asc" }] });
+     assertReportRecordLimit(releases.length, MAX_REPORT_ROOT_RECORDS, "Trace inventory releases");
+     const stocks = await this.prisma.inventoryStock.findMany({ where: { inventoryLotId: { in: includedLotIds } }, take: MAX_REPORT_ROOT_RECORDS + 1, orderBy: { id: "asc" } });
+     assertReportRecordLimit(stocks.length, MAX_REPORT_ROOT_RECORDS, "Trace inventory stocks");
     const articleIds = [...new Set(batches.map(batch => batch.articuloId).concat(works.flatMap(work => work.inputs.map(input => input.articuloId)), lots.map(lot => lot.articuloId), movementRows.map(row => row.articuloId), stocks.map(row => row.articuloId)))];
-    const articles = await this.prisma.articulo.findMany({ where: { id: { in: articleIds } } });
+     const articles = await this.prisma.articulo.findMany({ where: { id: { in: articleIds } }, take: MAX_REPORT_ROOT_RECORDS + 1 });
+     assertReportRecordLimit(articles.length, MAX_REPORT_ROOT_RECORDS, "Trace article references");
     const articlesById = new Map(articles.map(article => [article.id, article]));
     const warehouseIds = [...new Set(works.flatMap(work => work.inputs.map(input => input.warehouseId).filter((value): value is string => value !== null)).concat(movementRows.flatMap(row => [row.warehouseId, row.destinationWarehouseId]).filter((value): value is string => value !== null), stocks.map(row => row.warehouseId)))];
-    const warehouses = await this.prisma.warehouse.findMany({ where: { id: { in: warehouseIds } } });
+     const warehouses = await this.prisma.warehouse.findMany({ where: { id: { in: warehouseIds } }, take: MAX_REPORT_ROOT_RECORDS + 1 });
+     assertReportRecordLimit(warehouses.length, MAX_REPORT_ROOT_RECORDS, "Trace warehouse references");
     const warehousesById = new Map(warehouses.map(warehouse => [warehouse.id, warehouse]));
     const knownLotIds = new Set(includedLotIds);
     const warnings = batches.filter(batch => !articlesById.has(batch.articuloId)).map(batch => `Batch ${batch.id} references missing Articulo ${batch.articuloId}`).concat(ledgers.flatMap(entry => {
@@ -100,7 +147,7 @@ export class ProductionTraceService {
        transformations: transformations.map(row => ({ id: row.id, productionOrderId: row.productionOrderId, transformationOrderId: row.transformationOrderId, productionWorkId: row.productionWorkId, actorUserId: row.actorUserId, operationKey: row.operationKey, performedAt: iso(row.performedAt), observations: row.observations, inputs: row.inputs.map(input => ({ productionBatchId: input.productionBatchId, quantity: decimal(input.quantity), unit: input.unit })), outputs: row.outputs.map(output => ({ productionBatchId: output.productionBatchId, quantity: decimal(output.quantity), unit: output.unit })), losses: row.losses.map(loss => ({ id: loss.id, productionBatchId: loss.productionBatchId, quantity: decimal(loss.quantity), unit: loss.unit, occurredAt: iso(loss.occurredAt) })) })),
       losses: losses.map(loss => ({ id: loss.id, productionBatchId: loss.productionBatchId, quantity: decimal(loss.quantity), unit: loss.unit, occurredAt: iso(loss.occurredAt), observations: loss.observations })),
        containers: containers.map(container => ({ id: container.id, code: container.code, name: container.name, type: container.type, location: container.location, material: container.material, capacity: decimal(container.capacity), capacityUnit: container.capacityUnit, status: container.status, observations: container.observations, occupancies: container.occupancies.filter(row => ids.includes(row.batchId)).map(row => ({ id: row.id, batchId: row.batchId, quantity: decimal(row.quantity), unit: row.unit, openedAt: iso(row.openedAt), closedAt: row.closedAt ? iso(row.closedAt) : null })), movements: [...new Map([...container.movementsFrom, ...container.movementsTo].filter(row => ids.includes(row.sourceBatchId) || (row.destinationBatchId !== null && ids.includes(row.destinationBatchId)) || (row.productionWorkId !== null && workIds.includes(row.productionWorkId))).map(row => [row.id, row])).values()].sort((a, b) => a.id.localeCompare(b.id)).map(row => ({ id: row.id, movementType: row.movementType, sourceContainerId: row.sourceContainerId, destinationContainerId: row.destinationContainerId, sourceBatchId: row.sourceBatchId, destinationBatchId: row.destinationBatchId, quantity: decimal(row.quantity), unit: row.unit, occurredAt: iso(row.occurredAt), productionWorkId: row.productionWorkId, observations: row.observations, actorUserId: row.actorUserId, createdAt: iso(row.createdAt) })) })),
-       inventory: { lots: lots.map(lot => ({ id: lot.id, lotCode: lot.lotCode, articuloId: lot.articuloId, article: articlesById.get(lot.articuloId) ? { id: lot.articuloId, codigo: articlesById.get(lot.articuloId)!.codigo, nombre: articlesById.get(lot.articuloId)!.nombre } : null, classification: lot.classification, fechaIngreso: iso(lot.fechaIngreso), observations: lot.observations, originProductionBatchId: lot.originProductionBatchId })), movements: movementRows.map(row => ({ id: row.id, type: row.type, source: row.source, reason: row.reason, articuloId: row.articuloId, article: articlesById.get(row.articuloId) ? { id: row.articuloId, codigo: articlesById.get(row.articuloId)!.codigo, nombre: articlesById.get(row.articuloId)!.nombre } : null, warehouseId: row.warehouseId, warehouse: warehousesById.get(row.warehouseId) ? { id: row.warehouseId, codigo: warehousesById.get(row.warehouseId)!.codigo, nombre: warehousesById.get(row.warehouseId)!.nombre } : null, destinationWarehouseId: row.destinationWarehouseId, destinationWarehouse: row.destinationWarehouseId && warehousesById.get(row.destinationWarehouseId) ? { id: row.destinationWarehouseId, codigo: warehousesById.get(row.destinationWarehouseId)!.codigo, nombre: warehousesById.get(row.destinationWarehouseId)!.nombre } : null, inventoryLotId: row.inventoryLotId, quantity: decimal(row.quantity), unit: row.unit, stockBefore: decimal(row.stockBefore), resultingStock: decimal(row.resultingStock), createdAt: iso(row.createdAt) })), stocks: stocks.map(row => ({ id: row.id, warehouseId: row.warehouseId, warehouse: warehousesById.get(row.warehouseId) ? { id: row.warehouseId, codigo: warehousesById.get(row.warehouseId)!.codigo, nombre: warehousesById.get(row.warehouseId)!.nombre } : null, articuloId: row.articuloId, article: articlesById.get(row.articuloId) ? { id: row.articuloId, codigo: articlesById.get(row.articuloId)!.codigo, nombre: articlesById.get(row.articuloId)!.nombre } : null, inventoryLotId: row.inventoryLotId, quantity: decimal(row.quantity), unit: row.unit })) },
+       inventory: { lots: lots.map(lot => ({ id: lot.id, lotCode: lot.lotCode, articuloId: lot.articuloId, article: articlesById.get(lot.articuloId) ? { id: lot.articuloId, codigo: articlesById.get(lot.articuloId)!.codigo, nombre: articlesById.get(lot.articuloId)!.nombre } : null, classification: lot.classification, fechaIngreso: iso(lot.fechaIngreso), observations: lot.observations, originProductionBatchId: lot.originProductionBatchId })), movements: movementRows.map(row => ({ id: row.id, type: row.type, source: row.source, reason: row.reason, articuloId: row.articuloId, article: articlesById.get(row.articuloId) ? { id: row.articuloId, codigo: articlesById.get(row.articuloId)!.codigo, nombre: articlesById.get(row.articuloId)!.nombre } : null, warehouseId: row.warehouseId, warehouse: warehousesById.get(row.warehouseId) ? { id: row.warehouseId, codigo: warehousesById.get(row.warehouseId)!.codigo, nombre: warehousesById.get(row.warehouseId)!.nombre } : null, destinationWarehouseId: row.destinationWarehouseId, destinationWarehouse: row.destinationWarehouseId && warehousesById.get(row.destinationWarehouseId) ? { id: row.destinationWarehouseId, codigo: warehousesById.get(row.destinationWarehouseId)!.codigo, nombre: warehousesById.get(row.destinationWarehouseId)!.nombre } : null, inventoryLotId: row.inventoryLotId, quantity: decimal(row.quantity), unit: row.unit, stockBefore: decimal(row.stockBefore), resultingStock: decimal(row.resultingStock), actorUserId: row.actorUserId, createdAt: iso(row.createdAt) })), stocks: stocks.map(row => ({ id: row.id, warehouseId: row.warehouseId, warehouse: warehousesById.get(row.warehouseId) ? { id: row.warehouseId, codigo: warehousesById.get(row.warehouseId)!.codigo, nombre: warehousesById.get(row.warehouseId)!.nombre } : null, articuloId: row.articuloId, article: articlesById.get(row.articuloId) ? { id: row.articuloId, codigo: articlesById.get(row.articuloId)!.codigo, nombre: articlesById.get(row.articuloId)!.nombre } : null, inventoryLotId: row.inventoryLotId, quantity: decimal(row.quantity), unit: row.unit })) },
       warnings,
     };
   }
