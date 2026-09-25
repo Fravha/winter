@@ -1,7 +1,11 @@
 import { AppError } from "../../shared/errors/app-error.js";
+import {
+  assertReportRecordLimit,
+  MAX_REPORT_ROWS,
+} from "../../shared/reports/report-limits.js";
 import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
 import type { InventoryApi } from "./inventory.api.js";
-import type { AdjustmentInput, InventoryMovementListInput, InventoryMovementListResult, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
+import type { AdjustmentInput, InventoryMovementListInput, InventoryMovementListResult, InventoryReportFilters, InventoryReportMovementRow, InventoryReportStockRow, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
 import { isTrustedIntermoduleContext } from "./inventory.model.js";
 import type { ExecutionContext, InventoryLotClassification, InventoryUnit, TrustedIntermoduleContext, CommandResult } from "./inventory.model.js";
 import { InventoryUnitOfWork } from "./inventory.unit-of-work.js";
@@ -46,6 +50,26 @@ export const inventoryRequestFingerprint = (value: unknown): string =>
 export class InventoryService implements InventoryApi {
   async listActiveWarehouseOptions() {
     return this.prisma.warehouse.findMany({ where: { activo: true }, select: { id: true, codigo: true, nombre: true }, orderBy: [{ codigo: "asc" }, { id: "asc" }] });
+  }
+  async queryReportWarehouseOptions(filters: { page: number; pageSize: number; search?: string }) {
+    const where = {
+      activo: true,
+      ...(filters.search ? {
+        OR: [
+          { codigo: { contains: filters.search, mode: "insensitive" as const } },
+          { nombre: { contains: filters.search, mode: "insensitive" as const } },
+        ],
+      } : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.warehouse.findMany({
+        where, skip: (filters.page - 1) * filters.pageSize, take: filters.pageSize,
+        select: { id: true, codigo: true, nombre: true },
+        orderBy: [{ codigo: "asc" }, { id: "asc" }],
+      }),
+      this.prisma.warehouse.count({ where }),
+    ]);
+    return { items, pagination: { page: filters.page, pageSize: filters.pageSize, total, totalPages: Math.ceil(total / filters.pageSize) } };
   }
   private readonly uow: InventoryUnitOfWork;
   constructor(private readonly prisma: PrismaClient, private readonly articulos?: ArticulosApi) { this.uow = new InventoryUnitOfWork(prisma); }
@@ -606,6 +630,69 @@ export class InventoryService implements InventoryApi {
         totalPages: Math.ceil(total / pageSize),
       },
     };
+  }
+
+  async queryReportStock(filters: Pick<InventoryReportFilters, "warehouseId" | "articuloId" | "classification">): Promise<readonly InventoryReportStockRow[]> {
+    const rows = await this.prisma.inventoryStock.findMany({
+      where: {
+        ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
+        ...(filters.articuloId ? { articuloId: filters.articuloId } : {}),
+        ...(filters.classification ? { lot: { is: { classification: filters.classification } } } : {}),
+      },
+      take: MAX_REPORT_ROWS + 1,
+      select: {
+        id: true,
+        quantity: true,
+        unit: true,
+        warehouse: { select: { id: true, codigo: true, nombre: true } },
+        articulo: { select: { id: true, codigo: true, nombre: true, unidadMedida: true } },
+        lot: { select: { id: true, lotCode: true, classification: true } },
+      },
+      orderBy: [{ warehouse: { codigo: "asc" } }, { articulo: { codigo: "asc" } }, { id: "asc" }],
+    });
+    assertReportRecordLimit(rows.length, MAX_REPORT_ROWS, "Inventory stock report");
+    return rows.map((row): InventoryReportStockRow => ({
+      id: row.id,
+      warehouse: row.warehouse,
+      articulo: row.articulo,
+      inventoryLotId: row.lot?.id ?? null,
+      lotCode: row.lot?.lotCode ?? null,
+      classification: row.lot?.classification ?? null,
+      quantity: row.quantity.toString(),
+      unit: row.unit,
+    }));
+  }
+
+  async queryReportMovements(filters: InventoryReportFilters): Promise<readonly InventoryReportMovementRow[]> {
+    const rows = await this.prisma.inventoryMovement.findMany({
+      where: {
+        ...(filters.articuloId ? { articuloId: filters.articuloId } : {}),
+        ...(filters.warehouseId ? { OR: [{ warehouseId: filters.warehouseId }, { destinationWarehouseId: filters.warehouseId }] } : {}),
+        ...(filters.movementType ? { type: filters.movementType } : {}),
+        ...(filters.from || filters.toExclusive ? { createdAt: { ...(filters.from ? { gte: filters.from } : {}), ...(filters.toExclusive ? { lt: filters.toExclusive } : {}) } } : {}),
+      },
+      take: MAX_REPORT_ROWS + 1,
+      select: {
+        id: true,
+        type: true,
+        source: true,
+        reason: true,
+        quantity: true,
+        unit: true,
+        createdAt: true,
+        articulo: { select: { id: true, codigo: true, nombre: true } },
+        warehouse: { select: { id: true, codigo: true, nombre: true } },
+        destinationWarehouse: { select: { id: true, codigo: true, nombre: true } },
+        lot: { select: { id: true, lotCode: true } },
+        actor: { select: { id: true, displayName: true } },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    assertReportRecordLimit(rows.length, MAX_REPORT_ROWS, "Inventory movement report");
+    return rows.map((row): InventoryReportMovementRow => ({
+      ...row,
+      quantity: row.quantity.toString(),
+    }));
   }
 
   getInventoryLot(i: { inventoryLotId: string }) { return this.prisma.inventoryLot.findUniqueOrThrow({ where: { id: i.inventoryLotId } }); }

@@ -1,5 +1,5 @@
 import type { AuthenticatedAuditContext } from "../../core/audit/audit.types.js";
-import type { CancelCompraDto, CreateCompraDto, ListComprasDto, ReceiveCompraDto, UpdateCompraDto } from "./compra.dto.js";
+import type { CancelCompraDto, CompraReportRow, ComprasReportFilters, CreateCompraDto, ListComprasDto, ReceiveCompraDto, UpdateCompraDto } from "./compra.dto.js";
 import type { Compra } from "./compra.model.js";
 
 export interface CompraApi {
@@ -8,6 +8,7 @@ export interface CompraApi {
     meta: { page: number; pageSize: number; total: number; totalPages: number };
   }>;
   get(id: string): Promise<Compra>;
+  queryForReport(filters: ComprasReportFilters): Promise<readonly CompraReportRow[]>;
   create(input: CreateCompraDto, context: AuthenticatedAuditContext): Promise<Compra>;
   update(id: string, input: UpdateCompraDto, context: AuthenticatedAuditContext): Promise<Compra>;
   receive(id: string, input: ReceiveCompraDto, context: AuthenticatedAuditContext): Promise<Compra>;

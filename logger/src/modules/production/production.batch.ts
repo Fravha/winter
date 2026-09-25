@@ -24,7 +24,7 @@ export interface BatchBalanceDto {
   lost: string; transferredToInventory: string; available: string; ledgerVersion: number; updatedAt: string;
 }
 export interface BatchDetailDto extends BatchDto { balance: BatchBalanceDto; }
-export interface BatchListFilters { page?: number; pageSize?: number; articuloId?: string | undefined; productionOrderId?: string | undefined; }
+export interface BatchListFilters { page?: number; pageSize?: number; articuloId?: string | undefined; productionOrderId?: string | undefined; search?: string | undefined; }
 export interface BatchCreateInput { code: string; productionOrderId: string; articuloId: string; unit: string; quantity: string; observations?: string; operationKey: string; requestHash: string; occurredAt?: Date; }
 export interface BatchConsumptionInput { batchId: string; quantity: string; unit: string; operationKey: string; requestHash: string; occurredAt?: Date; }
 export interface BatchSplitInput { parentBatchId: string; children: Array<{ code: string; quantity: string; observations?: string }>; operationKey: string; requestHash: string; occurredAt?: Date; }
@@ -96,7 +96,7 @@ export class ProductionBatchRepository {
   findByCode(code: string) { return this.db.productionBatch.findUnique({ where: { code } }); }
   list(filters: BatchListFilters) {
     const page = filters.page ?? 1; const pageSize = filters.pageSize ?? 20;
-    const where = { ...(filters.articuloId ? { articuloId: filters.articuloId } : {}), ...(filters.productionOrderId ? { productionOrderId: filters.productionOrderId } : {}) };
+    const where = { ...(filters.articuloId ? { articuloId: filters.articuloId } : {}), ...(filters.productionOrderId ? { productionOrderId: filters.productionOrderId } : {}), ...(filters.search ? { code: { contains: filters.search, mode: "insensitive" as const } } : {}) };
     return Promise.all([
       this.db.productionBatch.findMany({
         where,

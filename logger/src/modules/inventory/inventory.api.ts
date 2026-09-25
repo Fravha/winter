@@ -1,14 +1,20 @@
 import type { CommandResult, ExecutionContext, StockPosition, TrustedIntermoduleContext, InventoryLotClassification } from "./inventory.model.js";
-import type { AdjustmentInput, InventoryMovementListInput, InventoryMovementListResult, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
+import type { AdjustmentInput, InventoryMovementListInput, InventoryMovementListResult, InventoryReportFilters, InventoryReportMovementRow, InventoryReportStockRow, LotInput, MovementInput, RegisterInboundInput, RegisterInboundResult, TransferInput, WarehouseInput, WarehouseUpdateInput } from "./inventory.dto.js";
 import type { SharedTransactionContext } from "../../core/database/shared-unit-of-work.js";
 export interface InventoryApi {
  listActiveWarehouseOptions(): Promise<ReadonlyArray<{ id: string; codigo: string; nombre: string }>>;
+  queryReportWarehouseOptions(filters: { page: number; pageSize: number; search?: string }): Promise<{
+   items: readonly { id: string; codigo: string; nombre: string }[];
+   pagination: { page: number; pageSize: number; total: number; totalPages: number };
+  }>;
  getWarehouse(input: { warehouseId: string }, context?: ExecutionContext): Promise<unknown>;
  listWarehouses(input?: { page?: number; pageSize?: number }, context?: ExecutionContext): Promise<unknown>;
  listMovements(
   input: InventoryMovementListInput,
   context?: ExecutionContext,
 ): Promise<InventoryMovementListResult>;
+  queryReportStock(filters: Pick<InventoryReportFilters, "warehouseId" | "articuloId" | "classification">): Promise<readonly InventoryReportStockRow[]>;
+  queryReportMovements(filters: InventoryReportFilters): Promise<readonly InventoryReportMovementRow[]>;
  getInventoryLot(input: { inventoryLotId: string }, context?: ExecutionContext): Promise<unknown>;
  getStock(input: { warehouseId: string; articuloId: string; inventoryLotId?: string }, context?: ExecutionContext): Promise<StockPosition>;
  getAvailableQuantity(input: { warehouseId: string; articuloId: string; inventoryLotId?: string }, context?: ExecutionContext): Promise<unknown>;

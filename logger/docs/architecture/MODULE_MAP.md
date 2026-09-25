@@ -51,6 +51,10 @@ Winter (sobre Logger)
 └── Inventory
 ```
 
+Reports es una capacidad transversal de solo lectura/exportación, registrada
+como DocType y consumidora exclusiva de las APIs públicas de Compras, Inventory
+y Production. No posee entidades de negocio ni modifica stock o producción.
+
 La arquitectura debe permitir agregar posteriormente otros módulos sin
 romper estas fronteras.
 

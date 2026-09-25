@@ -9,8 +9,13 @@ import type { InventoryApi } from "../inventory/inventory.api.js";
 import { createTrustedIntermoduleContext } from "../inventory/inventory.model.js";
 import { parsePositiveInventoryQuantity } from "../inventory/inventory.service.js";
 import { AppError } from "../../shared/errors/app-error.js";
+import {
+  assertReportRecordLimit,
+  MAX_REPORT_RELATED_RECORDS,
+  MAX_REPORT_ROOT_RECORDS,
+} from "../../shared/reports/report-limits.js";
 import type { CompraApi } from "./compra.api.js";
-import type { CancelCompraDto, CreateCompraDto, ListComprasDto, ReceiveCompraDto, UpdateCompraDto } from "./compra.dto.js";
+import type { CancelCompraDto, CompraReportRow, ComprasReportFilters, CreateCompraDto, ListComprasDto, ReceiveCompraDto, UpdateCompraDto } from "./compra.dto.js";
 import type { Compra, CompraItem } from "./compra.model.js";
 import { PrismaCompraRepository } from "./prisma-compra.repository.js";
 import type { CompraPrismaClient } from "./compra.repository.js";
@@ -44,6 +49,80 @@ export class CompraService implements CompraApi {
     const compra = await new PrismaCompraRepository(this.prisma).findById(id);
     if (!compra) throw new AppError("COMPRA_NOT_FOUND", "Compra not found", 404);
     return compra;
+  }
+
+  async queryForReport(filters: ComprasReportFilters): Promise<readonly CompraReportRow[]> {
+    const dateFilter = filters.from || filters.toExclusive
+      ? { ...(filters.from ? { gte: filters.from } : {}), ...(filters.toExclusive ? { lt: filters.toExclusive } : {}) }
+      : undefined;
+    const rows = await this.prisma.compra.findMany({
+      where: {
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.supplier ? { supplierName: { contains: filters.supplier, mode: "insensitive" } } : {}),
+        ...(filters.articuloId ? { items: { some: { articuloId: filters.articuloId } } } : {}),
+        ...(dateFilter ? {
+          OR: [
+            { documentDate: dateFilter },
+            { documentDate: null, createdAt: dateFilter },
+          ],
+        } : {}),
+      },
+      take: MAX_REPORT_ROOT_RECORDS + 1,
+      select: {
+        id: true,
+        documentNumber: true,
+        documentDate: true,
+        createdAt: true,
+        status: true,
+        supplierName: true,
+        currency: true,
+        items: {
+          take: MAX_REPORT_RELATED_RECORDS + 1,
+          ...(filters.articuloId ? { where: { articuloId: filters.articuloId } } : {}),
+          select: {
+            articuloId: true,
+            brand: true,
+            requestedQuantity: true,
+            unit: true,
+            unitPrice: true,
+            movementRefs: {
+              take: MAX_REPORT_RELATED_RECORDS + 1,
+              orderBy: { createdAt: "asc" },
+              select: { inventoryMovement: { select: { createdAt: true } } },
+            },
+            articulo: { select: { codigo: true, nombre: true } },
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    assertReportRecordLimit(rows.length, MAX_REPORT_ROOT_RECORDS, "Purchase report purchases");
+    for (const compra of rows) {
+      assertReportRecordLimit(compra.items.length, MAX_REPORT_RELATED_RECORDS, "Purchase report items per purchase");
+      for (const item of compra.items) {
+        assertReportRecordLimit(item.movementRefs.length, MAX_REPORT_RELATED_RECORDS, "Purchase report receipts per item");
+      }
+    }
+    return rows.flatMap((compra): CompraReportRow[] => compra.items.map((item) => ({
+      compraId: compra.id,
+      documentNumber: compra.documentNumber,
+      date: compra.documentDate ?? compra.createdAt,
+      itemReceivedAt: item.movementRefs.length > 0
+        ? item.movementRefs.reduce<Date | null>((latest, ref) =>
+          latest === null || ref.inventoryMovement.createdAt > latest ? ref.inventoryMovement.createdAt : latest, null)
+        : null,
+      status: compra.status,
+      supplierName: compra.supplierName,
+      articuloId: item.articuloId,
+      articuloCodigo: item.articulo.codigo,
+      articuloNombre: item.articulo.nombre,
+      brand: item.brand,
+      quantity: item.requestedQuantity.toString(),
+      unit: item.unit,
+      unitPrice: item.unitPrice?.toString() ?? null,
+      currency: compra.currency,
+    })));
   }
 
   async create(input: CreateCompraDto, context: AuthenticatedAuditContext): Promise<Compra> {
