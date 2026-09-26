@@ -14,31 +14,3 @@ mtime_ms = 1789753252494
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:ff165625-a9aa-49fc-b965-306ec0b5c74f/bbcbbe66-ded6-4c97-a94d-c44eed7258c4/e2a8bcd0-2fff-4864-ad12-aebe7334608d"
 storage_version_token = "1789753274181491"
 content_type = "application/octet-stream"
-
-[[outputs]]
-id = "_OuQtPLKQ6SpBdkYJC2VB"
-uri = "file://.local/exports/winter-frontend-feature.bundle"
-type = "unspecified"
-title = "Winter Frontend Feature Git Bundle"
-description = "Bundle Git verificado con la historia completa de feature/frontend-winter hasta ebc4324. SHA-256: beeb6335ac4510d8f689e6ae4e8fe1b33308ea43cd8264bbfdfc59fb747dda6f"
-logical_id = "07b1e0e9-a90b-41da-bd5b-dc549bcce886"
-content_hash = "sha256:beeb6335ac4510d8f689e6ae4e8fe1b33308ea43cd8264bbfdfc59fb747dda6f"
-size = 2034095
-mtime_ms = 1790032066043
-storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:ff165625-a9aa-49fc-b965-306ec0b5c74f/07b1e0e9-a90b-41da-bd5b-dc549bcce886/5ba88b23-f287-4e0a-90ba-d4ea036eb2f6"
-storage_version_token = "1790032070841419"
-content_type = "application/octet-stream"
-
-[[outputs]]
-id = "VihXI7CKFNrqjFHRUUbvh"
-uri = "file://attached_assets/winter-frontend-production.bundle"
-type = "unspecified"
-title = "Winter Frontend Production Bundle"
-description = "Git bundle completo de feature/frontend-winter en dd50c409c35f525d81a54629262fd62acc2f3691 (2.3 MB)."
-logical_id = "f14e3246-dbc4-4650-a2ee-bca2ff321230"
-content_hash = "sha256:ad3f83e42498bb5f4f18265500146ba77b17569438da267595fc1a5b4e9df972"
-size = 2327197
-mtime_ms = 1790187359413
-storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:ff165625-a9aa-49fc-b965-306ec0b5c74f/f14e3246-dbc4-4650-a2ee-bca2ff321230/ca315da5-6825-4a1f-8562-266b4e67e329"
-storage_version_token = "1790187367166314"
-content_type = "application/octet-stream"
