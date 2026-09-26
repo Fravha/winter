@@ -20,3 +20,9 @@ En este workspace, la conexión DEV de Winter puede llegar al shell con caracter
 **Why:** Prisma y el parser PostgreSQL rechazaron la variable con un error de puerto, mientras una normalización en memoria de usuario/contraseña identificó correctamente la DEV con las migraciones esperadas.
 
 **How to apply:** Antes de un deploy, exigir que `migrate status` identifique exactamente la historia esperada. Si la URL falla por formato, normalizar únicamente sus credenciales en memoria; nunca imprimir, persistir ni sustituirla por `DATABASE_URL` sin verificar la historia.
+
+Para validar migraciones en una base local aislada en este entorno, el proceso PostgreSQL debe vivir en una tarea persistente y usar un directorio de sockets disponible.
+
+**Why:** Los procesos iniciados como hijos de un shell breve no permanecieron activos entre llamadas, y el directorio predeterminado `/run/postgresql` no existía.
+
+**How to apply:** Usar una tarea de shell en segundo plano para PostgreSQL temporal, con socket bajo `/tmp` y puerto propio; comprobar la conexión antes de aplicar migraciones o ejecutar pruebas.

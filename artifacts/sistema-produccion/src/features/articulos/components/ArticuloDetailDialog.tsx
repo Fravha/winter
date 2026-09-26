@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useArticulo } from '../api/articulos.hooks';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { CLASIFICACION_OPTIONS, UNIDAD_MEDIDA_OPTIONS } from '../types/articulo.options';
+import { getClasificacionLabel, UNIDAD_MEDIDA_OPTIONS } from '../types/articulo.options';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { ApiError } from '@/lib/api/api-error';
 
@@ -82,7 +82,7 @@ export function ArticuloDetailDialog({ isOpen, onClose, articuloId }: ArticuloDe
               <div>
                 <p className="text-muted-foreground font-medium mb-1">Clasificación</p>
                 <p className="text-foreground" data-testid="detail-clasificacion">
-                  {CLASIFICACION_OPTIONS.find(o => o.value === articulo.clasificacion)?.label || articulo.clasificacion}
+                  {getClasificacionLabel(articulo.clasificacion)}
                 </p>
               </div>
               <div>

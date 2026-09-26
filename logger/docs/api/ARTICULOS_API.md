@@ -37,9 +37,18 @@ token.
 
 ### `clasificacion`
 
-`MATERIA_PRIMA`, `INSUMO_ENOLOGICO`, `MATERIAL_ENVASE`,
-`MATERIAL_EMPAQUE`, `PRODUCTO_PROCESO`, `PRODUCTO_ENVASADO`,
-`PRODUCTO_TERMINADO`.
+Las 14 clasificaciones CDZ oficiales son:
+
+`MATERIA_PRIMA`, `INSUMO_ENOLOGICO`, `MATERIAL_ENVASE_EMPAQUE`,
+`MATERIAL_ENVASE_EMPAQUE_EXPORTACION`, `MATERIAL_LABORATORIO`,
+`INSUMO_LABORATORIO`, `PRODUCTO_AGROQUIMICO`, `MATERIAL_COMERCIAL`,
+`OTRO_INVENTARIABLE`, `PRODUCTO_PROCESO`, `PRODUCTO_TERMINADO`,
+`PRODUCTO_TERMINADO_EXPORTACION`, `MATERIAL_AUXILIAR`, `INSUMO_LIMPIEZA`.
+
+Por compatibilidad técnica, también se aceptan los valores legacy
+`MATERIAL_ENVASE`, `MATERIAL_EMPAQUE` y `PRODUCTO_ENVASADO`. Estos no forman
+parte de las clasificaciones oficiales CDZ; permanecen válidos para conservar
+compatibilidad con artículos existentes y clientes previos.
 
 ### `unidadMedida`
 
@@ -68,7 +77,7 @@ Todos son opcionales:
 | `page` | integer | mínimo 1, default `1` |
 | `pageSize` | integer | 1–100, default `20` |
 | `search` | string | trim, mínimo 1 si se envía |
-| `clasificacion` | enum | enum real indicado arriba |
+| `clasificacion` | enum | clasificación CDZ oficial o valor legacy documentado arriba |
 | `activo` | `"true"`/`"false"` | filtro booleano |
 
 ### Éxito y ejemplo
@@ -219,8 +228,10 @@ Actualiza datos administrativos del artículo.
 ```
 
 Todos son opcionales individualmente: `codigoExterno` puede ser string no
-vacío o `null`; `nombre` string no vacío; `clasificacion` y `unidadMedida`
-deben pertenecer a sus enums reales. `codigo` no es actualizable.
+vacío o `null`; `nombre` string no vacío; `clasificacion` debe pertenecer a
+las clasificaciones oficiales CDZ o a los valores legacy aceptados por
+compatibilidad; `unidadMedida` debe pertenecer a su enum. `codigo` no es
+actualizable.
 
 ### Respuesta, errores y reglas
 

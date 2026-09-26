@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CLASIFICACION_OPTIONS } from '@/features/articulos/types/articulo.options';
 import { compraStatusOptions } from '@/features/compras/types/compra.options';
 import { LOT_CLASSIFICATIONS, MOVEMENT_TYPES } from '@/features/inventory/types/inventory.types';
 import { optionLabel, reportOptionPaths, useReportOptions, type OptionField } from '../api/report-options';
@@ -18,8 +17,19 @@ export const labels: Record<FieldName, string> = {
 };
 type FieldProps = { name: FieldName; value: string; onChange: (value: string) => void; error?: string; required?: boolean; productionOrderId?: string };
 
+const LOT_CLASSIFICATION_LABELS = {
+  PRODUCTO_ENVASADO: 'Producto envasado',
+  PRODUCTO_TERMINADO: 'Producto terminado',
+  PRODUCTO_TERMINADO_EXPORTACION: 'Producto terminado de Exportación',
+} as const;
+
+export const LOT_CLASSIFICATION_OPTIONS = LOT_CLASSIFICATIONS.map(value => ({
+  id: value,
+  label: LOT_CLASSIFICATION_LABELS[value],
+}));
+
 const choices: Partial<Record<FieldName, { id: string; label: string }[]>> = {
-  classification: LOT_CLASSIFICATIONS.map(value => ({ id: value, label: CLASIFICACION_OPTIONS.find(option => option.value === value)?.label ?? value.replaceAll('_', ' ') })),
+  classification: LOT_CLASSIFICATION_OPTIONS,
   movementType: MOVEMENT_TYPES.map(value => ({ id: value, label: ({ INBOUND: 'Entrada', OUTBOUND: 'Salida', TRANSFER: 'Transferencia', ADJUSTMENT: 'Ajuste' })[value] })),
   status: compraStatusOptions.map(option => ({ id: option.value, label: option.label })),
 };

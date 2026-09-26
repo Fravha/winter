@@ -23,6 +23,25 @@ const articulo = {
   updatedAt: now,
 };
 
+const newClassifications = [
+  "MATERIAL_ENVASE_EMPAQUE",
+  "MATERIAL_ENVASE_EMPAQUE_EXPORTACION",
+  "MATERIAL_LABORATORIO",
+  "INSUMO_LABORATORIO",
+  "PRODUCTO_AGROQUIMICO",
+  "MATERIAL_COMERCIAL",
+  "OTRO_INVENTARIABLE",
+  "PRODUCTO_TERMINADO_EXPORTACION",
+  "MATERIAL_AUXILIAR",
+  "INSUMO_LIMPIEZA",
+] as const;
+
+const legacyClassifications = [
+  "MATERIAL_ENVASE",
+  "MATERIAL_EMPAQUE",
+  "PRODUCTO_ENVASADO",
+] as const;
+
 const verifier: TokenVerifier = {
   async verify(token) {
     assert.equal(token, "valid-token");
@@ -201,6 +220,134 @@ describe("Articulos HTTP contracts", () => {
       data: [{ ...articulo, createdAt: now.toISOString(), updatedAt: now.toISOString() }],
       meta: { page: 2, pageSize: 5, total: 6, totalPages: 2 },
     });
+  });
+
+  for (const clasificacion of newClassifications) {
+    it(`accepts ${clasificacion} when creating and filtering articulos`, async () => {
+      const create = await request({
+        method: "POST",
+        path: "/",
+        permissions: ["articulos:create"],
+        body: {
+          codigo: `ART-${clasificacion}`,
+          nombre: "Artículo de prueba",
+          clasificacion,
+          unidadMedida: "UNIDAD",
+        },
+      });
+      assert.equal(create.response.status, 201);
+      assert.deepEqual(
+        (create.calls.create[0] as { data: { clasificacion: string } }).data,
+        {
+          codigo: `ART-${clasificacion}`,
+          nombre: "Artículo de prueba",
+          clasificacion,
+          unidadMedida: "UNIDAD",
+        },
+      );
+
+      const update = await request({
+        method: "PATCH",
+        path: `/${articuloId}`,
+        permissions: ["articulos:update"],
+        body: { clasificacion },
+      });
+      assert.equal(update.response.status, 200);
+      assert.deepEqual(
+        (update.calls.update[0] as { data: { clasificacion: string } }).data,
+        { clasificacion },
+      );
+
+      const list = await request({
+        method: "GET",
+        path: `/?clasificacion=${clasificacion}`,
+        permissions: ["articulos:read"],
+      });
+      assert.equal(list.response.status, 200);
+      assert.deepEqual(list.calls.list, [{
+        page: 1,
+        pageSize: 20,
+        clasificacion,
+      }]);
+    });
+  }
+
+  for (const clasificacion of legacyClassifications) {
+    it(`continues accepting legacy classification ${clasificacion}`, async () => {
+      const create = await request({
+        method: "POST",
+        path: "/",
+        permissions: ["articulos:create"],
+        body: {
+          codigo: `LEGACY-${clasificacion}`,
+          nombre: "Artículo legacy",
+          clasificacion,
+          unidadMedida: "UNIDAD",
+        },
+      });
+      assert.equal(create.response.status, 201);
+      assert.equal(
+        (create.calls.create[0] as { data: { clasificacion: string } }).data.clasificacion,
+        clasificacion,
+      );
+
+      const update = await request({
+        method: "PATCH",
+        path: `/${articuloId}`,
+        permissions: ["articulos:update"],
+        body: { clasificacion },
+      });
+      assert.equal(update.response.status, 200);
+      assert.deepEqual(
+        (update.calls.update[0] as { data: { clasificacion: string } }).data,
+        { clasificacion },
+      );
+
+      const list = await request({
+        method: "GET",
+        path: `/?clasificacion=${clasificacion}`,
+        permissions: ["articulos:read"],
+      });
+      assert.equal(list.response.status, 200);
+      assert.deepEqual(list.calls.list, [{
+        page: 1,
+        pageSize: 20,
+        clasificacion,
+      }]);
+    });
+  }
+
+  it("rejects unknown classifications in create bodies and list filters before service calls", async () => {
+    const create = await request({
+      method: "POST",
+      path: "/",
+      permissions: ["articulos:create"],
+      body: {
+        codigo: "ART-INVALID",
+        nombre: "Artículo inválido",
+        clasificacion: "CLASIFICACION_INEXISTENTE",
+        unidadMedida: "UNIDAD",
+      },
+    });
+    assert.equal(create.response.status, 400);
+    assert.deepEqual(create.calls.create, []);
+
+    const update = await request({
+      method: "PATCH",
+      path: `/${articuloId}`,
+      permissions: ["articulos:update"],
+      body: { clasificacion: "CLASIFICACION_INEXISTENTE" },
+    });
+    assert.equal(update.response.status, 400);
+    assert.deepEqual(update.calls.update, []);
+
+    const list = await request({
+      method: "GET",
+      path: "/?clasificacion=CLASIFICACION_INEXISTENTE",
+      permissions: ["articulos:read"],
+    });
+    assert.equal(list.response.status, 400);
+    assert.deepEqual(list.calls.list, []);
   });
 
   it("returns one articulo in a data envelope", async () => {

@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CLASIFICACION_OPTIONS } from '../types/articulo.options';
+import { CLASIFICACION_LEGACY_OPTIONS, CLASIFICACION_OPTIONS } from '../types/articulo.options';
 import type { ArticulosListFilters, Clasificacion } from '../types/articulo.types';
 import { useEffect, useState, useRef } from 'react';
 
@@ -95,6 +95,11 @@ export function ArticulosFilters({ filters, onChange }: ArticulosFiltersProps) {
             {CLASIFICACION_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
+              </SelectItem>
+            ))}
+            {CLASIFICACION_LEGACY_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label} (legacy)
               </SelectItem>
             ))}
           </SelectContent>

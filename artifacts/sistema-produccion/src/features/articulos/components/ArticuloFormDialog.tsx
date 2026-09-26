@@ -31,8 +31,13 @@ import { ApiError } from '@/lib/api/api-error';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 import { useArticulo, useCreateArticulo, useUpdateArticulo } from '../api/articulos.hooks';
-import { createArticuloSchema, type CreateArticuloFormValues } from '../schemas/articulo.schema';
-import { CLASIFICACION_OPTIONS, UNIDAD_MEDIDA_OPTIONS } from '../types/articulo.options';
+import { articuloFormSchema, createArticuloSchema, type CreateArticuloFormValues } from '../schemas/articulo.schema';
+import {
+  CLASIFICACION_OPTIONS,
+  getClasificacionLabel,
+  isClasificacionOficial,
+  UNIDAD_MEDIDA_OPTIONS,
+} from '../types/articulo.options';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getArticuloErrorMessage, withRequestId } from '../articulo-error';
 
@@ -64,7 +69,7 @@ export function ArticuloFormDialog({ isOpen, onClose, articuloId }: ArticuloForm
   };
 
   const form = useForm<CreateArticuloFormValues>({
-    resolver: zodResolver(createArticuloSchema),
+    resolver: zodResolver(articuloFormSchema),
     defaultValues,
   });
 
@@ -98,14 +103,17 @@ export function ArticuloFormDialog({ isOpen, onClose, articuloId }: ArticuloForm
 
   const onSubmit = (values: CreateArticuloFormValues) => {
     if (isEdit && articuloId) {
+      const updateInput = {
+        codigoExterno: values.codigoExterno?.trim() || null,
+        nombre: values.nombre.trim(),
+        unidadMedida: values.unidadMedida,
+      };
       updateMutation.mutate(
         { 
           id: articuloId, 
           input: {
-            codigoExterno: values.codigoExterno?.trim() || null,
-            nombre: values.nombre.trim(),
-            clasificacion: values.clasificacion,
-            unidadMedida: values.unidadMedida,
+            ...updateInput,
+            ...(isClasificacionOficial(values.clasificacion) ? { clasificacion: values.clasificacion } : {}),
           }
         },
         {
@@ -117,13 +125,15 @@ export function ArticuloFormDialog({ isOpen, onClose, articuloId }: ArticuloForm
         }
       );
     } else {
+      const parsed = createArticuloSchema.safeParse(values);
+      if (!parsed.success) {
+        form.setError('clasificacion', { type: 'manual', message: 'Seleccione una clasificación oficial.' });
+        return;
+      }
       createMutation.mutate(
         {
-          codigo: values.codigo.trim(),
-          codigoExterno: values.codigoExterno?.trim() || undefined,
-          nombre: values.nombre.trim(),
-          clasificacion: values.clasificacion,
-          unidadMedida: values.unidadMedida,
+          ...parsed.data,
+          codigoExterno: parsed.data.codigoExterno || undefined,
         },
         {
           onSuccess: () => {
@@ -257,14 +267,19 @@ export function ArticuloFormDialog({ isOpen, onClose, articuloId }: ArticuloForm
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Clasificación</FormLabel>
-                      <Select 
-                        disabled={isSubmitting} 
-                        onValueChange={field.onChange} 
-                        value={field.value}
+                      {isEdit && articulo && !isClasificacionOficial(articulo.clasificacion) && (
+                        <p className="text-xs text-muted-foreground" data-testid="legacy-clasificacion-readonly">
+                          Actual: {getClasificacionLabel(articulo.clasificacion)} (legacy; se conserva si no elige una clasificación oficial)
+                        </p>
+                      )}
+                      <Select
+                        disabled={isSubmitting}
+                        onValueChange={field.onChange}
+                        value={isClasificacionOficial(field.value) ? field.value : ''}
                       >
                         <FormControl>
                           <SelectTrigger data-testid="select-form-clasificacion">
-                            <SelectValue placeholder="Seleccione..." />
+                            <SelectValue placeholder={isEdit ? 'Sin cambios; elija para reemplazar' : 'Seleccione...'} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
