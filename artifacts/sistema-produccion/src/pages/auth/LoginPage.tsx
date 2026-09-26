@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Moon, ServerCrash, Sun } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Moon, ServerCrash, Sun } from 'lucide-react';
 import { BrandMark } from '@/components/shared/BrandMark';
 import { StartupLoader } from '@/components/shared/StartupLoader';
 import { useTheme } from '@/auth/ThemeContext';
@@ -26,6 +26,7 @@ export default function LoginPage() {
   const { isFirebaseConfigured, login, authenticated, loading } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -149,14 +150,31 @@ export default function LoginPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Contraseña</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          autoComplete="current-password"
-                          data-testid="input-login-password"
-                          {...field}
-                        />
-                      </FormControl>
+                        <div className="relative">
+                          <FormControl>
+                            <Input
+                              type={showPassword ? 'text' : 'password'}
+                              autoComplete="current-password"
+                              className="pr-12"
+                              data-testid="input-login-password"
+                              {...field}
+                            />
+                          </FormControl>
+                          <span className="absolute inset-y-0 right-1 flex items-center">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                              aria-pressed={showPassword}
+                              onClick={() => setShowPassword((visible) => !visible)}
+                              data-testid="button-toggle-password"
+                            >
+                              {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                            </Button>
+                          </span>
+                        </div>
                       <FormMessage />
                     </FormItem>
                   )}

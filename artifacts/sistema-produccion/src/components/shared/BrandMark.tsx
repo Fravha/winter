@@ -6,7 +6,7 @@ type BrandMarkProps = {
 export function BrandMark({ size = 'small', compact = false }: BrandMarkProps) {
   return (
     <span className="inline-flex min-w-0 items-center gap-3">
-      <span className={`flex shrink-0 items-center justify-center rounded-lg border border-[#a66b76]/40 bg-[#581e32] ${size === 'large' ? 'h-20 w-20 p-2.5' : 'h-10 w-10 p-1'}`}>
+      <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#a66b76]/40 bg-[#581e32] ${size === 'large' ? 'h-20 w-20 p-2.5' : 'h-10 w-10 p-1'}`}>
         <img
           src={`${import.meta.env.BASE_URL}cdz-logo.webp`}
           alt="Logo institucional CDZ"
