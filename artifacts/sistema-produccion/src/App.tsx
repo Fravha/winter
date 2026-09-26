@@ -32,6 +32,23 @@ import ReportesPage from '@/pages/reportes/ReportesPage';
 
 const queryClient = new QueryClient();
 
+// Keep these paths in sync with the routes inside ProtectedRoutes. Unknown paths
+// must reach the public 404 without bypassing guards on valid routes.
+const protectedPaths = [
+  '/',
+  '/articulos',
+  '/compras',
+  '/inventario',
+  '/produccion',
+  '/reportes',
+  '/produccion/batches/:batchId/trace',
+  '/administracion/usuarios',
+  '/administracion/roles',
+  '/administracion/permisos',
+  '/administracion/auditoria',
+  '/administracion',
+] as const;
+
 function ProtectedRoutes() {
   return (
     <AuthGuard>
@@ -107,7 +124,6 @@ function ProtectedRoutes() {
             </PermissionGuard>
           </Route>
 
-          <Route component={NotFound} />
         </Switch>
       </AppShell>
     </AuthGuard>
@@ -119,7 +135,10 @@ function Router() {
     <RoutedErrorBoundary>
       <Switch>
         <Route path="/iniciar-sesion" component={LoginPage} />
-        <Route component={ProtectedRoutes} />
+        {protectedPaths.map((path) => (
+          <Route key={path} path={path} component={ProtectedRoutes} />
+        ))}
+        <Route path="*" component={NotFound} />
       </Switch>
     </RoutedErrorBoundary>
   );
