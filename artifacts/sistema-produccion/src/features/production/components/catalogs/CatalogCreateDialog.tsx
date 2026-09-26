@@ -55,7 +55,7 @@ export function CatalogCreateDialog({ open, onOpenChange, useCreate, hasUserId, 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="w-[calc(100%_-_2rem)]">
         <DialogHeader>
           <DialogTitle>Nuevo registro: {title}</DialogTitle>
           <DialogDescription>

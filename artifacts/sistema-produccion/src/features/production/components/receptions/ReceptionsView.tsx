@@ -32,16 +32,16 @@ export function ReceptionsView() {
   const mappedError = error ? mapProductionError(error) : null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between bg-card p-4 rounded-lg border shadow-sm">
-        <div className="flex items-center gap-4">
+    <div className="min-w-0 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-4 rounded-lg border shadow-sm">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <h2 className="text-lg font-semibold tracking-tight">Recepciones de Uva</h2>
           <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching} title="Actualizar" className="h-8 w-8">
             <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
         </div>
         {canCreate && (
-          <Button onClick={() => setCreateOpen(true)} data-testid="btn-new-reception">
+          <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto" data-testid="btn-new-reception">
             <Plus className="h-4 w-4 mr-2" />
             Nueva Recepción
           </Button>

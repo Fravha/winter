@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (userError.code === 'AUTH_USER_INACTIVE') {
         contractualError = 'Tu cuenta se encuentra inactiva o suspendida.';
       } else {
-        technicalError = 'No fue posible verificar tu acceso con el servidor de Winter.';
+        technicalError = 'No fue posible verificar tu acceso con el servidor del sistema.';
       }
     } else {
       technicalError = 'Ocurrió un error técnico al verificar tu cuenta.';

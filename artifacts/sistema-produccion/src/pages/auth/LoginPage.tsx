@@ -10,7 +10,10 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, ServerCrash } from 'lucide-react';
+import { AlertCircle, Moon, ServerCrash, Sun } from 'lucide-react';
+import { BrandMark } from '@/components/shared/BrandMark';
+import { StartupLoader } from '@/components/shared/StartupLoader';
+import { useTheme } from '@/auth/ThemeContext';
 
 const loginSchema = z.object({
   email: z.string().email('Ingresa un correo electrónico válido.'),
@@ -21,6 +24,7 @@ type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const { isFirebaseConfigured, login, authenticated, loading } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [error, setError] = useState<string | null>(null);
 
   const form = useForm<LoginValues>({
@@ -33,27 +37,28 @@ export default function LoginPage() {
 
   if (!isFirebaseConfigured) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-background p-4">
-        <Alert variant="destructive" className="max-w-md">
-          <ServerCrash className="h-4 w-4" />
-          <AlertTitle>Error de configuración</AlertTitle>
-          <AlertDescription>
-            El sistema no está configurado correctamente. Faltan variables de entorno de Firebase.
-            Por favor, contacta al administrador del sistema.
-          </AlertDescription>
-        </Alert>
+      <div className="flex min-h-dvh w-full items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md space-y-6">
+          <BrandMark />
+          <Alert variant="destructive" className="bg-card p-6">
+            <ServerCrash className="h-4 w-4" />
+            <AlertTitle>Error de configuración</AlertTitle>
+            <AlertDescription>
+              El sistema no está configurado correctamente. Faltan variables de entorno de Firebase.
+              Por favor, contacta al administrador del sistema.
+            </AlertDescription>
+          </Alert>
+          <Button variant="outline" onClick={toggleTheme} data-testid="button-error-toggle-theme">
+            {theme === 'dark' ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+            {theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+          </Button>
+        </div>
       </div>
     );
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-background">
-        <div className="text-center animate-pulse text-muted-foreground">
-          Cargando...
-        </div>
-      </div>
-    );
+    return <StartupLoader label="Preparando acceso" />;
   }
 
   if (authenticated) {
@@ -86,18 +91,26 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-serif font-bold text-primary">Cruce del Zorro</h1>
-          <p className="text-muted-foreground mt-2 text-sm uppercase tracking-widest">Sistema de Producción</p>
+    <div className="relative flex min-h-dvh w-full items-center justify-center bg-background p-4 sm:p-8">
+      <div className="absolute right-4 top-4 sm:right-8 sm:top-8">
+        <Button type="button" variant="outline" size="icon" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Activar modo claro' : 'Activar modo oscuro'} data-testid="button-login-toggle-theme" className="h-10 w-10">
+          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </Button>
+      </div>
+      <div className="w-full max-w-[440px]">
+        <div className="mb-8 flex flex-col items-center gap-4 text-center">
+          <BrandMark size="large" compact />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">Acceso operativo</p>
+            <h1 className="mt-2 font-serif text-2xl font-semibold leading-tight text-foreground sm:text-3xl">Sistema de Producción CDZ</h1>
+          </div>
         </div>
 
-        <Card className="shadow-lg border-border/50">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl">Iniciar sesión</CardTitle>
             <CardDescription>
-              Ingresa tus credenciales para acceder al sistema
+              Ingresa tus credenciales para continuar la jornada.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -121,6 +134,7 @@ export default function LoginPage() {
                           placeholder="usuario@ejemplo.com"
                           autoComplete="email"
                           autoFocus
+                          data-testid="input-login-email"
                           {...field}
                         />
                       </FormControl>
@@ -139,6 +153,7 @@ export default function LoginPage() {
                         <Input
                           type="password"
                           autoComplete="current-password"
+                          data-testid="input-login-password"
                           {...field}
                         />
                       </FormControl>
@@ -151,6 +166,7 @@ export default function LoginPage() {
                   type="submit"
                   className="w-full mt-2"
                   disabled={form.formState.isSubmitting}
+                  data-testid="button-login-submit"
                 >
                   {form.formState.isSubmitting ? 'Iniciando sesión...' : 'Iniciar sesión'}
                 </Button>
@@ -158,6 +174,7 @@ export default function LoginPage() {
             </Form>
           </CardContent>
         </Card>
+        <p className="mt-6 text-center text-xs text-muted-foreground">Acceso exclusivo para personal autorizado.</p>
       </div>
     </div>
   );

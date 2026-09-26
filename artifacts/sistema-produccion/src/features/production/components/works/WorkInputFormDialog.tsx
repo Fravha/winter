@@ -159,7 +159,7 @@ export function WorkInputFormDialog({ workId, workLabel, open, onOpenChange }: P
 
   return (
     <Dialog open={open} onOpenChange={isPending ? undefined : onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-xl">
         <DialogHeader>
           <DialogTitle>Registrar Insumo Consumido</DialogTitle>
         </DialogHeader>

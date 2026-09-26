@@ -59,7 +59,7 @@ export function WorkDetailDialog({ id, open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-3xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>Detalles del Trabajo</DialogTitle>
         </DialogHeader>
@@ -125,7 +125,7 @@ export function WorkDetailDialog({ id, open, onOpenChange }: Props) {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="border rounded-md overflow-hidden">
+                <div className="border rounded-md overflow-x-auto">
                   <div className="bg-muted px-3 py-2 border-b text-xs font-medium">Lotes Involucrados ({work.batchIds.length})</div>
                   <ul className="divide-y text-sm">
                     {work.batchIds.map(id => (
@@ -134,7 +134,7 @@ export function WorkDetailDialog({ id, open, onOpenChange }: Props) {
                     {work.batchIds.length === 0 && <li className="p-2 text-muted-foreground italic text-xs">Ninguno</li>}
                   </ul>
                 </div>
-                <div className="border rounded-md overflow-hidden">
+                <div className="border rounded-md overflow-x-auto">
                   <div className="bg-muted px-3 py-2 border-b text-xs font-medium">Contenedores ({work.containerIds.length})</div>
                   <ul className="divide-y text-sm">
                     {work.containerIds.map(id => (
@@ -143,7 +143,7 @@ export function WorkDetailDialog({ id, open, onOpenChange }: Props) {
                     {work.containerIds.length === 0 && <li className="p-2 text-muted-foreground italic text-xs">Ninguno</li>}
                   </ul>
                 </div>
-                <div className="border rounded-md overflow-hidden">
+                <div className="border rounded-md overflow-x-auto">
                   <div className="bg-muted px-3 py-2 border-b text-xs font-medium">Participantes ({work.participants.length})</div>
                   <ul className="divide-y text-sm">
                     {work.participants.map((p, i) => (
@@ -157,7 +157,7 @@ export function WorkDetailDialog({ id, open, onOpenChange }: Props) {
                 </div>
               </div>
 
-              <div className="border rounded-md overflow-hidden bg-card mt-6">
+              <div className="border rounded-md overflow-x-auto bg-card mt-6">
                 <div className="bg-muted px-4 py-2 border-b font-medium text-sm flex items-center justify-between">
                   <span>Insumos Consumidos</span>
                   {canAddInput && (
@@ -226,7 +226,7 @@ export function WorkDetailDialog({ id, open, onOpenChange }: Props) {
               </div>
 
               {work.corrections && work.corrections.length > 0 && (
-                <div className="border rounded-md overflow-hidden bg-card mt-6">
+                <div className="border rounded-md overflow-x-auto bg-card mt-6">
                   <div className="bg-muted px-4 py-2 border-b font-medium text-sm flex items-center justify-between">
                     <span>Historial de Correcciones</span>
                     <span className="text-xs font-normal text-muted-foreground">{work.corrections.length} registro(s)</span>

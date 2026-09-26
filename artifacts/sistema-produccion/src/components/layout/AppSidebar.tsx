@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'wouter';
 import { useAuth } from '@/auth/AuthContext';
+import { BrandMark } from '@/components/shared/BrandMark';
 import {
   Sidebar,
   SidebarContent,
@@ -18,7 +19,6 @@ import {
   ShoppingCart,
   Boxes,
   Factory,
-  Settings,
   Users,
   Shield,
   KeyRound,
@@ -57,7 +57,6 @@ const navGroups: NavGroup[] = [
   {
     label: 'ADMINISTRACIÓN',
     items: [
-      { label: 'Administración', href: '/administracion', icon: Settings, permission: ['users:read', 'users:manage', 'rbac:read', 'rbac:manage', 'audit:read'] },
       { label: 'Usuarios', href: '/administracion/usuarios', icon: Users, permission: 'users:read' },
       { label: 'Roles', href: '/administracion/roles', icon: Shield, permission: 'rbac:read' },
       { label: 'Permisos', href: '/administracion/permisos', icon: KeyRound, permission: 'rbac:read' },
@@ -77,15 +76,9 @@ export function AppSidebar() {
 
   return (
     <Sidebar variant="sidebar" collapsible="icon">
-      <SidebarHeader className="p-4 border-b">
-        <Link href="/" className="flex items-center gap-2 px-2 hover:opacity-80 transition-opacity">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <span className="font-serif font-bold text-xl leading-none">C</span>
-          </div>
-          <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-            <span className="font-serif font-bold leading-tight">Cruce del Zorro</span>
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground leading-tight">Winter</span>
-          </div>
+      <SidebarHeader className="border-b border-sidebar-border p-3 group-data-[collapsible=icon]:p-1">
+        <Link href="/" onClick={closeMobileNavigation} data-testid="link-brand-home" className="flex min-h-12 items-center rounded-md px-1 text-sidebar-foreground hover:opacity-80 focus-visible:outline-2 focus-visible:outline-sidebar-ring group-data-[collapsible=icon]:px-0">
+          <BrandMark />
         </Link>
       </SidebarHeader>
       
@@ -101,17 +94,18 @@ export function AppSidebar() {
 
           return (
             <SidebarGroup key={group.label}>
-              <SidebarGroupLabel className="text-xs">{group.label}</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-[10px] font-semibold tracking-[0.15em] text-sidebar-foreground/65">{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {visibleItems.map((item) => (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton
                         asChild
-                          isActive={location === item.href || (item.href !== '/' && item.href !== '/administracion' && location.startsWith(`${item.href}/`))}
+                        isActive={location === item.href || (item.href !== '/' && location.startsWith(`${item.href}/`))}
+                        className="h-10 text-sidebar-foreground data-[active=true]:border-l-2 data-[active=true]:border-sidebar-primary data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground group-data-[collapsible=icon]:h-9!"
                         tooltip={item.label}
                       >
-                        <Link href={item.href} onClick={closeMobileNavigation}>
+                        <Link href={item.href} onClick={closeMobileNavigation} data-testid={`link-nav-${item.href.replaceAll('/', '-').replace(/^-/, '') || 'inicio'}`}>
                           <item.icon />
                           <span>{item.label}</span>
                         </Link>

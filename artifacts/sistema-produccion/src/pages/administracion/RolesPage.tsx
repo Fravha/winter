@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { StartupLoader } from '@/components/shared/StartupLoader';
 import { useAuth } from '@/auth/AuthContext';
 import { useRoles } from '@/features/admin/api/admin.hooks';
 import { RolesTable } from '@/features/admin/components/roles/RolesTable';
@@ -61,7 +62,7 @@ export default function RolesPage() {
 
       {error && <AdminErrorAlert error={error} />}
 
-      <RolesTable
+      {isLoading ? <StartupLoader compact label="Cargando roles" /> : <RolesTable
         roles={roles}
         isLoading={isLoading}
         error={error}
@@ -69,7 +70,7 @@ export default function RolesPage() {
         onEdit={handleEdit}
         onManagePermissions={handlePermissions}
         onDelete={handleDelete}
-      />
+      />}
 
       <RoleFormSheet
         role={selectedRole}

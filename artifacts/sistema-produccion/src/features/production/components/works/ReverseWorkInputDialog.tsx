@@ -78,7 +78,7 @@ export function ReverseWorkInputDialog({ workId, input, onClose }: Props) {
 
   return (
     <AlertDialog open={!!input} onOpenChange={(open) => !open && !isPending && onClose()}>
-      <AlertDialogContent>
+      <AlertDialogContent className="w-[calc(100%_-_2rem)]">
         <AlertDialogHeader>
           <AlertDialogTitle>Revertir Insumo Consumido</AlertDialogTitle>
           <AlertDialogDescription>

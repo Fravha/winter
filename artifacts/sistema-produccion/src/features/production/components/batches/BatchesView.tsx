@@ -39,17 +39,17 @@ export function BatchesView() {
   const mappedError = error ? mapProductionError(error) : null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-4 items-end sm:items-center justify-between bg-card p-4 rounded-lg border shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-          <div className="w-full sm:w-64 space-y-1.5">
+    <div className="min-w-0 space-y-4">
+      <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-end justify-between bg-card p-4 rounded-lg border shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full min-w-0 sm:flex-1">
+          <div className="w-full min-w-0 space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Filtrar por Artículo</label>
             <ArticuloSelect
               value={articuloId}
               onChange={(val) => { setArticuloId(val === 'ALL' ? '' : val); setPage(1); }}
             />
           </div>
-          <div className="w-full sm:w-64 space-y-1.5">
+          <div className="w-full min-w-0 space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Filtrar por Orden</label>
             <ProductionOrderSelect
               value={productionOrderId}
@@ -64,7 +64,7 @@ export function BatchesView() {
             </div>
           )}
         </div>
-        <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching} title="Actualizar">
+        <Button variant="outline" size="icon" className="self-end sm:self-auto" onClick={() => refetch()} disabled={isFetching} title="Actualizar" aria-label="Actualizar lotes">
           <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
         </Button>
       </div>
@@ -217,7 +217,7 @@ function BatchDetailDialog({ id, open, onOpenChange }: { id: string; open: boole
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-3xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <div className="flex items-center justify-between gap-4">
             <DialogTitle>Detalles del Lote</DialogTitle>

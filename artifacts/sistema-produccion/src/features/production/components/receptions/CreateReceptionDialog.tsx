@@ -222,7 +222,7 @@ export function CreateReceptionDialog({ open, onOpenChange, onSuccess }: Props) 
       onOpenChange(val);
       if (!val) { setTimeout(() => { setStep('form'); form.reset(); setPendingPayload(null); setDefinitiveError(false); }, 200); }
     }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>{step === 'form' ? 'Nueva Recepción de Uva' : 'Confirmar Recepción'}</DialogTitle>
           <DialogDescription>
@@ -359,7 +359,7 @@ export function CreateReceptionDialog({ open, onOpenChange, onSuccess }: Props) 
                     </Button>
                   </div>
                   
-                  <div className="bg-card border rounded-lg overflow-hidden">
+                  <div className="bg-card border rounded-lg overflow-x-auto">
                     <Table>
                       <TableHeader className="bg-muted/50">
                         <TableRow>
@@ -454,7 +454,7 @@ export function CreateReceptionDialog({ open, onOpenChange, onSuccess }: Props) 
 
                 <div className="space-y-2">
                   <h4 className="text-sm font-medium">Ítems a Ingresar</h4>
-                  <div className="border rounded-md overflow-hidden bg-card">
+                  <div className="border rounded-md overflow-x-auto bg-card">
                     <Table>
                       <TableHeader className="bg-muted/50">
                         <TableRow>

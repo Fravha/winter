@@ -16,7 +16,7 @@ export function TransformationOrderDetailDialog({ orderId, open, onOpenChange }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-2xl">
         <DialogHeader>
           <DialogTitle>Detalle de Orden de Transformación</DialogTitle>
           <DialogDescription>

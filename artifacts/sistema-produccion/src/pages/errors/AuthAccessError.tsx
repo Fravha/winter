@@ -53,7 +53,7 @@ export function AuthAccessError({
         <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">
           {technicalError ||
             contractualError ||
-            'Tu cuenta de Firebase no tiene una autorización activa en Winter.'}
+            'Tu cuenta no tiene una autorización activa en el sistema.'}
         </p>
         <div className="mt-7 flex flex-col-reverse justify-center gap-3 sm:flex-row">
           <Button

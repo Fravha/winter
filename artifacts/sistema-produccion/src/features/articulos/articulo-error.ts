@@ -11,7 +11,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 export function getArticuloErrorMessage(error: Error, fallback: string) {
   if (!(error instanceof ApiError)) return fallback;
   if (error.code === 'NETWORK_ERROR') {
-    return 'No fue posible conectar con el servidor de Winter. Intenta nuevamente.';
+    return 'No fue posible conectar con el servidor del sistema. Intenta nuevamente.';
   }
   return ERROR_MESSAGES[error.code] ?? fallback;
 }

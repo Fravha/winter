@@ -28,7 +28,7 @@ export function ContainerDetailDialog({ id, open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-4xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle className="flex items-center gap-2">
             <Box className="h-5 w-5 text-muted-foreground" />
@@ -104,7 +104,7 @@ export function ContainerDetailDialog({ id, open, onOpenChange }: Props) {
                 ) : occupanciesRes?.data.length === 0 ? (
                   <div className="text-sm text-muted-foreground italic text-center p-4 border rounded-md">No hay registro de ocupaciones anteriores.</div>
                 ) : (
-                  <div className="border rounded-md overflow-hidden">
+                  <div className="border rounded-md overflow-x-auto">
                     <table className="w-full text-sm text-left">
                       <thead className="bg-muted/50 text-xs text-muted-foreground">
                         <tr>
@@ -144,7 +144,7 @@ export function ContainerDetailDialog({ id, open, onOpenChange }: Props) {
                 ) : movementsRes?.data.length === 0 ? (
                   <div className="text-sm text-muted-foreground italic text-center p-4 border rounded-md">No hay movimientos registrados.</div>
                 ) : (
-                  <div className="border rounded-md overflow-hidden">
+                  <div className="border rounded-md overflow-x-auto">
                     <table className="w-full text-sm text-left">
                       <thead className="bg-muted/50 text-xs text-muted-foreground">
                         <tr>

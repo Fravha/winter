@@ -34,17 +34,17 @@ export function WorksView() {
   const mappedError = error ? mapProductionError(error) : null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-4 items-end sm:items-center justify-between bg-card p-4 rounded-lg border shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-          <div className="w-full sm:w-56 space-y-1.5">
+    <div className="min-w-0 space-y-4">
+      <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between bg-card p-4 rounded-lg border shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full min-w-0 lg:flex-1">
+          <div className="w-full min-w-0 space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Filtrar por Orden</label>
             <ProductionOrderSelect
               value={productionOrderId}
               onValueChange={(val) => { setProductionOrderId(val); setPage(1); }}
             />
           </div>
-          <div className="w-full sm:w-56 space-y-1.5">
+          <div className="w-full min-w-0 space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Filtrar por Tipo</label>
             <WorkTypeSelect
               value={workTypeId}
@@ -60,7 +60,7 @@ export function WorksView() {
           )}
         </div>
         
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2 w-full lg:w-auto">
           <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching} title="Actualizar">
             <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>

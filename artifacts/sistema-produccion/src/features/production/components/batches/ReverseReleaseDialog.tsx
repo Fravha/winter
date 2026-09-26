@@ -72,7 +72,7 @@ export function ReverseReleaseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[450px]">
+      <DialogContent className="w-[calc(100%_-_2rem)] sm:max-w-[450px]">
         <DialogHeader>
           <DialogTitle>Revertir Envío a Inventario</DialogTitle>
           <DialogDescription>

@@ -128,7 +128,7 @@ export function CorrectReceptionDialog({ open, onOpenChange, reception, field, p
       onOpenChange(val);
       if (!val) { setTimeout(() => { setStep('form'); form.reset(); setPendingPayload(null); setDefinitiveError(false); }, 200); }
     }}>
-      <DialogContent className="max-w-md max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-md max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>Corregir {fieldLabel}</DialogTitle>
           <DialogDescription>
@@ -190,7 +190,7 @@ export function CorrectReceptionDialog({ open, onOpenChange, reception, field, p
           ) : pendingPayload && (
             <ScrollArea className="h-full p-6 space-y-6">
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="bg-muted/50 p-3 rounded-md border border-destructive/20">
                     <span className="text-xs font-medium text-muted-foreground mb-1 block">Valor Anterior</span>
                     <p className="text-sm line-through text-destructive">{formatValue(originalValue)}</p>

@@ -198,7 +198,7 @@ export function CreateTransformationDialog({ open, onOpenChange, onSuccess }: Pr
       onOpenChange(val);
       if (!val) { setTimeout(() => { setStep('form'); form.reset(); setPendingPayload(null); setDefinitiveError(false); }, 200); }
     }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>{step === 'form' ? 'Nueva Transformación' : 'Confirmar Transformación'}</DialogTitle>
           <DialogDescription>
@@ -680,7 +680,7 @@ export function CreateTransformationDialog({ open, onOpenChange, onSuccess }: Pr
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium flex items-center">Inputs <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded-full">{pendingPayload.inputs.length}</span></h4>
-                    <div className="border rounded-md overflow-hidden bg-card">
+                    <div className="border rounded-md overflow-x-auto bg-card">
                       <Table>
                         <TableHeader className="bg-muted/50">
                           <TableRow>
@@ -708,7 +708,7 @@ export function CreateTransformationDialog({ open, onOpenChange, onSuccess }: Pr
 
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium flex items-center">Outputs <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded-full">{pendingPayload.outputs.length}</span></h4>
-                    <div className="border rounded-md overflow-hidden bg-card">
+                    <div className="border rounded-md overflow-x-auto bg-card">
                       <Table>
                         <TableHeader className="bg-muted/50">
                           <TableRow>
@@ -732,7 +732,7 @@ export function CreateTransformationDialog({ open, onOpenChange, onSuccess }: Pr
                 {pendingPayload.losses && pendingPayload.losses.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium flex items-center">Pérdidas <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded-full">{pendingPayload.losses.length}</span></h4>
-                    <div className="border rounded-md overflow-hidden bg-card">
+                    <div className="border rounded-md overflow-x-auto bg-card">
                       <Table>
                         <TableHeader className="bg-muted/50">
                           <TableRow>

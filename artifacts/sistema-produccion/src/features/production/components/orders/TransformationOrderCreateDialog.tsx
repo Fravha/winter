@@ -59,7 +59,7 @@ export function TransformationOrderCreateDialog({ open, onOpenChange }: { open: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="w-[calc(100%_-_2rem)]">
         <DialogHeader>
           <DialogTitle>Nueva Orden de Transformación</DialogTitle>
           <DialogDescription>

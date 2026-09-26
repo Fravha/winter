@@ -56,7 +56,7 @@ export function CatalogUpdateDialog({ open, onOpenChange, useUpdate, item, title
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="w-[calc(100%_-_2rem)]">
         <DialogHeader>
           <DialogTitle>Editar: {title}</DialogTitle>
           <DialogDescription>

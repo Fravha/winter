@@ -24,9 +24,9 @@ export function TransformationsView() {
   const canCreate = can('production:transformation_create');
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="flex-1 w-full sm:w-auto max-w-sm flex items-center gap-2">
+    <div className="min-w-0 space-y-4">
+      <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
+        <div className="flex min-w-0 w-full sm:w-auto sm:flex-1 sm:max-w-sm items-center gap-2">
           <ProductionOrderSelect 
             value={productionOrderId} 
             onValueChange={v => { setProductionOrderId(v); setPage(1); }}
@@ -38,7 +38,7 @@ export function TransformationsView() {
           )}
         </div>
         {canCreate && (
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Nueva Transformación
           </Button>

@@ -131,7 +131,7 @@ export function CreateMeasurementDialog({ open, onOpenChange, onSuccess }: Props
       onOpenChange(val);
       if (!val) { setTimeout(() => { setStep('form'); form.reset(); setPendingPayload(null); setDefinitiveError(false); }, 200); }
     }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>{step === 'form' ? 'Registrar Nueva Medición' : 'Confirmar Medición'}</DialogTitle>
           <DialogDescription>
@@ -159,7 +159,7 @@ export function CreateMeasurementDialog({ open, onOpenChange, onSuccess }: Props
                       </FormItem>
                     )} />
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField control={form.control} name="value" render={({ field }) => (
                         <FormItem>
                           <FormLabel>Valor *</FormLabel>

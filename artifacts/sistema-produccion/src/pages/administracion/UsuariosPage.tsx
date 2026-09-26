@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { StartupLoader } from '@/components/shared/StartupLoader';
 import { useAuth } from '@/auth/AuthContext';
 import { useUsers } from '@/features/admin/api/admin.hooks';
 import { UsersTable } from '@/features/admin/components/users/UsersTable';
@@ -70,7 +71,7 @@ export default function UsuariosPage() {
 
       {error && <AdminErrorAlert error={error} />}
 
-      <UsersTable
+      {isLoading ? <StartupLoader compact label="Cargando usuarios" /> : <UsersTable
         users={users}
         isLoading={isLoading}
         error={error}
@@ -82,7 +83,7 @@ export default function UsuariosPage() {
         onActivate={(u) => openAction(u, 'ACTIVATE')}
         onSuspend={(u) => openAction(u, 'SUSPEND')}
         onSetupPassword={(u) => openAction(u, 'SETUP_PASSWORD')}
-      />
+      />}
 
       <UserDetailDialog
         userId={selectedUser?.id || null}

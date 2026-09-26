@@ -37,7 +37,7 @@ export function MeasurementDetailDialog({ id, open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-2xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>Detalles de Medición</DialogTitle>
         </DialogHeader>

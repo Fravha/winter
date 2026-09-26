@@ -86,8 +86,8 @@ function ReportCard({ definition, index }: { definition: ReportDefinition; index
 export default function ReportesPage() {
   return (
     <main className="reportes-page min-h-[100dvh]">
-      <PageHeader eyebrow="OPERACIONES / EXPORTACIÓN" title="Reportes" description="Exporta información operativa de Winter en formato Excel." />
-      <div className="reportes-intro"><div><span className="reportes-kicker">ARCHIVO OPERATIVO</span><h2>La información,<br /><em>lista para trabajar.</em></h2></div><p>Selecciona los filtros que necesitas. Cada archivo se genera al momento de la descarga, con los datos disponibles en Winter.</p></div>
+      <PageHeader eyebrow="OPERACIONES / EXPORTACIÓN" title="Reportes" description="Exporta información operativa del sistema en formato Excel." />
+      <div className="reportes-intro"><div><span className="reportes-kicker">ARCHIVO OPERATIVO</span><h2>La información,<br /><em>lista para trabajar.</em></h2></div><p>Selecciona los filtros que necesitas. Cada archivo se genera al momento de la descarga, con los datos disponibles en el sistema.</p></div>
       <div className="reportes-section-title"><span>EXPORTACIONES DISPONIBLES</span><span>06 FORMATOS XLSX</span></div>
       <div className="reportes-grid">{definitions.map((definition, index) => <ReportCard key={definition.kind} definition={definition} index={index} />)}</div>
       <p className="reportes-footnote">Los archivos se generan en el servidor. No se muestran resultados en esta página.</p>

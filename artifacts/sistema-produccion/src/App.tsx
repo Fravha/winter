@@ -10,6 +10,7 @@ import {
   Router as WouterRouter,
 } from 'wouter';
 import { AuthProvider } from '@/auth/AuthContext';
+import { ThemeProvider } from '@/auth/ThemeContext';
 import { AuthGuard } from '@/components/shared/AuthGuard';
 import { PermissionGuard } from '@/components/shared/PermissionGuard';
 import { AppShell } from '@/components/layout/AppShell';
@@ -132,14 +133,16 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <TooltipProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
             <Router />
           </WouterRouter>
           <Toaster />
-        </TooltipProvider>
-      </AuthProvider>
+          </TooltipProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

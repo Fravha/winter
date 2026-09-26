@@ -111,14 +111,14 @@ export function ContainerFormDialog({ open, onOpenChange, container }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={isPending ? undefined : onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="w-[calc(100%_-_2rem)] sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>{container ? 'Editar Recipiente' : 'Nuevo Recipiente'}</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="code"
@@ -207,7 +207,7 @@ export function ContainerFormDialog({ open, onOpenChange, container }: Props) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="location"

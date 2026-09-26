@@ -64,24 +64,24 @@ export function TransformationOrderList() {
   const meta = data?.meta || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <div className="flex flex-col gap-1">
+    <Card className="min-w-0">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 space-y-0 pb-4">
+        <div className="flex min-w-0 flex-col gap-1">
           <CardTitle className="text-xl">Órdenes de Transformación</CardTitle>
           <CardDescription>
             Gestión de órdenes operativas de transformación (P5.4).
           </CardDescription>
         </div>
         {canCreate && (
-          <Button onClick={() => setCreateOpen(true)} data-testid="button-create-transformation-order">
+          <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto" data-testid="button-create-transformation-order">
             <Plus className="h-4 w-4 mr-2" />
             Nueva Orden
           </Button>
         )}
       </CardHeader>
       <CardContent>
-        <div className="flex gap-4 items-center mb-4 justify-between">
-          <div className="w-48">
+        <div className="flex flex-wrap gap-4 items-center mb-4 justify-between">
+          <div className="w-full sm:w-48">
             <Select
               value={filters.status || 'ALL'}
               onValueChange={(val) => setFilters(prev => ({ ...prev, status: val === 'ALL' ? undefined : val as 'OPEN' | 'CLOSED', page: 1 }))}
@@ -223,7 +223,7 @@ export function TransformationOrderList() {
       )}
 
       <AlertDialog open={!!confirmCloseItem} onOpenChange={(op) => !op && setConfirmCloseItem(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="w-[calc(100%_-_2rem)]">
           <AlertDialogHeader>
             <AlertDialogTitle>Cerrar Orden de Transformación</AlertDialogTitle>
             <AlertDialogDescription>

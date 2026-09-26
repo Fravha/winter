@@ -51,7 +51,7 @@ export function ReceptionDetailDialog({ id, open, onOpenChange, varietiesMap, pr
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+        <DialogContent className="w-[calc(100%_-_2rem)] max-w-4xl max-h-[90vh] flex flex-col p-0">
           <DialogHeader className="p-6 pb-4 border-b">
             <DialogTitle>Detalles de Recepción</DialogTitle>
           </DialogHeader>
@@ -134,7 +134,7 @@ export function ReceptionDetailDialog({ id, open, onOpenChange, varietiesMap, pr
                   <h3 className="text-sm font-semibold flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4" /> Lotes Físicos (Ítems)
                   </h3>
-                  <div className="border rounded-md overflow-hidden bg-card">
+                  <div className="border rounded-md overflow-x-auto bg-card">
                     <Table>
                       <TableHeader className="bg-muted/50">
                         <TableRow>
@@ -164,7 +164,7 @@ export function ReceptionDetailDialog({ id, open, onOpenChange, varietiesMap, pr
                     <h3 className="text-sm font-semibold flex items-center gap-2">
                       <History className="h-4 w-4" /> Historial de Correcciones
                     </h3>
-                    <div className="border rounded-md overflow-hidden bg-card">
+                    <div className="border rounded-md overflow-x-auto bg-card">
                       <Table>
                         <TableHeader className="bg-muted/50">
                           <TableRow>

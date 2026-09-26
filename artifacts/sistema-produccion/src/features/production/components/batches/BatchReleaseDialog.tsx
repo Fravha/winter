@@ -112,7 +112,7 @@ export function BatchReleaseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="w-[calc(100%_-_2rem)] sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Enviar Lote a Inventario</DialogTitle>
           <DialogDescription>

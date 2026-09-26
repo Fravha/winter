@@ -35,7 +35,7 @@ export function TransformationDetailDialog({ id, onClose }: Props) {
 
   return (
     <Dialog open={!!id} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-4xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>Detalle de Transformación</DialogTitle>
           <DialogDescription>
@@ -104,7 +104,7 @@ export function TransformationDetailDialog({ id, onClose }: Props) {
                     Inputs (Consumo)
                     <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{t.inputs.length}</span>
                   </h4>
-                  <div className="border rounded-md overflow-hidden bg-card shadow-sm">
+                  <div className="border rounded-md overflow-x-auto bg-card shadow-sm">
                     <Table>
                       <TableHeader className="bg-muted/50">
                         <TableRow>
@@ -135,7 +135,7 @@ export function TransformationDetailDialog({ id, onClose }: Props) {
                     Outputs (Generación)
                     <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{t.outputs.length}</span>
                   </h4>
-                  <div className="border rounded-md overflow-hidden bg-card shadow-sm">
+                  <div className="border rounded-md overflow-x-auto bg-card shadow-sm">
                     <Table>
                       <TableHeader className="bg-muted/50">
                         <TableRow>
@@ -164,7 +164,7 @@ export function TransformationDetailDialog({ id, onClose }: Props) {
                     Pérdidas
                     <span className="ml-2 text-xs bg-destructive/10 text-destructive px-2 py-0.5 rounded-full">{t.losses.length}</span>
                   </h4>
-                  <div className="border rounded-md overflow-hidden bg-card shadow-sm">
+                  <div className="border rounded-md overflow-x-auto bg-card shadow-sm">
                     <Table>
                       <TableHeader className="bg-muted/50">
                         <TableRow>

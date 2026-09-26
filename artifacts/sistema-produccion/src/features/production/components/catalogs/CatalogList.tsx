@@ -13,7 +13,6 @@ import { CatalogCreateDialog } from './CatalogCreateDialog';
 import { CatalogUpdateDialog } from './CatalogUpdateDialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { CatalogFilters, Catalog, Participant } from '../../types/production.types';
-import { Pagination } from '@/components/ui/pagination'; // Assuming basic pagination UI or simple previous/next buttons if missing
 
 // Use generic pagination component, but standard is not fully implemented in UI folder as a single component sometimes, let's check `ls artifacts/sistema-produccion/src/components/ui/pagination.tsx`
 
@@ -84,25 +83,25 @@ export function CatalogList({
   const meta = data?.meta || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <div className="flex flex-col gap-1">
+    <Card className="min-w-0">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 space-y-0 pb-4">
+        <div className="flex min-w-0 flex-col gap-1">
           <CardTitle className="text-xl">{title}</CardTitle>
           <CardDescription>
             Administración de catálogo.
           </CardDescription>
         </div>
         {canManage && (
-          <Button onClick={() => setCreateOpen(true)} data-testid={`button-create-${title.toLowerCase()}`}>
+          <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto" data-testid={`button-create-${title.toLowerCase()}`}>
             <Plus className="h-4 w-4 mr-2" />
             Nuevo
           </Button>
         )}
       </CardHeader>
       <CardContent>
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex gap-2 w-full max-w-xl">
-            <form onSubmit={handleSearch} className="flex flex-1 gap-2">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0 sm:max-w-xl">
+            <form onSubmit={handleSearch} className="flex w-full min-w-0 flex-1 gap-2">
               <Input
                 placeholder="Buscar..."
                 value={searchValue}
@@ -110,7 +109,7 @@ export function CatalogList({
                 className="w-full"
                 data-testid={`input-search-${title.toLowerCase()}`}
               />
-              <Button type="submit" variant="secondary" aria-label="Buscar" data-testid={`button-search-submit-${title.toLowerCase()}`}>
+              <Button type="submit" variant="secondary" className="shrink-0" aria-label="Buscar" data-testid={`button-search-submit-${title.toLowerCase()}`}>
                 <Search className="h-4 w-4" />
               </Button>
             </form>
@@ -118,7 +117,7 @@ export function CatalogList({
               value={filters.active === undefined ? 'ALL' : filters.active ? 'ACTIVE' : 'INACTIVE'}
               onValueChange={(val) => setFilters(prev => ({ ...prev, active: val === 'ALL' ? undefined : val === 'ACTIVE', page: 1 }))}
             >
-              <SelectTrigger className="w-[140px]" aria-label="Filtro de estado" data-testid={`select-filter-status-${title.toLowerCase()}`}>
+              <SelectTrigger className="w-full sm:w-[140px] shrink-0" aria-label="Filtro de estado" data-testid={`select-filter-status-${title.toLowerCase()}`}>
                 <SelectValue placeholder="Estado" />
               </SelectTrigger>
               <SelectContent>
@@ -262,7 +261,7 @@ export function CatalogList({
       )}
 
       <AlertDialog open={!!confirmStatusItem} onOpenChange={(op) => !op && setConfirmStatusItem(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="w-[calc(100%_-_2rem)]">
           <AlertDialogHeader>
             <AlertDialogTitle>¿Cambiar estado?</AlertDialogTitle>
             <AlertDialogDescription>

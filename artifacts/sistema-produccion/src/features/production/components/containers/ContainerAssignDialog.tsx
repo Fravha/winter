@@ -123,7 +123,7 @@ export function ContainerAssignDialog({ open, onOpenChange, container }: Props) 
 
   return (
     <Dialog open={open} onOpenChange={isPending ? undefined : onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="w-[calc(100%_-_2rem)] sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{step === 1 ? 'Asignar Contenido Inicial' : 'Confirmar Asignación'}</DialogTitle>
           <DialogDescription>
@@ -170,7 +170,7 @@ export function ContainerAssignDialog({ open, onOpenChange, container }: Props) 
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="quantity"

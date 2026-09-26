@@ -19,7 +19,7 @@ export default function HomePage() {
   return (
     <div className="space-y-6">
       <PageHeader 
-        eyebrow="Winter"
+        eyebrow="Sistema de Producción CDZ"
         title={`Bienvenido, ${user?.displayName || 'Usuario'}`}
         description={role ? `Sesión activa con el perfil ${role}.` : 'Selecciona un módulo para comenzar.'}
       />

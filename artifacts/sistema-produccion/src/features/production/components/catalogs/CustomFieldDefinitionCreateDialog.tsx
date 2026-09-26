@@ -86,7 +86,7 @@ export function CustomFieldDefinitionCreateDialog({ open, onOpenChange }: { open
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nuevo Campo Personalizado</DialogTitle>
           <DialogDescription>Define un nuevo campo adicional para una entidad.</DialogDescription>

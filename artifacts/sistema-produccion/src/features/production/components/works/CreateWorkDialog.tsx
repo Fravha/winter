@@ -161,7 +161,7 @@ export function CreateWorkDialog({ open, onOpenChange, onSuccess }: Props) {
       onOpenChange(val);
       if (!val) { setTimeout(() => { setStep('form'); form.reset(); setPendingPayload(null); setDefinitiveError(false); }, 200); }
     }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="p-6 pb-4 border-b">
           <DialogTitle>{step === 'form' ? 'Registrar Nuevo Trabajo' : 'Confirmar Trabajo'}</DialogTitle>
           <DialogDescription>
@@ -315,7 +315,7 @@ export function CreateWorkDialog({ open, onOpenChange, onSuccess }: Props) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 border p-4 rounded-lg bg-card">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border p-4 rounded-lg bg-card">
                   <div><span className="text-xs text-muted-foreground block">Fecha Ejecución:</span> {new Date(pendingPayload.performedAt).toLocaleString('es-BO')}</div>
                   <div><span className="text-xs text-muted-foreground block">Tipo:</span> {typesMap.get(pendingPayload.workTypeId) || 'No disponible'}</div>
                   <div><span className="text-xs text-muted-foreground block">Orden Principal:</span> {ordersMap.get(pendingPayload.productionOrderId) || 'No disponible'}</div>
@@ -324,7 +324,7 @@ export function CreateWorkDialog({ open, onOpenChange, onSuccess }: Props) {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="border rounded-md overflow-hidden bg-card">
+                  <div className="border rounded-md overflow-x-auto bg-card">
                     <div className="bg-muted px-3 py-2 border-b text-xs font-medium">Lotes ({pendingPayload.batchIds?.length || 0})</div>
                     <ul className="divide-y text-sm">
                       {(pendingPayload.batchIds || []).map(id => (
@@ -333,7 +333,7 @@ export function CreateWorkDialog({ open, onOpenChange, onSuccess }: Props) {
                       {!(pendingPayload.batchIds?.length) && <li className="p-2 text-muted-foreground italic text-xs">Ninguno</li>}
                     </ul>
                   </div>
-                  <div className="border rounded-md overflow-hidden bg-card">
+                  <div className="border rounded-md overflow-x-auto bg-card">
                     <div className="bg-muted px-3 py-2 border-b text-xs font-medium">Contenedores ({pendingPayload.containerIds?.length || 0})</div>
                     <ul className="divide-y text-sm">
                       {(pendingPayload.containerIds || []).map(id => (
@@ -342,7 +342,7 @@ export function CreateWorkDialog({ open, onOpenChange, onSuccess }: Props) {
                       {!(pendingPayload.containerIds?.length) && <li className="p-2 text-muted-foreground italic text-xs">Ninguno</li>}
                     </ul>
                   </div>
-                  <div className="border rounded-md overflow-hidden bg-card">
+                  <div className="border rounded-md overflow-x-auto bg-card">
                     <div className="bg-muted px-3 py-2 border-b text-xs font-medium">Participantes ({pendingPayload.participants?.length || 0})</div>
                     <ul className="divide-y text-sm">
                       {(pendingPayload.participants || []).map((p, i) => (

@@ -1,4 +1,5 @@
 import { useAuth } from '@/auth/AuthContext';
+import { useTheme } from '@/auth/ThemeContext';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,10 +11,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { LogOut, User as UserIcon } from 'lucide-react';
+import { LogOut, Moon, Sun, User as UserIcon } from 'lucide-react';
+import { useLocation } from 'wouter';
 
 export function AppTopbar() {
   const { user, role, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const [location] = useLocation();
+  const section = location.startsWith('/administracion') ? 'Administración' :
+    location.startsWith('/articulos') ? 'Artículos' :
+    location.startsWith('/compras') ? 'Compras' :
+    location.startsWith('/inventario') ? 'Inventario' :
+    location.startsWith('/produccion') ? 'Producción' :
+    location.startsWith('/reportes') ? 'Reportes' : 'Inicio';
 
   const handleLogout = async () => {
     await logout();
@@ -30,10 +40,15 @@ export function AppTopbar() {
   };
 
   return (
-    <header className="flex h-14 lg:h-[60px] items-center gap-4 border-b bg-background px-4 md:px-6 w-full shrink-0 z-10 sticky top-0">
-      <SidebarTrigger className="shrink-0 md:hidden" />
-      
-      <div className="w-full flex-1" />
+    <header className="sticky top-0 z-10 flex h-16 w-full shrink-0 items-center gap-3 border-b border-border bg-card px-3 sm:px-5 md:px-6">
+      <SidebarTrigger className="h-9 w-9 shrink-0 text-foreground" aria-label="Abrir o cerrar navegación" data-testid="button-toggle-navigation" />
+      <div className="min-w-0 flex-1 border-l border-border pl-3 sm:pl-4">
+        <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Sistema de Producción CDZ</span>
+        <span className="block text-sm font-semibold text-foreground" data-testid="text-current-section">{section}</span>
+      </div>
+      <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label={theme === 'dark' ? 'Activar modo claro' : 'Activar modo oscuro'} title={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'} data-testid="button-toggle-theme" className="h-9 w-9 shrink-0 text-foreground">
+        {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      </Button>
       
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

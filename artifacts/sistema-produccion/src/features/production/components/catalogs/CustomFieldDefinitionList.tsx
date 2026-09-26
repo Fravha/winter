@@ -70,16 +70,16 @@ export function CustomFieldDefinitionList() {
   };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <div className="flex flex-col gap-1">
+    <Card className="min-w-0">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 space-y-0 pb-4">
+        <div className="flex min-w-0 flex-col gap-1">
           <CardTitle className="text-xl">Campos Personalizados</CardTitle>
           <CardDescription>
             Configuración de campos adicionales para diversas entidades.
           </CardDescription>
         </div>
         {canManage && (
-          <Button onClick={() => setCreateOpen(true)} data-testid="button-create-custom-field">
+          <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto" data-testid="button-create-custom-field">
             <Plus className="h-4 w-4 mr-2" />
             Nuevo
           </Button>
@@ -191,7 +191,7 @@ export function CustomFieldDefinitionList() {
       )}
 
       <AlertDialog open={!!confirmStatusItem} onOpenChange={(op) => !op && setConfirmStatusItem(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="w-[calc(100%_-_2rem)]">
           <AlertDialogHeader>
             <AlertDialogTitle>¿Cambiar estado?</AlertDialogTitle>
             <AlertDialogDescription>

@@ -140,7 +140,7 @@ export function ContainerTransferPartialDialog({ open, onOpenChange, source }: P
 
   return (
     <Dialog open={open} onOpenChange={isPending ? undefined : onOpenChange}>
-      <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100%_-_2rem)] sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{step === 1 ? 'Trasladar Parcialmente' : 'Confirmar Traslado Parcial'}</DialogTitle>
           <DialogDescription>
@@ -200,7 +200,7 @@ export function ContainerTransferPartialDialog({ open, onOpenChange, source }: P
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="quantity"
@@ -303,7 +303,7 @@ export function ContainerTransferPartialDialog({ open, onOpenChange, source }: P
 
         {step === 2 && pendingPayload && (
           <div className="space-y-4">
-            <div className="bg-muted p-4 rounded-md text-sm grid grid-cols-2 gap-4">
+            <div className="bg-muted p-4 rounded-md text-sm grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <span className="text-xs text-muted-foreground block">Tipo de Movimiento</span>
                 <span className="font-medium" data-testid="confirm-type">Traslado Parcial</span>

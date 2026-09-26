@@ -11,7 +11,7 @@ import {
 
 export function CatalogsView() {
   return (
-    <Tabs defaultValue="participants" className="w-full">
+    <Tabs defaultValue="participants" className="w-full min-w-0">
       <div className="w-full overflow-x-auto pb-2 scrollbar-none">
         <TabsList className="mb-2 min-w-max">
           <TabsTrigger value="participants" data-testid="tab-catalog-participants">Participantes</TabsTrigger>
