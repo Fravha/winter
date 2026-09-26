@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { ArticuloActions } from './ArticuloActions';
 import type { Articulo } from '../types/articulo.types';
-import { CLASIFICACION_OPTIONS, UNIDAD_MEDIDA_OPTIONS } from '../types/articulo.options';
+import { getClasificacionLabel, UNIDAD_MEDIDA_OPTIONS } from '../types/articulo.options';
 
 type ArticulosTableProps = {
   articulos?: Articulo[];
@@ -105,7 +105,7 @@ export function ArticulosTable({
         </TableHeader>
         <TableBody>
           {articulos.map((articulo) => {
-            const clasificacionLabel = CLASIFICACION_OPTIONS.find(o => o.value === articulo.clasificacion)?.label || articulo.clasificacion;
+            const clasificacionLabel = getClasificacionLabel(articulo.clasificacion);
             const umLabel = UNIDAD_MEDIDA_OPTIONS.find(o => o.value === articulo.unidadMedida)?.label || articulo.unidadMedida;
 
             return (
