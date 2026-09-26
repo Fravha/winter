@@ -32,12 +32,12 @@ function formatDecimal(val: string | number | null | undefined) {
 
 export function BatchTraceView({ batchId }: { batchId: string }) {
   const { data: trace, isLoading, error, refetch, isFetching } = useProductionBatchTrace(batchId);
-  const { data: ordersData } = useProductionOrders({ page: 1, pageSize: 100 });
-  const { data: tfOrdersData } = useTransformationOrders({ page: 1, pageSize: 100 });
-  const { data: participantsData } = useParticipants({ page: 1, pageSize: 100 });
-  const { data: producersData } = useProducers({ page: 1, pageSize: 100 });
-  const { data: varietiesData } = useGrapeVarieties({ page: 1, pageSize: 100 });
-  const { data: measurementTypesData } = useMeasurementTypes({ page: 1, pageSize: 100 });
+  const { data: ordersData, error: ordersError, refetch: refetchOrders } = useProductionOrders({ page: 1, pageSize: 100 });
+  const { data: tfOrdersData, error: tfOrdersError, refetch: refetchTfOrders } = useTransformationOrders({ page: 1, pageSize: 100 });
+  const { data: participantsData, error: participantsError, refetch: refetchParticipants } = useParticipants({ page: 1, pageSize: 100 });
+  const { data: producersData, error: producersError, refetch: refetchProducers } = useProducers({ page: 1, pageSize: 100 });
+  const { data: varietiesData, error: varietiesError, refetch: refetchVarieties } = useGrapeVarieties({ page: 1, pageSize: 100 });
+  const { data: measurementTypesData, error: measurementTypesError, refetch: refetchMeasurementTypes } = useMeasurementTypes({ page: 1, pageSize: 100 });
 
   const articulosMap = useMemo(
     () => new Map(trace?.batches.flatMap(batch => batch.article
@@ -53,6 +53,14 @@ export function BatchTraceView({ batchId }: { batchId: string }) {
   const measurementTypesMap = useMemo(() => new Map(measurementTypesData?.data.map(m => [m.id, `${m.name} (${m.code})`])), [measurementTypesData]);
 
   const mappedError = error ? mapProductionError(error) : null;
+  const failedLookups = [
+    ...(ordersError ? [{ label: 'órdenes de producción', retry: refetchOrders }] : []),
+    ...(tfOrdersError ? [{ label: 'órdenes de transformación', retry: refetchTfOrders }] : []),
+    ...(participantsError ? [{ label: 'participantes', retry: refetchParticipants }] : []),
+    ...(producersError ? [{ label: 'productores', retry: refetchProducers }] : []),
+    ...(varietiesError ? [{ label: 'variedades', retry: refetchVarieties }] : []),
+    ...(measurementTypesError ? [{ label: 'tipos de medición', retry: refetchMeasurementTypes }] : []),
+  ];
 
   if (isLoading) {
     return (
@@ -81,17 +89,44 @@ export function BatchTraceView({ batchId }: { batchId: string }) {
   if (!trace) return null;
 
   return (
-    <BatchTraceContent
-      trace={trace}
-      articulosMap={articulosMap}
-      ordersMap={ordersMap}
-      tfOrdersMap={tfOrdersMap}
-      participantsMap={participantsMap}
-      producersMap={producersMap}
-      varietiesMap={varietiesMap}
-      measurementTypesMap={measurementTypesMap}
-      isFetching={isFetching}
-    />
+    <>
+      {failedLookups.length > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="trace-lookup-warning"
+          className="mb-4 flex items-start justify-between gap-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-warning-foreground"
+        >
+          <div className="flex items-start gap-2 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <p>
+              No se pudieron cargar algunos nombres auxiliares ({failedLookups.map(lookup => lookup.label).join(', ')}).
+              La trazabilidad sigue disponible; algunos nombres pueden mostrarse como identificadores.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Reintentar carga de nombres auxiliares"
+            data-testid="button-retry-trace-lookups"
+            onClick={() => { void Promise.all(failedLookups.map(lookup => lookup.retry())); }}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" /> Reintentar
+          </Button>
+        </div>
+      )}
+      <BatchTraceContent
+        trace={trace}
+        articulosMap={articulosMap}
+        ordersMap={ordersMap}
+        tfOrdersMap={tfOrdersMap}
+        participantsMap={participantsMap}
+        producersMap={producersMap}
+        varietiesMap={varietiesMap}
+        measurementTypesMap={measurementTypesMap}
+        isFetching={isFetching}
+      />
+    </>
   );
 }
 

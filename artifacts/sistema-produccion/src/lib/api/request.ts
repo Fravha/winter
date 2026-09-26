@@ -47,17 +47,16 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
         errorData = await response.json().catch(() => null);
       }
 
-      const errorPayload = errorData?.error || {
+      const errorPayload = errorData?.error ?? errorData ?? {
         code: `HTTP_ERROR_${response.status}`,
         message: response.statusText || 'Unknown error occurred',
-        requestId: errorData?.requestId,
       };
 
       throw new ApiError({
         status: response.status,
-        code: errorPayload.code,
-        message: errorPayload.message,
-        requestId: errorPayload.requestId,
+        code: errorPayload.code ?? `HTTP_ERROR_${response.status}`,
+        message: errorPayload.message ?? response.statusText ?? 'Unknown error occurred',
+        requestId: errorPayload.requestId ?? errorData?.requestId,
         details: errorPayload.details || errorData?.details,
       });
     }

@@ -31,6 +31,21 @@ beforeEach(() => {
 });
 
 describe('reports-only option selectors', () => {
+  it('associates native labels with both report date inputs', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<ReportField name="from" value="" onChange={onChange} />);
+
+    const startDate = screen.getByLabelText('Fecha inicio');
+    expect(startDate).toBe(screen.getByTestId('input-from'));
+    expect(startDate.tagName).toBe('INPUT');
+    expect((startDate as HTMLInputElement).type).toBe('date');
+
+    rerender(<ReportField name="to" value="" onChange={onChange} />);
+    const endDate = screen.getByLabelText('Fecha fin');
+    expect(endDate).toBe(screen.getByTestId('input-to'));
+    expect((endDate as HTMLInputElement).type).toBe('date');
+  });
+
   it('loads the required batch from the Reports endpoint, then selects it with only reports:export', async () => {
     const onChange = subject();
     expect(mocks.request).not.toHaveBeenCalled();

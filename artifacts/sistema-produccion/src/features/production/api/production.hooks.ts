@@ -70,7 +70,17 @@ export const useCreateCustomFieldDefinition = (o?: Omit<UseMutationOptions<Await
 export const useUpdateCustomFieldDefinition = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.updateCustomFieldDefinition>>, Error, { id: string; input: CustomFieldDefinitionUpdateInput }>, 'mutationFn'>) => customMutation(v => api.updateCustomFieldDefinition(v.id, v.input), o);
 export const useActivateCustomFieldDefinition = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.activateCustomFieldDefinition>>, Error, string>, 'mutationFn'>) => customMutation(api.activateCustomFieldDefinition, o);
 export const useDeactivateCustomFieldDefinition = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.deactivateCustomFieldDefinition>>, Error, string>, 'mutationFn'>) => customMutation(api.deactivateCustomFieldDefinition, o);
-export const useUpsertCustomFieldValue = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.upsertCustomFieldValue>>, Error, CustomFieldValueInput>, 'mutationFn'>) => mutation(api.upsertCustomFieldValue, o);
+export const useUpsertCustomFieldValue = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.upsertCustomFieldValue>>, Error, CustomFieldValueInput>, 'mutationFn'>) => {
+  const qc = useQueryClient();
+  return useMutation({ ...o, mutationFn: api.upsertCustomFieldValue, retry: false as const, onSuccess: async (d, v, c, mc) => {
+    const invalidations = [qc.invalidateQueries({ queryKey: k.customFieldValues() })];
+    if (v.entityType === 'GRAPE_RECEPTION') {
+      invalidations.push(qc.invalidateQueries({ queryKey: k.reception(v.entityId) }));
+    }
+    await Promise.all(invalidations);
+    await o?.onSuccess?.(d, v, c, mc);
+  }});
+};
 
 export const useGrapeReceptions = (f: ReceptionListFilters = {}, o?: Q<Awaited<ReturnType<typeof api.getGrapeReceptions>>>) => query(k.receptionList(f), s => api.getGrapeReceptions(f, s), o);
 export const useGrapeReception = (id: string, o?: Q<Awaited<ReturnType<typeof api.getGrapeReception>>>) => query(k.reception(id), s => api.getGrapeReception(id, s), o, false);
@@ -96,7 +106,11 @@ export const useCreateGrapeReception = (o?: Omit<UseMutationOptions<Awaited<Retu
 export const useCorrectGrapeReception = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.correctGrapeReception>>, Error, { id: string; input: ReceptionCorrectionInput }>, 'mutationFn'>) => {
   const qc = useQueryClient();
   return useMutation({ ...o, mutationFn: v => api.correctGrapeReception(v.id, v.input), retry: false as const, onSuccess: async (d, v, c, mc) => {
-    await Promise.all([qc.invalidateQueries({ queryKey: k.receptionLists() }), qc.invalidateQueries({ queryKey: k.reception(v.id) })]);
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: k.receptionLists() }),
+      qc.invalidateQueries({ queryKey: k.reception(v.id) }),
+      qc.invalidateQueries({ queryKey: ['production', 'trace'] }),
+    ]);
     await o?.onSuccess?.(d, v, c, mc);
   }});
 };
@@ -203,11 +217,24 @@ export const useProductionMeasurements = (f: MeasurementListFilters = {}, o?: Q<
 export const useProductionMeasurement = (id: string, o?: Q<Awaited<ReturnType<typeof api.getProductionMeasurement>>>) => query(k.measurement(id), s => api.getProductionMeasurement(id, s), o, false);
 export const useCreateProductionWork = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.createProductionWork>>, Error, ProductionWorkCreateInput>, 'mutationFn'>) => {
   const qc = useQueryClient();
-  return useMutation({ ...o, mutationFn: api.createProductionWork, retry: false as const, onSuccess: async (d, v, c, mc) => { await qc.invalidateQueries({ queryKey: k.workLists() }); await o?.onSuccess?.(d, v, c, mc); } });
+  return useMutation({ ...o, mutationFn: api.createProductionWork, retry: false as const, onSuccess: async (d, v, c, mc) => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: k.workLists() }),
+      qc.invalidateQueries({ queryKey: ['production', 'trace'] }),
+    ]);
+    await o?.onSuccess?.(d, v, c, mc);
+  } });
 };
 export const useCorrectProductionWork = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.correctProductionWork>>, Error, { id: string; input: WorkCorrectionInput }>, 'mutationFn'>) => {
   const qc = useQueryClient();
-  return useMutation({ ...o, mutationFn: v => api.correctProductionWork(v.id, v.input), retry: false as const, onSuccess: async (d, v, c, mc) => { await Promise.all([qc.invalidateQueries({ queryKey: k.workLists() }), qc.invalidateQueries({ queryKey: k.work(v.id) })]); await o?.onSuccess?.(d, v, c, mc); } });
+  return useMutation({ ...o, mutationFn: v => api.correctProductionWork(v.id, v.input), retry: false as const, onSuccess: async (d, v, c, mc) => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: k.workLists() }),
+      qc.invalidateQueries({ queryKey: k.work(v.id) }),
+      qc.invalidateQueries({ queryKey: ['production', 'trace'] }),
+    ]);
+    await o?.onSuccess?.(d, v, c, mc);
+  } });
 };
 export const useCreateProductionWorkInput = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.createProductionWorkInput>>, Error, { workId: string; input: import('../types/production.types').WorkInputCreateInput }>, 'mutationFn'>) => {
   const qc = useQueryClient();
@@ -219,6 +246,7 @@ export const useCreateProductionWorkInput = (o?: Omit<UseMutationOptions<Awaited
       const p = [
         qc.invalidateQueries({ queryKey: k.workLists() }),
         qc.invalidateQueries({ queryKey: k.work(v.workId) }),
+        qc.invalidateQueries({ queryKey: ['production', 'trace'] }),
         qc.invalidateQueries({ predicate: (query) => {
           const key = query.queryKey;
           if (key[0] !== 'inventory' || (key[1] !== 'stock' && key[1] !== 'available')) return false;
@@ -244,6 +272,7 @@ export const useReverseProductionWorkInput = (o?: Omit<UseMutationOptions<Awaite
       const p = [
         qc.invalidateQueries({ queryKey: k.workLists() }),
         qc.invalidateQueries({ queryKey: k.work(v.workId) }),
+        qc.invalidateQueries({ queryKey: ['production', 'trace'] }),
         qc.invalidateQueries({ predicate: (query) => {
           const key = query.queryKey;
           if (key[0] !== 'inventory' || (key[1] !== 'stock' && key[1] !== 'available')) return false;
@@ -261,11 +290,24 @@ export const useReverseProductionWorkInput = (o?: Omit<UseMutationOptions<Awaite
 };
 export const useCreateProductionMeasurement = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.createProductionMeasurement>>, Error, ProductionMeasurementCreateInput>, 'mutationFn'>) => {
   const qc = useQueryClient();
-  return useMutation({ ...o, mutationFn: api.createProductionMeasurement, retry: false as const, onSuccess: async (d, v, c, mc) => { await qc.invalidateQueries({ queryKey: k.measurementLists() }); await o?.onSuccess?.(d, v, c, mc); } });
+  return useMutation({ ...o, mutationFn: api.createProductionMeasurement, retry: false as const, onSuccess: async (d, v, c, mc) => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: k.measurementLists() }),
+      qc.invalidateQueries({ queryKey: ['production', 'trace'] }),
+    ]);
+    await o?.onSuccess?.(d, v, c, mc);
+  } });
 };
 export const useCorrectProductionMeasurement = (o?: Omit<UseMutationOptions<Awaited<ReturnType<typeof api.correctProductionMeasurement>>, Error, { id: string; input: MeasurementCorrectionInput }>, 'mutationFn'>) => {
   const qc = useQueryClient();
-  return useMutation({ ...o, mutationFn: v => api.correctProductionMeasurement(v.id, v.input), retry: false as const, onSuccess: async (d, v, c, mc) => { await Promise.all([qc.invalidateQueries({ queryKey: k.measurementLists() }), qc.invalidateQueries({ queryKey: k.measurement(v.id) })]); await o?.onSuccess?.(d, v, c, mc); } });
+  return useMutation({ ...o, mutationFn: v => api.correctProductionMeasurement(v.id, v.input), retry: false as const, onSuccess: async (d, v, c, mc) => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: k.measurementLists() }),
+      qc.invalidateQueries({ queryKey: k.measurement(v.id) }),
+      qc.invalidateQueries({ queryKey: ['production', 'trace'] }),
+    ]);
+    await o?.onSuccess?.(d, v, c, mc);
+  } });
 };
 
 export const useTransformations = (f: TransformationListFilters = {}, o?: Q<Awaited<ReturnType<typeof api.getTransformations>>>) => query(k.transformationList(f), s => api.getTransformations(f, s), o);
@@ -290,12 +332,14 @@ export const useCreateTransformation = (o?: Omit<UseMutationOptions<Awaited<Retu
       affectedExistingBatchIds.forEach(id => {
         invalidations.push(qc.invalidateQueries({ queryKey: k.batch(id) }));
         invalidations.push(qc.invalidateQueries({ queryKey: k.batchBalance(id) }));
+        invalidations.push(qc.invalidateQueries({ queryKey: k.batchTrace(id) }));
       });
 
       const outputBatchIds = new Set(d.outputs.map(out => out.productionBatchId));
       outputBatchIds.forEach(id => {
         invalidations.push(qc.invalidateQueries({ queryKey: k.batch(id) }));
         invalidations.push(qc.invalidateQueries({ queryKey: k.batchBalance(id) }));
+        invalidations.push(qc.invalidateQueries({ queryKey: k.batchTrace(id) }));
       });
 
       if (v.productionWorkId) {

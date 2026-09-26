@@ -44,7 +44,7 @@ export function AuditTable({
   if (isLoading) {
     return (
       <div className="border rounded-md bg-card">
-        <Table>
+        <Table className="min-w-[900px]">
           <TableHeader>
             <TableRow>
               <TableHead>Fecha</TableHead>
@@ -110,7 +110,7 @@ export function AuditTable({
   return (
     <div className="space-y-4">
       <div className="border rounded-md bg-card shadow-sm overflow-hidden">
-        <Table>
+        <Table className="min-w-[900px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[170px]">Fecha</TableHead>

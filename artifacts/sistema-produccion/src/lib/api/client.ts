@@ -1,8 +1,15 @@
 import { auth } from '@/auth/firebase';
+import { ApiError } from './api-error';
 
 const getBaseUrl = () => {
-  const url = import.meta.env.VITE_WINTER_API_URL;
-  if (!url) return 'http://localhost:3000';
+  const url = import.meta.env.VITE_WINTER_API_URL?.trim();
+  if (!url) {
+    throw new ApiError({
+      status: 0,
+      code: 'API_CONFIGURATION_ERROR',
+      message: 'La URL de la API no está configurada. Define VITE_WINTER_API_URL para conectar con el servidor.',
+    });
+  }
   return url.replace(/\/$/, '');
 };
 

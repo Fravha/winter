@@ -6,10 +6,11 @@ import BatchTracePage from '@/pages/produccion/BatchTracePage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { BatchTraceContent } from './BatchTraceView';
+import { BatchTraceContent, BatchTraceView } from './BatchTraceView';
 import { ProductionBatchTraceDto } from '../../types/production.types';
 import { productionKeys } from '../../api/production.keys';
 import { BATCH_TRACE_PERMISSION } from '@/pages/produccion/BatchTracePage';
+import * as ProductionHooksModule from '../../api/production.hooks';
 
 const mockTrace: ProductionBatchTraceDto = {
   rootBatchId: 'b-1',
@@ -326,5 +327,32 @@ describe('BatchTraceContent', () => {
     render(<BatchTraceContent trace={emptyTrace} />);
     expect(screen.getByTestId('trace-empty-history')).toBeTruthy();
     expect(screen.getByText('Sin historial operativo')).toBeTruthy();
+  });
+
+  it('warns and retries failed auxiliary lookups without hiding the trace', async () => {
+    const refetchParticipants = vi.fn().mockResolvedValue({});
+    vi.spyOn(ProductionHooksModule, 'useProductionBatchTrace').mockReturnValue({
+      data: mockTrace,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+      isFetching: false,
+    } as any);
+    vi.spyOn(ProductionHooksModule, 'useProductionOrders').mockReturnValue({ data: { data: [] }, error: null, refetch: vi.fn() } as any);
+    vi.spyOn(ProductionHooksModule, 'useTransformationOrders').mockReturnValue({ data: { data: [] }, error: null, refetch: vi.fn() } as any);
+    vi.spyOn(ProductionHooksModule, 'useParticipants').mockReturnValue({ data: undefined, error: new Error('lookup failed'), refetch: refetchParticipants } as any);
+    vi.spyOn(ProductionHooksModule, 'useProducers').mockReturnValue({ data: { data: [] }, error: null, refetch: vi.fn() } as any);
+    vi.spyOn(ProductionHooksModule, 'useGrapeVarieties').mockReturnValue({ data: { data: [] }, error: null, refetch: vi.fn() } as any);
+    vi.spyOn(ProductionHooksModule, 'useMeasurementTypes').mockReturnValue({ data: { data: [] }, error: null, refetch: vi.fn() } as any);
+
+    const user = userEvent.setup();
+    render(<BatchTraceView batchId="b-1" />);
+
+    expect(screen.getByTestId('trace-lookup-warning').textContent).toContain('participantes');
+    expect(screen.getByTestId('trace-header')).not.toBeNull();
+    await user.click(screen.getByTestId('button-retry-trace-lookups'));
+    expect(refetchParticipants).toHaveBeenCalledOnce();
+
+    vi.restoreAllMocks();
   });
 });
