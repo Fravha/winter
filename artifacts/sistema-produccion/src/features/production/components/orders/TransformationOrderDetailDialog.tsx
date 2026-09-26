@@ -1,0 +1,80 @@
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { mapProductionError } from '../../api/production.error';
+import { Loader2 } from 'lucide-react';
+import { useTransformationOrder } from '../../api/production.hooks';
+
+export function TransformationOrderDetailDialog({ orderId, open, onOpenChange }: { orderId: string, open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { data: order, isLoading, error } = useTransformationOrder(orderId);
+
+  const formatDate = (isoString: string) => {
+    return new Date(isoString).toLocaleString('es-BO', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[calc(100%_-_2rem)] max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Detalle de Orden de Transformación</DialogTitle>
+          <DialogDescription>
+            Visualización de los datos operativos de la orden.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : error ? (
+          <div className="p-4 text-center text-destructive">
+            Error al cargar detalle. {mapProductionError(error).code}: {mapProductionError(error).userMessage}
+            <div className="mt-2 text-xs opacity-70">
+              Request ID: {mapProductionError(error).requestId || 'N/A'}
+            </div>
+          </div>
+        ) : order ? (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Código</p>
+                <p className="font-mono text-lg">{order.code}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Estado</p>
+                <Badge variant={order.status === 'OPEN' ? 'default' : 'secondary'} className="mt-1">
+                  {order.status === 'OPEN' ? 'Abierta' : 'Cerrada'}
+                </Badge>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Orden de Producción Padre</p>
+                <p className="font-mono font-medium">{order.productionOrder?.code || order.productionOrderId}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Fecha Cierre</p>
+                <p>{order.closedAt ? formatDate(order.closedAt) : '-'}</p>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Inicio Período</p>
+                <p>{formatDate(order.periodStart)}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Fin Período</p>
+                <p>{order.periodEnd ? formatDate(order.periodEnd) : '-'}</p>
+              </div>
+
+              <div className="col-span-2">
+                <p className="text-sm font-medium text-muted-foreground">Observaciones</p>
+                <p className="whitespace-pre-wrap">{order.observations || 'Sin observaciones.'}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}

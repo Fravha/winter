@@ -1,21 +1,28 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Sistema de Producción Industrial</title>
-    <meta name="description" content="Sistema de Producción Industrial — built on Replit. Update this description to reflect the app." />
+    <title>Sistema de Producción CDZ</title>
+    <meta name="description" content="Sistema operativo de producción de bodega CDZ." />
     <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="Sistema de Producción Industrial" />
-    <meta property="og:description" content="Sistema de Producción Industrial — built on Replit. Update this description to reflect the app." />
+    <meta property="og:title" content="Sistema de Producción CDZ" />
+    <meta property="og:description" content="Sistema operativo de producción de bodega CDZ." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Sistema de Producción Industrial" />
-    <meta name="twitter:description" content="Sistema de Producción Industrial — built on Replit. Update this description to reflect the app." />
+    <meta name="twitter:title" content="Sistema de Producción CDZ" />
+    <meta name="twitter:description" content="Sistema operativo de producción de bodega CDZ." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      try {
+        const preference = localStorage.getItem('cdz-theme');
+        const dark = preference === 'dark' || (!preference && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      } catch (_) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
