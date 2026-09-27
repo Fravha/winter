@@ -13,8 +13,19 @@ const transformationPermissions: RequestHandler = (req, res, next) => {
   const requireTransform = requirePermission("production:transformation_create");
   requireTransform(req, res, error => {
     if (error) return next(error);
-    if (Array.isArray(req.body?.losses) && req.body.losses.length > 0) return requirePermission("production:loss_create")(req, res, next);
-    next();
+    const afterLoss: RequestHandler = (_req, _res, nextPermission) => {
+      if (Array.isArray(req.body?.outputPlacements) && req.body.outputPlacements.length > 0) {
+        return requirePermission("production:container_assign")(req, res, nextPermission);
+      }
+      nextPermission();
+    };
+    if (Array.isArray(req.body?.losses) && req.body.losses.length > 0) {
+      return requirePermission("production:loss_create")(req, res, permissionError => {
+        if (permissionError) return next(permissionError);
+        afterLoss(req, res, next);
+      });
+    }
+    afterLoss(req, res, next);
   });
 };
 export function createProductionRouter(verifier: TokenVerifier, users: UserRepository, service: ProductionService) {

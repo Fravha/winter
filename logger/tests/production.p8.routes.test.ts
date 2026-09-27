@@ -59,4 +59,19 @@ describe("Production P8 HTTP contracts and RBAC", () => {
     assert.equal((await request("POST", "/transformations", ["production:transformation_create"], withLoss)).response.status, 403);
     assert.equal((await request("POST", "/transformations", ["production:transformation_create", "production:loss_create"], withLoss)).response.status, 201);
   });
+  it("validates physical reconciliation and requires container assignment permission for output placement", async () => {
+    calls.length = 0;
+    const physical = {
+      ...body,
+      sourceWithdrawals: [{ productionBatchId: id, containerId: id, quantity: "1.000" }],
+      outputPlacements: [{ outputIndex: 0, containerId: id, quantity: "1.000" }],
+    };
+    assert.equal((await request("POST", "/transformations", ["production:transformation_create"], physical)).response.status, 403);
+    assert.equal((await request("POST", "/transformations", ["production:transformation_create", "production:container_assign"], physical)).response.status, 201);
+    assert.ok(calls.at(-1)?.includes('"sourceWithdrawals"'));
+    assert.ok(calls.at(-1)?.includes('"outputPlacements"'));
+    assert.equal((await request("POST", "/transformations", ["production:transformation_create"], { ...physical, outputPlacements: [] })).response.status, 201);
+    assert.equal((await request("POST", "/transformations", ["production:transformation_create", "production:container_assign"], { ...physical, sourceWithdrawals: [{ ...physical.sourceWithdrawals[0], extra: true }] })).response.status, 400);
+    assert.equal((await request("POST", "/transformations", ["production:transformation_create", "production:container_assign"], { ...physical, outputPlacements: [{ ...physical.outputPlacements[0], quantity: "-1" }] })).response.status, 400);
+  });
 });

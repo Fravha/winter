@@ -119,6 +119,9 @@ async function lockRows(tx: SharedTransactionContext, containerIds: string[], ba
   for (const id of [...new Set(containerIds)].sort()) { requireId(id, "Container id"); await tx.$queryRaw`SELECT id FROM production_containers WHERE id = ${id}::uuid FOR UPDATE`; }
   for (const id of [...new Set(batchIds)].sort()) { requireId(id, "Batch id"); await tx.$queryRaw`SELECT id FROM production_batches WHERE id = ${id}::uuid FOR UPDATE`; }
 }
+export async function lockProductionContainerAndBatchRows(tx: SharedTransactionContext, containerIds: string[], batchIds: string[]) {
+  await lockRows(tx, containerIds, batchIds);
+}
 async function validateWorkContext(tx: SharedTransactionContext, workId: string | undefined, batchId: string) {
   if (!workId) return;
   requireId(workId, "Production work id");
@@ -228,16 +231,90 @@ export class ProductionContainerService {
     verifyMovementHash(data, "ASSIGN");
     const quantity = q(data.quantity ?? "0"); return this.operation(data.operationKey, data.requestHash, "BATCH_CONTAINER_ASSIGNED", async tx => this.assignIn(tx, data, quantity, context));
   }
-  private async assignIn(tx: SharedTransactionContext, data: ContainerMoveInput, quantity: Prisma.Decimal, context: AuthenticatedAuditContext) {
+  async reconcileTransformationWithdrawalInTransaction(
+    tx: SharedTransactionContext,
+    input: { productionBatchId: string; containerId: string; unit: string; quantity: Prisma.Decimal; occurredAt: Date },
+  ) {
+    const container = await tx.productionContainer.findUnique({ where: { id: input.containerId } });
+    if (!container) throw new AppError("CONTAINER_NOT_FOUND", "Production container not found", 404);
+    if (container.status !== "OCUPADO") throw new AppError("CONTAINER_OCCUPANCY_NOT_FOUND", "Source container is not occupied", 409);
+    const source = await openOccupancy(tx, container.id);
+    if (!source || source.batchId !== input.productionBatchId) throw new AppError("CONTAINER_OCCUPANCY_NOT_FOUND", "Batch is not open in source container", 404);
+    if (source.unit !== container.capacityUnit || source.unit !== input.unit) throw new AppError("INVALID_CONTAINER_OPERATION", "Container unit does not match batch unit", 409);
+    if (input.quantity.gt(source.quantity)) throw new AppError("CONTAINER_WITHDRAWAL_EXCEEDS_OCCUPANCY", "Physical withdrawal exceeds the source occupancy", 409);
+    if (input.occurredAt < source.openedAt) throw new AppError("INVALID_CONTAINER_OPERATION", "Operation time cannot precede the current occupancy", 400);
+
+    await tx.productionContainerOccupancy.update({
+      where: { id: source.id },
+      data: { closedAt: input.occurredAt, version: { increment: 1 } },
+    });
+
+    const remainderQuantity = source.quantity.minus(input.quantity);
+    const remainder = remainderQuantity.gt(0)
+      ? await tx.productionContainerOccupancy.create({
+          data: {
+            containerId: source.containerId,
+            batchId: source.batchId,
+            quantity: remainderQuantity,
+            unit: source.unit,
+            openedAt: input.occurredAt,
+          },
+        })
+      : null;
+    await tx.productionContainer.update({
+      where: { id: container.id },
+      data: { status: remainder ? "OCUPADO" : "DISPONIBLE", version: { increment: 1 } },
+    });
+    return {
+      productionBatchId: source.batchId,
+      containerId: source.containerId,
+      quantity: textQuantity(input.quantity),
+      sourceOccupancyId: source.id,
+      sourceOccupancyQuantity: textQuantity(source.quantity),
+      sourceOccupancyClosedAt: iso(input.occurredAt),
+      remainderOccupancyId: remainder?.id ?? null,
+      remainderQuantity: remainder ? textQuantity(remainder.quantity) : "0.000",
+    };
+  }
+
+  async placeTransformationOutputInTransaction(
+    tx: SharedTransactionContext,
+    input: { batchId: string; containerId: string; quantity: Prisma.Decimal; operationKey: string; requestHash: string; occurredAt: Date; productionWorkId?: string | undefined; observations?: string | undefined },
+    context: AuthenticatedAuditContext,
+  ) {
+    return this.assignIn(tx, {
+      batchId: input.batchId,
+      destinationContainerId: input.containerId,
+      quantity: textQuantity(input.quantity),
+      operationKey: input.operationKey,
+      requestHash: input.requestHash,
+      occurredAt: input.occurredAt,
+      ...(input.productionWorkId ? { productionWorkId: input.productionWorkId } : {}),
+      ...(input.observations ? { observations: input.observations } : {}),
+    }, input.quantity, context, true);
+  }
+
+  private async assignIn(tx: SharedTransactionContext, data: ContainerMoveInput, quantity: Prisma.Decimal, context: AuthenticatedAuditContext, requireEmptyDestination = false) {
     await lockRows(tx, [data.destinationContainerId], [data.batchId]); await validateWorkContext(tx, data.productionWorkId, data.batchId); const container = await tx.productionContainer.findUnique({ where: { id: data.destinationContainerId } }); if (!container) throw new AppError("CONTAINER_NOT_FOUND", "Production container not found", 404);
     if (container.status === "FUERA_DE_SERVICIO") throw new AppError("CONTAINER_OUT_OF_SERVICE", "Container is out of service", 409);
     const existing = await openOccupancy(tx, container.id);
+    if (requireEmptyDestination && (container.status !== "DISPONIBLE" || existing)) throw new AppError("CONTAINER_OCCUPIED", "Destination container must be available and empty", 409);
     const batch = await tx.productionBatch.findUnique({ where: { id: data.batchId } }); if (!batch) throw new AppError("BATCH_NOT_FOUND", "Production batch not found", 404);
     if (batch.unit !== container.capacityUnit) throw new AppError("INVALID_CONTAINER_OPERATION", "Container unit does not match batch unit", 409);
     const total = await openAllocated(tx, batch.id); const balance = await new BatchAvailabilityService(tx, true).get(batch.id); if (total.plus(quantity).gt(new Prisma.Decimal(balance.available))) throw new AppError("INSUFFICIENT_BATCH_QUANTITY", "Allocation exceeds available batch quantity", 409);
     const combined = existing && existing.batchId === batch.id ? existing.quantity.plus(quantity) : quantity;
     if (combined.gt(container.capacity)) throw new AppError("CONTAINER_CAPACITY_EXCEEDED", "Container capacity exceeded", 409);
     const now = data.occurredAt ?? new Date();
+    if (requireEmptyDestination) {
+      const latest = await tx.productionContainerOccupancy.findFirst({
+        where: { containerId: container.id, closedAt: { not: null } },
+        orderBy: { closedAt: "desc" },
+        select: { closedAt: true },
+      });
+      if (latest?.closedAt && now < latest.closedAt) {
+        throw new AppError("INVALID_CONTAINER_OPERATION", "Output placement cannot precede the last destination occupancy closure", 409);
+      }
+    }
     await tx.productionBatchContainerMovement.create({ data: { movementType: "ASSIGNED", destinationContainerId: container.id, sourceBatchId: batch.id, quantity, unit: batch.unit, operationKey: data.operationKey, requestHash: data.requestHash, occurredAt: now, actorUserId: context.actorUserId, ...(data.productionWorkId ? { productionWorkId: data.productionWorkId } : {}), ...(data.observations !== undefined ? { observations: data.observations.trim() } : {}) } });
     if (existing) {
       if (existing.batchId !== batch.id) throw new AppError("CONTAINER_OCCUPIED", "Container already contains a different batch", 409);

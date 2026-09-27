@@ -95,11 +95,14 @@ Creation requires a unique code, positive decimal `capacity` and exact
 out-of-service container cannot be occupied. Occupancies are temporal history
 records, while the P3 batch ledger remains the source of truth for quantity.
 
-Batch assignment and total/partial container transfers are typed internal
-commands, not HTTP mutation routes. They require an operation key and request
-hash, use exact decimal quantities and units, and audit atomically. Total
-transfer preserves the same batch; partial transfer creates exactly one child
-through the P3 split primitive and preserves lineage.
+Batch assignment and total/partial container transfers are available through
+`POST /containers/:id/assign`, `POST /containers/:sourceId/transfers` and
+`POST /containers/:sourceId/transfers/partial`, respectively. They require
+`production:container_assign` or `production:container_transfer`, an
+`operationKey` and a 64-character `requestHash`, use exact decimal quantities
+and units, and audit atomically. Total transfer preserves the same batch;
+partial transfer creates exactly one child through the P3 split primitive and
+preserves lineage.
 
 ## Production orders
 
@@ -151,6 +154,48 @@ Articles are validated through ArticulosApi and units must match exactly. The
 contractual classification matrix does not currently exist, so no
 classification restriction is invented or enforced. Receptions have no PATCH
 or DELETE endpoint and do not create InventoryMovement records.
+
+## Transformaciones con conciliación física
+
+`POST /transformations` requires `production:transformation_create`; a
+non-empty `losses` array also requires `production:loss_create`, and non-empty
+`outputPlacements` requires `production:container_assign`. The existing
+`inputs`, `outputs`, `losses`, `performedAt`, `productionOrderId`,
+`operationKey` and `requestHash` remain valid. Transformations without
+containers retain their existing behavior.
+
+Optional `sourceWithdrawals` is an array of
+`{ "productionBatchId": "UUID", "containerId": "UUID", "quantity": "40.000" }`.
+Each entry identifies an open occupancy of an input batch and the physical
+quantity withdrawn from that container. Partial withdrawal closes the
+historical occupancy and opens a new occupancy for the remaining amount;
+total withdrawal closes it and makes the container available. Losses reducing
+the physically withdrawn amount must carry that batch's `productionBatchId`;
+losses without an attributable batch are not implicitly assigned to a
+container.
+
+Optional `outputPlacements` is an array of
+`{ "outputIndex": 0, "containerId": "UUID", "quantity": "39.000" }`.
+`outputIndex` is zero-based in the `outputs` array. Placement is optional,
+cannot exceed the output quantity, and must respect container status,
+capacity, unit and existing occupancy rules. An output can remain unplaced.
+
+For example, 100 L of A in T01 can withdraw 100 L, consume 98 L of A,
+attribute 2 L of loss to A, create 98 L of B, and place 98 L of B in T02.
+T01 becomes available and A has zero available; B has 98 L available and an
+open occupancy in T02. A partial 40 L withdrawal with 39 L consumed and
+1 L attributed loss leaves 60 L of A in T01 and generates 39 L of B.
+Open occupancies must always remain backed by available batch quantity;
+the ledger guard is never disabled.
+
+Closure/reopening of occupancies, ledger changes, output batches, lineage,
+optional placement, audit and the idempotency result belong to one
+`Serializable` transaction. On any failure all changes roll back. The
+idempotency hash covers inputs, outputs, losses, source withdrawals and output
+placements; an identical key and payload replays the same result without
+duplicate effects, while reusing the key with different data conflicts.
+`GET /batches/:id/trace` exposes physical provenance from output to source
+batch and containers.
 
 ## Production work (P5)
 

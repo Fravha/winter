@@ -10,8 +10,8 @@ import { AppError } from "../../shared/errors/app-error.js";
 import { z } from "zod";
 import type { ArticulosApi } from "../articulos/articulos.api.js";
 import { BatchAvailabilityService, BatchLedgerService, BatchLineageService, createInitialBatchInTransaction } from "./production.batch.js";
+import { ProductionContainerService, lockProductionContainerAndBatchRows } from "./production.container.js";
 
-type Db = PrismaClient | SharedTransactionContext;
 const quantityPattern = /^(?:0|[1-9]\d{0,12})(?:\.\d{1,3})?$/;
 const uuid = (value: string, name: string) => { if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw new AppError("INVALID_TRANSFORMATION", `${name} must be a UUID`, 400); };
 const text = (value: string, name: string) => { if (!value.trim()) throw new AppError("INVALID_TRANSFORMATION", `${name} is required`, 400); };
@@ -21,19 +21,36 @@ const json = (v: unknown): Prisma.InputJsonValue => v === null ? null as never :
 const storedInputSchema = z.object({ productionBatchId: z.string(), quantity: z.string(), unit: z.string() });
 const storedOutputSchema = z.object({ productionBatchId: z.string(), articuloId: z.string(), quantity: z.string(), unit: z.string(), code: z.string() });
 const storedLossSchema = z.object({ id: z.string(), productionBatchId: z.string().nullable(), quantity: z.string(), unit: z.string(), operationKey: z.string() });
+const storedPhysicalWithdrawalSchema = z.object({
+  productionBatchId: z.string(), containerId: z.string(), quantity: z.string(),
+  sourceOccupancyId: z.string(), sourceOccupancyQuantity: z.string(), sourceOccupancyClosedAt: z.string(),
+  remainderOccupancyId: z.string().nullable(), remainderQuantity: z.string(),
+});
+const storedOutputPlacementSchema = z.object({
+  outputIndex: z.number().int(), productionBatchId: z.string(), containerId: z.string(),
+  quantity: z.string(), occupancyId: z.string(),
+});
 const storedDtoSchema = z.object({
   id: z.string(), productionOrderId: z.string(), transformationOrderId: z.string().nullable(), productionWorkId: z.string().nullable(),
   performedAt: z.string(), actorUserId: z.string(), observations: z.string().nullable(), operationKey: z.string(), requestHash: z.string(),
   inputs: z.array(storedInputSchema), outputs: z.array(storedOutputSchema), losses: z.array(storedLossSchema),
+  physicalReconciliation: z.object({
+    sourceWithdrawals: z.array(storedPhysicalWithdrawalSchema),
+    outputPlacements: z.array(storedOutputPlacementSchema),
+  }).optional(),
 });
 
 export type TransformationInput = { productionBatchId: string; quantity: string };
 export type TransformationOutput = { articuloId: string; quantity: string; unit: string; observations?: string | undefined };
 export type TransformationLoss = { productionBatchId?: string | undefined; quantity: string; unit: string; operationKey?: string | undefined; requestHash?: string | undefined; observations?: string | undefined };
+export type TransformationSourceWithdrawal = { productionBatchId: string; containerId: string; quantity: string };
+export type TransformationOutputPlacement = { outputIndex: number; containerId: string; quantity: string };
 export type TransformationCreateInput = {
   productionOrderId: string; transformationOrderId?: string | undefined; productionWorkId?: string | undefined;
   performedAt: Date; observations?: string | undefined; operationKey: string; requestHash: string;
   inputs: TransformationInput[]; outputs: TransformationOutput[]; losses?: TransformationLoss[] | undefined;
+  sourceWithdrawals?: TransformationSourceWithdrawal[] | undefined;
+  outputPlacements?: TransformationOutputPlacement[] | undefined;
 };
 export type TransformationDto = {
   id: string; productionOrderId: string; transformationOrderId: string | null; productionWorkId: string | null;
@@ -41,9 +58,13 @@ export type TransformationDto = {
   inputs: Array<{ productionBatchId: string; quantity: string; unit: string }>;
   outputs: Array<{ productionBatchId: string; articuloId: string; quantity: string; unit: string; code: string }>;
   losses: Array<{ id: string; productionBatchId: string | null; quantity: string; unit: string; operationKey: string }>;
+  physicalReconciliation: {
+    sourceWithdrawals: Array<z.infer<typeof storedPhysicalWithdrawalSchema>>;
+    outputPlacements: Array<z.infer<typeof storedOutputPlacementSchema>>;
+  };
 };
 
-function map(row: any): TransformationDto {
+function map(row: any, physicalReconciliation: TransformationDto["physicalReconciliation"] = { sourceWithdrawals: [], outputPlacements: [] }): TransformationDto {
   return {
     id: row.id, productionOrderId: row.productionOrderId, transformationOrderId: row.transformationOrderId,
     productionWorkId: row.productionWorkId, performedAt: row.performedAt.toISOString(), actorUserId: row.actorUserId,
@@ -51,6 +72,7 @@ function map(row: any): TransformationDto {
     inputs: (row.inputs ?? []).map((x: any) => ({ productionBatchId: x.productionBatchId, quantity: q(x.quantity), unit: x.unit })),
     outputs: (row.outputs ?? []).map((x: any) => ({ productionBatchId: x.productionBatchId, articuloId: x.productionBatch.articuloId, quantity: q(x.quantity), unit: x.unit, code: x.productionBatch.code })),
     losses: (row.losses ?? []).map((x: any) => ({ id: x.id, productionBatchId: x.productionBatchId, quantity: q(x.quantity), unit: x.unit, operationKey: x.operationKey })),
+    physicalReconciliation,
   };
 }
 function canonical(value: TransformationCreateInput): string {
@@ -64,17 +86,19 @@ function canonical(value: TransformationCreateInput): string {
     inputs: value.inputs.map(item => ({ productionBatchId: item.productionBatchId.trim(), quantity: q(item.quantity) })),
     outputs: value.outputs.map(item => ({ articuloId: item.articuloId.trim(), quantity: q(item.quantity), unit: item.unit.trim(), observations: item.observations?.trim() ?? null })),
     losses: (value.losses ?? []).map(item => ({ productionBatchId: item.productionBatchId?.trim() ?? null, quantity: q(item.quantity), unit: item.unit.trim(), operationKey: item.operationKey?.trim() ?? null, observations: item.observations?.trim() ?? null })),
+    ...(value.sourceWithdrawals?.length ? { sourceWithdrawals: value.sourceWithdrawals.map(item => ({ productionBatchId: item.productionBatchId.trim(), containerId: item.containerId.trim(), quantity: q(item.quantity) })) } : {}),
+    ...(value.outputPlacements?.length ? { outputPlacements: value.outputPlacements.map(item => ({ outputIndex: item.outputIndex, containerId: item.containerId.trim(), quantity: q(item.quantity) })) } : {}),
   };
   return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
 }
 
 export class ProductionTransformationService {
-  constructor(private readonly prisma: PrismaClient, private readonly articulos: ArticulosApi, private readonly auditFactory: (tx: SharedTransactionContext) => AuditService = tx => new AuditService(new PrismaAuditRepository(tx))) {}
+  private readonly containers: ProductionContainerService;
+  constructor(private readonly prisma: PrismaClient, private readonly articulos: ArticulosApi, private readonly auditFactory: (tx: SharedTransactionContext) => AuditService = tx => new AuditService(new PrismaAuditRepository(tx))) {
+    this.containers = new ProductionContainerService(prisma, new AuditService(new PrismaAuditRepository(prisma)), auditFactory);
+  }
   private include = { inputs: true, outputs: { include: { productionBatch: true } }, losses: true } as const;
   private audit(tx: SharedTransactionContext) { return this.auditFactory(tx); }
-  private async locks(tx: SharedTransactionContext, ids: string[]) {
-    for (const id of [...new Set(ids)].sort()) { uuid(id, "Batch id"); await tx.$queryRaw`SELECT id FROM production_batches WHERE id = ${id}::uuid FOR UPDATE`; }
-  }
   private async lockRow(tx: SharedTransactionContext, table: "production_orders" | "transformation_orders" | "production_works", id: string) {
     uuid(id, "Context id");
     await tx.$queryRawUnsafe(`SELECT id FROM "${table}" WHERE id = $1::uuid FOR UPDATE`, id);
@@ -86,10 +110,27 @@ export class ProductionTransformationService {
       if (existing.operation !== "TRANSFORMATION_CREATED" || existing.requestHash !== hash) throw new AppError("IDEMPOTENCY_CONFLICT", "Operation key was used with a different payload", 409);
       const parsed = storedDtoSchema.safeParse(existing.result);
       if (!parsed.success) throw new AppError("IDEMPOTENCY_CONFLICT", "Stored transformation result is invalid", 409);
-      return parsed.data;
+      return {
+        ...parsed.data,
+        physicalReconciliation: parsed.data.physicalReconciliation ?? { sourceWithdrawals: [], outputPlacements: [] },
+      };
     }
     const result = await work();
     await tx.productionBatchOperation.create({ data: { operationKey: key, operation: "TRANSFORMATION_CREATED", requestHash: hash, result: json(result) } });
+    return result;
+  }
+  private async physicalReconciliationByOperationKeys(operationKeys: string[]) {
+    const result = new Map<string, TransformationDto["physicalReconciliation"]>();
+    if (!operationKeys.length) return result;
+    const operations = await this.prisma.productionBatchOperation.findMany({
+      where: { operationKey: { in: operationKeys }, operation: "TRANSFORMATION_CREATED" },
+      select: { operationKey: true, result: true },
+    });
+    for (const operation of operations) {
+      const parsed = storedDtoSchema.safeParse(operation.result);
+      if (!parsed.success) throw new AppError("IDEMPOTENCY_CONFLICT", "Stored transformation result is invalid", 409);
+      result.set(operation.operationKey, parsed.data.physicalReconciliation ?? { sourceWithdrawals: [], outputPlacements: [] });
+    }
     return result;
   }
   async create(data: TransformationCreateInput, context: AuthenticatedAuditContext): Promise<TransformationDto> {
@@ -97,6 +138,28 @@ export class ProductionTransformationService {
     if (!data.inputs.length || !data.outputs.length) throw new AppError("INVALID_TRANSFORMATION", "At least one input and output are required", 400);
     data.inputs.forEach(x => { uuid(x.productionBatchId, "Input batch id"); decimal(x.quantity); });
     data.outputs.forEach(x => { uuid(x.articuloId, "Output article id"); decimal(x.quantity); text(x.unit, "Output unit"); });
+    const withdrawals = data.sourceWithdrawals ?? [];
+    const placements = data.outputPlacements ?? [];
+    withdrawals.forEach(x => { uuid(x.productionBatchId, "Withdrawal batch id"); uuid(x.containerId, "Source container id"); decimal(x.quantity); });
+    placements.forEach(x => {
+      if (!Number.isSafeInteger(x.outputIndex) || x.outputIndex < 0 || x.outputIndex >= data.outputs.length) throw new AppError("INVALID_TRANSFORMATION", "Output placement index is out of range", 400);
+      uuid(x.containerId, "Destination container id"); decimal(x.quantity);
+    });
+    if (new Set(withdrawals.map(x => x.containerId)).size !== withdrawals.length) throw new AppError("INVALID_TRANSFORMATION", "A source container may appear only once per transformation", 400);
+    if (new Set(placements.map(x => x.containerId)).size !== placements.length) throw new AppError("INVALID_TRANSFORMATION", "A destination container may appear only once per transformation", 400);
+    const withdrawalsByBatch = new Map<string, Prisma.Decimal>();
+    for (const withdrawal of withdrawals) {
+      const quantity = decimal(withdrawal.quantity);
+      withdrawalsByBatch.set(withdrawal.productionBatchId, (withdrawalsByBatch.get(withdrawal.productionBatchId) ?? new Prisma.Decimal(0)).plus(quantity));
+    }
+    const placementsByOutput = new Map<number, Prisma.Decimal>();
+    for (const placement of placements) {
+      const quantity = decimal(placement.quantity);
+      placementsByOutput.set(placement.outputIndex, (placementsByOutput.get(placement.outputIndex) ?? new Prisma.Decimal(0)).plus(quantity));
+    }
+    for (const [index, quantity] of placementsByOutput) {
+      if (quantity.gt(decimal(data.outputs[index]!.quantity))) throw new AppError("INVALID_TRANSFORMATION", "Output placements exceed the generated output quantity", 409);
+    }
     const digest = canonical(data);
     return new SharedUnitOfWork(this.prisma).execute(tx => this.operation(tx, data.operationKey, digest, async () => {
       await this.lockRow(tx, "production_orders", data.productionOrderId);
@@ -122,7 +185,12 @@ export class ProductionTransformationService {
       const inputIds = data.inputs.map(x => x.productionBatchId);
       if (new Set(inputIds).size !== inputIds.length) throw new AppError("DUPLICATE_INPUT_BATCH", "Input batch ids must be unique", 400);
       const lossIds = (data.losses ?? []).flatMap(x => x.productionBatchId ? [x.productionBatchId] : []);
-      await this.locks(tx, inputIds.concat(lossIds));
+      const batchIds = inputIds.concat(lossIds);
+      await lockProductionContainerAndBatchRows(
+        tx,
+        withdrawals.map(x => x.containerId).concat(placements.map(x => x.containerId)),
+        batchIds,
+      );
       const batches = await tx.productionBatch.findMany({ where: { id: { in: [...new Set(inputIds.concat(lossIds))] } } });
       if (batches.length !== new Set(inputIds.concat(lossIds)).size) throw new AppError("BATCH_NOT_FOUND", "One or more input or loss batches do not exist", 404);
       for (const batch of batches) {
@@ -135,14 +203,38 @@ export class ProductionTransformationService {
           if (batch.unit !== loss.unit) throw new AppError("UNIT_INCOMPATIBLE", "Loss unit does not match batch unit", 409);
         }
       }
+      const reductionsByBatch = new Map<string, Prisma.Decimal>();
+      for (const input of data.inputs) reductionsByBatch.set(input.productionBatchId, (reductionsByBatch.get(input.productionBatchId) ?? new Prisma.Decimal(0)).plus(decimal(input.quantity)));
+      for (const loss of data.losses ?? []) {
+        if (loss.productionBatchId) reductionsByBatch.set(loss.productionBatchId, (reductionsByBatch.get(loss.productionBatchId) ?? new Prisma.Decimal(0)).plus(decimal(loss.quantity)));
+      }
+      for (const [batchId, quantity] of withdrawalsByBatch) {
+        if (!inputIds.includes(batchId)) throw new AppError("INVALID_TRANSFORMATION", "Physical withdrawals must refer to a transformation input batch", 400);
+        if (quantity.gt(reductionsByBatch.get(batchId) ?? new Prisma.Decimal(0))) throw new AppError("INVALID_TRANSFORMATION", "Physical withdrawal exceeds the attributed input consumption and loss", 409);
+      }
       const articles = await this.articulos.lockAndValidateArticulosInTransaction({ articuloIds: data.outputs.map(x => x.articuloId) }, tx);
       for (const output of data.outputs) { const a = articles.get(output.articuloId); if (!a?.valid || !a.articulo) throw new AppError("ARTICULO_INVALID", "Output article is missing or inactive", 409); if (a.articulo.unidadMedida !== output.unit) throw new AppError("UNIT_INCOMPATIBLE", "Output unit does not match article unit", 409); if (batches.some(batch => batch.unit !== output.unit)) throw new AppError("UNIT_INCOMPATIBLE", "Transformation does not convert units", 409); }
       for (const input of data.inputs) { const batch = batches.find(x => x.id === input.productionBatchId)!; await new BatchAvailabilityService(tx, true).assertAvailable(batch.id, decimal(input.quantity), batch.unit); }
+      const physicalWithdrawals: TransformationDto["physicalReconciliation"]["sourceWithdrawals"] = [];
+      for (const withdrawal of withdrawals) {
+        const batch = batches.find(item => item.id === withdrawal.productionBatchId)!;
+        const result = await this.containers.reconcileTransformationWithdrawalInTransaction(tx, {
+          productionBatchId: withdrawal.productionBatchId,
+          containerId: withdrawal.containerId,
+          unit: batch.unit,
+          quantity: decimal(withdrawal.quantity),
+          occurredAt: data.performedAt,
+        });
+        physicalWithdrawals.push(result);
+      }
       const row = await tx.transformation.create({ data: { productionOrderId: data.productionOrderId, ...(data.transformationOrderId ? { transformationOrderId: data.transformationOrderId } : {}), ...(data.productionWorkId ? { productionWorkId: data.productionWorkId } : {}), performedAt: data.performedAt, actorUserId: context.actorUserId, ...(data.observations !== undefined ? { observations: data.observations.trim() } : {}), operationKey: data.operationKey, requestHash: digest } });
+      const physicalReconciliation: TransformationDto["physicalReconciliation"] = { sourceWithdrawals: physicalWithdrawals, outputPlacements: [] };
       for (const input of data.inputs) {
         const batch = batches.find(x => x.id === input.productionBatchId)!;
         await tx.transformationInput.create({ data: { transformationId: row.id, productionBatchId: batch.id, quantity: decimal(input.quantity), unit: batch.unit } });
-        await new BatchLedgerService(tx, true).append(batch.id, "CONSUMED", decimal(input.quantity), batch.unit, `${data.operationKey}:input:${batch.id}`, context.actorUserId, data.performedAt, undefined, { transformationId: row.id });
+        await new BatchLedgerService(tx, true).append(batch.id, "CONSUMED", decimal(input.quantity), batch.unit, `${data.operationKey}:input:${batch.id}`, context.actorUserId, data.performedAt, {
+          physicalWithdrawals: physicalWithdrawals.filter(x => x.productionBatchId === batch.id),
+        }, { transformationId: row.id });
         await new BatchAvailabilityService(tx, true).rebuild(batch.id);
       }
       for (let i = 0; i < data.outputs.length; i++) {
@@ -151,26 +243,62 @@ export class ProductionTransformationService {
         const batch = await createInitialBatchInTransaction(tx, { code: `TR-${randomUUID()}`, productionOrderId: data.productionOrderId, articuloId: article.id, unit: output.unit, quantity: output.quantity, operationKey: `${data.operationKey}:output:${i}`, requestHash: digest, transformationId: row.id }, context, data.performedAt);
         await tx.transformationOutput.create({ data: { transformationId: row.id, productionBatchId: batch.id, quantity: decimal(output.quantity), unit: output.unit } });
         for (const input of data.inputs) await new BatchLineageService(tx, true).create(input.productionBatchId, batch.id, null, null, `${data.operationKey}:lineage:${i}:${input.productionBatchId}`);
+        for (const [placementIndex, placement] of placements.entries()) {
+          if (placement.outputIndex !== i) continue;
+          const result = await this.containers.placeTransformationOutputInTransaction(tx, {
+            batchId: batch.id,
+            containerId: placement.containerId,
+            quantity: decimal(placement.quantity),
+            operationKey: `${data.operationKey}:placement:${placementIndex}`,
+            requestHash: createHash("sha256").update(`${digest}:placement:${placementIndex}`).digest("hex"),
+            occurredAt: data.performedAt,
+            ...(data.productionWorkId ? { productionWorkId: data.productionWorkId } : {}),
+            ...(data.observations ? { observations: data.observations } : {}),
+          }, context);
+          physicalReconciliation.outputPlacements.push({
+            outputIndex: i,
+            productionBatchId: batch.id,
+            containerId: placement.containerId,
+            quantity: q(placement.quantity),
+            occupancyId: result.occupancy.id,
+          });
+        }
       }
       for (let i = 0; i < (data.losses ?? []).length; i++) {
         const loss = data.losses![i]!;
         const amount = decimal(loss.quantity); const lossKey = `${data.operationKey}:loss:${i}`;
         const lossRow = await tx.productionLoss.create({ data: { productionOrderId: data.productionOrderId, ...(data.transformationOrderId ? { transformationOrderId: data.transformationOrderId } : {}), transformationId: row.id, ...(data.productionWorkId ? { productionWorkId: data.productionWorkId } : {}), ...(loss.productionBatchId ? { productionBatchId: loss.productionBatchId } : {}), quantity: amount, unit: loss.unit, occurredAt: data.performedAt, actorUserId: context.actorUserId, ...(loss.observations ? { observations: loss.observations.trim() } : {}), operationKey: lossKey, requestHash: digest } });
         if (loss.productionBatchId) {
-          await new BatchLedgerService(tx, true).append(loss.productionBatchId, "LOSS", amount, loss.unit, `${lossKey}:ledger`, context.actorUserId, data.performedAt, undefined, { transformationId: row.id, productionLossId: lossRow.id });
+          await new BatchLedgerService(tx, true).append(loss.productionBatchId, "LOSS", amount, loss.unit, `${lossKey}:ledger`, context.actorUserId, data.performedAt, {
+            physicalWithdrawals: physicalWithdrawals.filter(x => x.productionBatchId === loss.productionBatchId),
+          }, { transformationId: row.id, productionLossId: lossRow.id });
           await new BatchAvailabilityService(tx, true).rebuild(loss.productionBatchId);
         }
         await this.audit(tx).record(context, { action: "PRODUCTION_LOSS_CREATED", resourceType: "production.loss", resourceId: lossRow.id, metadata: { quantity: q(amount), unit: loss.unit } });
       }
-      await this.audit(tx).record(context, { action: "PRODUCTION_TRANSFORMATION_CREATED", resourceType: "production.transformation", resourceId: row.id, metadata: { inputCount: data.inputs.length, outputCount: data.outputs.length } });
-      return map(await tx.transformation.findUniqueOrThrow({ where: { id: row.id }, include: this.include }));
+      await this.audit(tx).record(context, { action: "PRODUCTION_TRANSFORMATION_CREATED", resourceType: "production.transformation", resourceId: row.id, metadata: {
+        inputCount: data.inputs.length,
+        outputCount: data.outputs.length,
+        physicalReconciliation,
+      } });
+      return map(await tx.transformation.findUniqueOrThrow({ where: { id: row.id }, include: this.include }), physicalReconciliation);
     }));
   }
   async list(filters: { page?: number | undefined; pageSize?: number | undefined; productionOrderId?: string | undefined } = {}) {
     const page = filters.page ?? 1, pageSize = filters.pageSize ?? 20;
     const where = filters.productionOrderId ? { productionOrderId: filters.productionOrderId } : {};
     const [rows, total] = await Promise.all([this.prisma.transformation.findMany({ where, include: this.include, orderBy: [{ performedAt: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize }), this.prisma.transformation.count({ where })]);
-    return { items: rows.map(map), pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } };
+    const physicalByOperation = await this.physicalReconciliationByOperationKeys(rows.map(row => row.operationKey));
+    return {
+      items: rows.map(row => map(row, physicalByOperation.get(row.operationKey))),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    };
   }
-  async get(id: string) { uuid(id, "Transformation id"); const row = await this.prisma.transformation.findUnique({ where: { id }, include: this.include }); return row ? map(row) : null; }
+  async get(id: string) {
+    uuid(id, "Transformation id");
+    const row = await this.prisma.transformation.findUnique({ where: { id }, include: this.include });
+    if (!row) return null;
+    const physicalByOperation = await this.physicalReconciliationByOperationKeys([row.operationKey]);
+    return map(row, physicalByOperation.get(row.operationKey));
+  }
 }

@@ -145,10 +145,22 @@ export const measurementListSchema = z.object({
 const transformationInputSchema = z.object({ productionBatchId: z.string().uuid(), quantity: positiveQuantity }).strict();
 const transformationOutputSchema = z.object({ articuloId: z.string().uuid(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), observations: z.string().max(2000).optional() }).strict();
 const transformationLossSchema = z.object({ productionBatchId: z.string().uuid().optional(), quantity: positiveQuantity, unit: z.enum(["KG","G","L","M","UNIDAD"]), observations: z.string().max(2000).optional() }).strict();
+const transformationSourceWithdrawalSchema = z.object({
+  productionBatchId: z.string().uuid(),
+  containerId: z.string().uuid(),
+  quantity: positiveQuantity,
+}).strict();
+const transformationOutputPlacementSchema = z.object({
+  outputIndex: z.number().int().min(0),
+  containerId: z.string().uuid(),
+  quantity: positiveQuantity,
+}).strict();
 export const transformationCreateSchema = z.object({
   productionOrderId: z.string().uuid(), transformationOrderId: z.string().uuid().optional(), productionWorkId: z.string().uuid().optional(),
   performedAt: z.coerce.date(), observations: z.string().max(2000).optional(),
   operationKey: z.string().trim().min(1).max(200), requestHash: z.string().trim().min(1).max(500),
   inputs: z.array(transformationInputSchema).min(1), outputs: z.array(transformationOutputSchema).min(1), losses: z.array(transformationLossSchema).optional(),
+  sourceWithdrawals: z.array(transformationSourceWithdrawalSchema).optional(),
+  outputPlacements: z.array(transformationOutputPlacementSchema).optional(),
 }).strict();
 export const transformationListSchema = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(20), productionOrderId: z.string().uuid().optional() }).strict();
