@@ -20,6 +20,13 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const basePath = process.env.BASE_PATH ?? "/";
+const stagingMode = process.env.NODE_ENV !== 'production' && Boolean(process.env.WINTER_STAGING_DATABASE_URL);
+const stagingApiTarget = stagingMode ? 'http://127.0.0.1:3001' : undefined;
+
+if (stagingMode) {
+  // Vite only exposes VITE_* keys to the browser; keep the database URL server-side.
+  process.env.VITE_WINTER_API_URL = '/winter-staging';
+}
 
 if (!basePath) {
   throw new Error(
@@ -69,6 +76,15 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    ...(stagingApiTarget ? {
+      proxy: {
+        '/winter-staging': {
+          target: stagingApiTarget,
+          changeOrigin: true,
+          rewrite: (url: string) => url.replace(/^\/winter-staging/, ''),
+        },
+      },
+    } : {}),
     fs: {
       strict: true,
     },

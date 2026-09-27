@@ -80,6 +80,13 @@ export class SharedUnitOfWork {
     work: (transaction: SharedTransactionContext) => Promise<T>,
     options: SharedUnitOfWorkOptions = {},
   ): Promise<T> {
+    // Keep Prisma's default in production; slow staging tunnels can opt into a
+    // bounded longer transaction without weakening atomicity or changing prod.
+    const configuredTimeout = process.env.WINTER_TRANSACTION_TIMEOUT_MS;
+    const timeout = configuredTimeout === undefined ? undefined : Number(configuredTimeout);
+    if (timeout !== undefined && (!Number.isSafeInteger(timeout) || timeout < 5_000 || timeout > 120_000)) {
+      throw new Error("WINTER_TRANSACTION_TIMEOUT_MS must be an integer between 5000 and 120000");
+    }
     const maxRetries = options.maxSerializationRetries === undefined
       ? 3
       : Number.isSafeInteger(options.maxSerializationRetries) && options.maxSerializationRetries >= 0
@@ -90,7 +97,7 @@ export class SharedUnitOfWork {
       try {
         return await this.prisma.$transaction(
           (transaction) => work(transaction),
-          { isolationLevel: "Serializable" },
+          { isolationLevel: "Serializable", ...(timeout === undefined ? {} : { timeout }) },
         );
       } catch (error) {
         if (isSerializationConflict(error) && attempt < maxRetries) {
