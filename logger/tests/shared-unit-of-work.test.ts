@@ -4,6 +4,32 @@ import type { PrismaClient } from "../src/generated/prisma/client.js";
 import { SharedUnitOfWork, isSerializationConflict } from "../src/core/database/shared-unit-of-work.js";
 
 describe("SharedUnitOfWork", () => {
+  it("uses a bounded staging transaction timeout without changing the default", async () => {
+    const previous = process.env.WINTER_TRANSACTION_TIMEOUT_MS;
+    const seen: Array<{ timeout?: number }> = [];
+    const fakeClient = {
+      $transaction: async <T>(
+        work: (transaction: unknown) => Promise<T>,
+        options: { timeout?: number },
+      ): Promise<T> => {
+        seen.push(options);
+        return work(undefined);
+      },
+    };
+    const uow = new SharedUnitOfWork(fakeClient as unknown as PrismaClient);
+    try {
+      delete process.env.WINTER_TRANSACTION_TIMEOUT_MS;
+      await uow.execute(async () => "default");
+      process.env.WINTER_TRANSACTION_TIMEOUT_MS = "60000";
+      await uow.execute(async () => "staging");
+      process.env.WINTER_TRANSACTION_TIMEOUT_MS = "unlimited";
+      assert.throws(() => uow.execute(async () => "invalid"), /WINTER_TRANSACTION_TIMEOUT_MS/);
+      assert.deepEqual(seen.map((options) => options.timeout), [undefined, 60000]);
+    } finally {
+      if (previous === undefined) delete process.env.WINTER_TRANSACTION_TIMEOUT_MS;
+      else process.env.WINTER_TRANSACTION_TIMEOUT_MS = previous;
+    }
+  });
   it("recognizes Prisma P2010 with nested PostgreSQL serialization SQLSTATE", () => {
     assert.equal(isSerializationConflict({ code: "P2010", meta: { driverAdapterError: { cause: { originalCode: "40001" } } } }), true);
     assert.equal(isSerializationConflict({ code: "P2010", meta: { driverAdapterError: { cause: { code: "40001" } } } }), true);
